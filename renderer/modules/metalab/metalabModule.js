@@ -1,6 +1,7 @@
 import { METALAB_CONFIG } from './metalabConfig.js';
 import { createMetaLabDocument } from './metalabDocumentFactory.js';
 import { createMetaLabEditor } from '../../editors/metalab/createMetaLabEditor.js';
+import { slugifyDocumentName } from '../../runtime/naming.js';
 
 export function createMetaLabModule() {
   return {
@@ -8,12 +9,12 @@ export function createMetaLabModule() {
     name: METALAB_CONFIG.moduleName,
     documentKinds: [METALAB_CONFIG.documentKind],
 
-    createDefaultDocument() {
-      return createMetaLabDocument();
+    createDefaultDocument({ name }) {
+      return createMetaLabDocument({ name });
     },
 
-    getFileName() {
-      return 'new_scenario.yaml';
+    getFileName(document) {
+      return `${slugifyDocumentName(document?.scenario?.name || 'new_scenario')}.yaml`;
     },
 
     async openDocument({ documentRecord, mountElement }) {

@@ -1,0 +1,446 @@
+﻿diff --git a/renderer/core/projectManager.js b/renderer/core/projectManager.js
+index 1105248640cb43799433f6cc8e18d32f7b0113aa..0b82c33dfde072cf93531780b321d8670362723d 100644
+--- a/renderer/core/projectManager.js
++++ b/renderer/core/projectManager.js
+@@ -1,44 +1,54 @@
+import { APP_CONFIG } from '../../config/app-config.js';
+import { createDocumentLoader } from '../runtime/documentLoader.js';
+
+function joinPaths(...parts) {
+  return parts
+    .filter(Boolean)
+    .join('/')
+    .replace(/\\/g, '/')
+    .replace(/\/{2,}/g, '/');
+}
+
+function buildProjectFilePath(projectRoot) {
+  return joinPaths(projectRoot, APP_CONFIG.project.projectFileName);
+}
+
+function buildModuleDir(projectRoot, moduleFolder) {
+  return joinPaths(projectRoot, moduleFolder);
+}
+
++function getModuleFolder(moduleId) {
++  const folderMap = {
++    metagen: APP_CONFIG.project.folders.metagen,
++    metalab: APP_CONFIG.project.folders.metalab,
++    metaview: APP_CONFIG.project.folders.metaview
++  };
++
++  return folderMap[moduleId] || null;
++}
++
+export function createProjectManager({
+  logger,
+  fileSystem,
+  moduleRegistry,
+  onProjectLoaded
+}) {
+  const documentLoader = createDocumentLoader({ fileSystem });
+  let currentProject = null;
+  const listeners = new Set();
+
+  function emitChange() {
+    for (const listener of listeners) {
+      listener(currentProject);
+    }
+  }
+
+  function subscribe(listener) {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  }
+
+  async function ensureProjectStructure(projectRoot) {
+    await fileSystem.ensureDir(projectRoot);
+    await fileSystem.ensureDir(buildModuleDir(projectRoot, APP_CONFIG.project.folders.metagen));
+    await fileSystem.ensureDir(buildModuleDir(projectRoot, APP_CONFIG.project.folders.metalab));
+@@ -148,90 +158,104 @@ export function createProjectManager({
+      return null;
+    }
+
+    currentProject.documents.metagen = await scanModuleDocuments(
+      currentProject.rootPath,
+      APP_CONFIG.project.folders.metagen,
+      'metagen'
+    );
+
+    currentProject.documents.metalab = await scanModuleDocuments(
+      currentProject.rootPath,
+      APP_CONFIG.project.folders.metalab,
+      'metalab'
+    );
+
+    currentProject.documents.metaview = await scanModuleDocuments(
+      currentProject.rootPath,
+      APP_CONFIG.project.folders.metaview,
+      'metaview'
+    );
+
+    emitChange();
+    return currentProject;
+  }
+
++  async function scanProjectDocuments() {
++    return refresh();
++  }
++
++  function getDocumentsByModule(moduleId) {
++    if (!currentProject) {
++      return [];
++    }
++
++    return currentProject.documents[moduleId] || [];
++  }
++
+  async function createDocument(moduleId, name) {
+    if (!currentProject) {
+      throw new Error('Project is not opened');
+    }
+
+    const module = moduleRegistry.getModule(moduleId);
+
+    if (!module) {
+      throw new Error(`Module not found: ${moduleId}`);
+    }
+
+    const document = module.createDefaultDocument({ name });
+    const fileName = module.getFileName(document);
+
+-    const folderMap = {
+-      metagen: APP_CONFIG.project.folders.metagen,
+-      metalab: APP_CONFIG.project.folders.metalab,
+-      metaview: APP_CONFIG.project.folders.metaview
+-    };
++    const moduleFolder = getModuleFolder(moduleId);
+
+-    const fullPath = joinPaths(currentProject.rootPath, folderMap[moduleId], fileName);
++    if (!moduleFolder) {
++      throw new Error(`Unsupported module id: ${moduleId}`);
++    }
++
++    const fullPath = joinPaths(currentProject.rootPath, moduleFolder, fileName);
+
+    await documentLoader.saveYaml(fullPath, document);
+    logger.info('project', 'Создан документ', { moduleId, path: fullPath, name });
+
+    await refresh();
+    return getDocumentByPath(fullPath);
+  }
+
+  function getDocumentByPath(targetPath) {
+    if (!currentProject) {
+      return null;
+    }
+
+    const allDocuments = [
+      ...currentProject.documents.metagen,
+      ...currentProject.documents.metalab,
+      ...currentProject.documents.metaview
+    ];
+
+    return allDocuments.find((entry) => entry.path === targetPath) || null;
+  }
+
+  async function saveDocument(documentRecord) {
+    if (!documentRecord?.path || !documentRecord?.document) {
+      throw new Error('Invalid document record');
+    }
+
+    await documentLoader.saveYaml(documentRecord.path, documentRecord.document);
+    logger.info('project', 'Документ сохранён', { path: documentRecord.path });
+    await refresh();
+    return true;
+  }
+
+  return {
+    openProject,
+    refresh,
+    subscribe,
++    scanProjectDocuments,
+    getCurrentProject: () => currentProject,
+    getMetaGenDocuments: () => currentProject?.documents?.metagen || [],
++    getDocumentsByModule,
+    getDocumentByPath,
+    createDocument,
+    saveDocument
+  };
+-}
+\ No newline at end of file
++}
+diff --git a/renderer/modules/metalab/metalabDocumentFactory.js b/renderer/modules/metalab/metalabDocumentFactory.js
+index f2b0bb65328bf3399b1ac38ec8f6156bdd7eca66..9ad4508b82f5530f40c5ce6413e34ae69b83a2c1 100644
+--- a/renderer/modules/metalab/metalabDocumentFactory.js
++++ b/renderer/modules/metalab/metalabDocumentFactory.js
+@@ -1,8 +1,12 @@
+import { METALAB_CONFIG } from './metalabConfig.js';
+
+-export function createMetaLabDocument() {
++export function createMetaLabDocument({ name = 'Новый сценарий' } = {}) {
+  return {
+    kind: METALAB_CONFIG.documentKind,
+-    version: 1
++    version: 1,
++    scenario: {
++      id: 'new_scenario',
++      name
++    }
+  };
+-}
+\ No newline at end of file
++}
+diff --git a/renderer/modules/metalab/metalabModule.js b/renderer/modules/metalab/metalabModule.js
+index 744446206192250c1be6468a60580aaf98d89f7a..542ea07badaf9139cbc6bfd4014592c598009b97 100644
+--- a/renderer/modules/metalab/metalabModule.js
++++ b/renderer/modules/metalab/metalabModule.js
+@@ -1,23 +1,24 @@
+import { METALAB_CONFIG } from './metalabConfig.js';
+import { createMetaLabDocument } from './metalabDocumentFactory.js';
+import { createMetaLabEditor } from '../../editors/metalab/createMetaLabEditor.js';
++import { slugifyDocumentName } from '../../runtime/naming.js';
+
+export function createMetaLabModule() {
+  return {
+    id: METALAB_CONFIG.moduleId,
+    name: METALAB_CONFIG.moduleName,
+    documentKinds: [METALAB_CONFIG.documentKind],
+
+-    createDefaultDocument() {
+-      return createMetaLabDocument();
++    createDefaultDocument({ name }) {
++      return createMetaLabDocument({ name });
+    },
+
+-    getFileName() {
+-      return 'new_scenario.yaml';
++    getFileName(document) {
++      return `${slugifyDocumentName(document?.scenario?.name || 'new_scenario')}.yaml`;
+    },
+
+    async openDocument({ documentRecord, mountElement }) {
+      return createMetaLabEditor({ documentRecord, mountElement });
+    }
+  };
+-}
+\ No newline at end of file
++}
+diff --git a/renderer/modules/metaview/metaviewDocumentFactory.js b/renderer/modules/metaview/metaviewDocumentFactory.js
+index c2b34427bd057f3fbb4db264311d16638bfadff7..e5a5f8113edecfde74adca5e3e8fbea893ef3236 100644
+--- a/renderer/modules/metaview/metaviewDocumentFactory.js
++++ b/renderer/modules/metaview/metaviewDocumentFactory.js
+@@ -1,8 +1,12 @@
+import { METAVIEW_CONFIG } from './metaviewConfig.js';
+
+-export function createMetaViewDocument() {
++export function createMetaViewDocument({ name = 'Новый экран' } = {}) {
+  return {
+    kind: METAVIEW_CONFIG.documentKind,
+-    version: 1
++    version: 1,
++    screen: {
++      id: 'new_screen',
++      name
++    }
+  };
+-}
+\ No newline at end of file
++}
+diff --git a/renderer/modules/metaview/metaviewModule.js b/renderer/modules/metaview/metaviewModule.js
+index d2451e48aee753347c74ecad7caba170698b86cd..1773c91a3dd32d5469faec002e050ebfd4453d30 100644
+--- a/renderer/modules/metaview/metaviewModule.js
++++ b/renderer/modules/metaview/metaviewModule.js
+@@ -1,23 +1,24 @@
+import { METAVIEW_CONFIG } from './metaviewConfig.js';
+import { createMetaViewDocument } from './metaviewDocumentFactory.js';
+import { createMetaViewEditor } from '../../editors/metaview/createMetaViewEditor.js';
++import { slugifyDocumentName } from '../../runtime/naming.js';
+
+export function createMetaViewModule() {
+  return {
+    id: METAVIEW_CONFIG.moduleId,
+    name: METAVIEW_CONFIG.moduleName,
+    documentKinds: [METAVIEW_CONFIG.documentKind],
+
+-    createDefaultDocument() {
+-      return createMetaViewDocument();
++    createDefaultDocument({ name }) {
++      return createMetaViewDocument({ name });
+    },
+
+-    getFileName() {
+-      return 'new_screen.yaml';
++    getFileName(document) {
++      return `${slugifyDocumentName(document?.screen?.name || 'new_screen')}.yaml`;
+    },
+
+    async openDocument({ documentRecord, mountElement }) {
+      return createMetaViewEditor({ documentRecord, mountElement });
+    }
+  };
+-}
+\ No newline at end of file
++}
+diff --git a/renderer/ui/createProjectTree.js b/renderer/ui/createProjectTree.js
+index f6d71aa13ba360d7fa56648b77c37e15420c941e..b1470fce834b850fc4816ab012b4fdfcaada3435 100644
+--- a/renderer/ui/createProjectTree.js
++++ b/renderer/ui/createProjectTree.js
+@@ -1,86 +1,120 @@
+import { APP_CONFIG } from '../../config/app-config.js';
+import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
++import { METALAB_CONFIG } from '../modules/metalab/metalabConfig.js';
++import { METAVIEW_CONFIG } from '../modules/metaview/metaviewConfig.js';
+
+function createElement(tagName, classNames = []) {
+  const node = document.createElement(tagName);
+  classNames.forEach((className) => node.classList.add(className));
+  return node;
+}
+
++function getDocumentLabel(documentRecord) {
++  return (
++    documentRecord.document?.component?.name ||
++    documentRecord.document?.scenario?.name ||
++    documentRecord.document?.screen?.name ||
++    documentRecord.document?.name ||
++    APP_CONFIG.ui.text.untitled
++  );
++}
++
+export function createProjectTree({
+  logger,
+  projectManager,
+  tabs
+}) {
+  const treeRoot = document.getElementById(APP_CONFIG.ui.dom.projectTreeId);
+
++  const moduleSections = [
++    {
++      moduleId: METAGEN_CONFIG.moduleId,
++      moduleName: METAGEN_CONFIG.moduleName,
++      createPromptTitle: METAGEN_CONFIG.ui.createPromptTitle,
++      defaultName: METAGEN_CONFIG.defaults.newDocumentName
++    },
++    {
++      moduleId: METALAB_CONFIG.moduleId,
++      moduleName: METALAB_CONFIG.moduleName,
++      createPromptTitle: 'Имя сценария MetaLab',
++      defaultName: 'Новый сценарий'
++    },
++    {
++      moduleId: METAVIEW_CONFIG.moduleId,
++      moduleName: METAVIEW_CONFIG.moduleName,
++      createPromptTitle: 'Имя экрана MetaView',
++      defaultName: 'Новый экран'
++    }
++  ];
++
+  async function render() {
+    const project = projectManager.getCurrentProject();
+
+    if (!project) {
+      treeRoot.innerHTML = '';
+      return;
+    }
+
+    treeRoot.innerHTML = '';
+
+    const projectNode = createElement('div', [APP_CONFIG.ui.classNames.projectNode]);
+    projectNode.textContent = project.project.name;
+    treeRoot.appendChild(projectNode);
+
+-    const metagenSection = createElement('div');
+-    const header = createElement('div', ['tree-section-header']);
+-    header.textContent = METAGEN_CONFIG.moduleName;
+-
+-    const addButton = createElement('button', ['tree-add-button']);
+-    addButton.type = 'button';
+-    addButton.textContent = '+';
+-    addButton.addEventListener('click', async () => {
+-      const nextName = window.prompt(
+-        METAGEN_CONFIG.ui.createPromptTitle,
+-        METAGEN_CONFIG.defaults.newDocumentName
+-      );
+-
+-      if (!nextName) {
+-        return;
+-      }
+-
+-      const created = await projectManager.createDocument(METAGEN_CONFIG.moduleId, nextName);
++    for (const sectionConfig of moduleSections) {
++      const section = createElement('div');
++      const header = createElement('div', ['tree-section-header']);
++      header.textContent = sectionConfig.moduleName;
+
+-      if (created) {
+-        await tabs.openDocument(created);
+-      }
+-    });
++      const addButton = createElement('button', ['tree-add-button']);
++      addButton.type = 'button';
++      addButton.textContent = '+';
++      addButton.addEventListener('click', async () => {
++        const nextName = window.prompt(sectionConfig.createPromptTitle, sectionConfig.defaultName);
+
+-    header.appendChild(addButton);
+-    metagenSection.appendChild(header);
++        if (!nextName) {
++          return;
++        }
+
+-    for (const documentRecord of projectManager.getMetaGenDocuments()) {
+-      const item = createElement('div', [APP_CONFIG.ui.classNames.treeItem]);
+-      const label = createElement('button', [APP_CONFIG.ui.classNames.treeItemLabel]);
+-      label.type = 'button';
+-      label.textContent =
+-        documentRecord.document?.component?.name || APP_CONFIG.ui.text.untitled;
++        const created = await projectManager.createDocument(sectionConfig.moduleId, nextName);
+
+-      label.addEventListener('click', async () => {
+-        await tabs.openDocument(documentRecord);
++        if (created) {
++          await tabs.openDocument(created);
++        }
+      });
+
+-      item.appendChild(label);
+-      metagenSection.appendChild(item);
++      header.appendChild(addButton);
++      section.appendChild(header);
++
++      const moduleDocuments = projectManager.getDocumentsByModule(sectionConfig.moduleId);
++
++      for (const documentRecord of moduleDocuments) {
++        const item = createElement('div', [APP_CONFIG.ui.classNames.treeItem]);
++        const label = createElement('button', [APP_CONFIG.ui.classNames.treeItemLabel]);
++        label.type = 'button';
++        label.textContent = getDocumentLabel(documentRecord);
++
++        label.addEventListener('click', async () => {
++          await tabs.openDocument(documentRecord);
++        });
++
++        item.appendChild(label);
++        section.appendChild(item);
++      }
++
++      treeRoot.appendChild(section);
+    }
+
+-    treeRoot.appendChild(metagenSection);
+    logger.info('project-tree', 'Дерево проекта обновлено');
+  }
+
+  projectManager.subscribe(() => {
+    render().catch((error) => {
+      logger.error('project-tree', 'Ошибка рендера дерева проекта', {
+        message: error?.message || String(error)
+      });
+    });
+  });
+
+  return { render };
+-}
+\ No newline at end of file
++}

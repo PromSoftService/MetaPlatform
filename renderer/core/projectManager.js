@@ -17,6 +17,16 @@ function buildModuleDir(projectRoot, moduleFolder) {
   return joinPaths(projectRoot, moduleFolder);
 }
 
+function getModuleFolder(moduleId) {
+  const folderMap = {
+    metagen: APP_CONFIG.project.folders.metagen,
+    metalab: APP_CONFIG.project.folders.metalab,
+    metaview: APP_CONFIG.project.folders.metaview
+  };
+
+  return folderMap[moduleId] || null;
+}
+
 export function createProjectManager({
   logger,
   fileSystem,
@@ -170,6 +180,18 @@ export function createProjectManager({
     return currentProject;
   }
 
+  async function scanProjectDocuments() {
+    return refresh();
+  }
+
+  function getDocumentsByModule(moduleId) {
+    if (!currentProject) {
+      return [];
+    }
+
+    return currentProject.documents[moduleId] || [];
+  }
+
   async function createDocument(moduleId, name) {
     if (!currentProject) {
       throw new Error('Project is not opened');
@@ -184,13 +206,13 @@ export function createProjectManager({
     const document = module.createDefaultDocument({ name });
     const fileName = module.getFileName(document);
 
-    const folderMap = {
-      metagen: APP_CONFIG.project.folders.metagen,
-      metalab: APP_CONFIG.project.folders.metalab,
-      metaview: APP_CONFIG.project.folders.metaview
-    };
+    const moduleFolder = getModuleFolder(moduleId);
 
-    const fullPath = joinPaths(currentProject.rootPath, folderMap[moduleId], fileName);
+    if (!moduleFolder) {
+      throw new Error(`Unsupported module id: ${moduleId}`);
+    }
+
+    const fullPath = joinPaths(currentProject.rootPath, moduleFolder, fileName);
 
     await documentLoader.saveYaml(fullPath, document);
     logger.info('project', 'Создан документ', { moduleId, path: fullPath, name });
@@ -228,8 +250,10 @@ export function createProjectManager({
     openProject,
     refresh,
     subscribe,
+    scanProjectDocuments,
     getCurrentProject: () => currentProject,
     getMetaGenDocuments: () => currentProject?.documents?.metagen || [],
+    getDocumentsByModule,
     getDocumentByPath,
     createDocument,
     saveDocument
