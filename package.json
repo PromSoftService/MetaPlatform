@@ -1,0 +1,19 @@
+{
+  "name": "metaplatform",
+  "version": "1.0.0",
+  "description": "MetaPlatform v1",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "split.js": "^1.6.5",
+    "yaml": "^2.5.1"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "vite": "^5.0.0"
+  }
+}

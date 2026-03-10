@@ -1,0 +1,37 @@
+kind: metagen.component
+version: 1
+
+component:
+  id: conveyors
+  name: Conveyors
+  type: template
+  module: MetaGen
+  description: Demo Conveyors document
+
+params:
+  format: header-plus-rows
+  header: []
+  rows: []
+
+data:
+  format: table
+  columns: []
+  rows: []
+
+instances:
+  format: list
+  rows: []
+
+code:
+  format: template-text
+  language: st-template
+  text: |
+    // Demo Conveyors template
+
+generation:
+  engine: python
+  entrypoint: gen_v2.py
+  mode: external
+  output:
+    language: st
+    fileName: conveyors.st

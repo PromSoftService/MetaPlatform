@@ -1,0 +1,18 @@
+kind: metaplatform.project
+version: 1
+
+project:
+  id: demo_feedmill
+  name: Demo Feedmill
+  description: Demo project for MetaPlatform
+
+modules:
+  - MetaGen
+  - MetaLab
+  - MetaView
+
+paths:
+  metagen: metagen
+  metalab: metalab
+  metaview: metaview
+  generated: generated

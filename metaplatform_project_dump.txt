@@ -1,0 +1,2346 @@
+==================================================
+METAPLATFORM PROJECT EXPORT
+ROOT: D:\current\coding\MetaPlatform\20260310
+==================================================
+
+==================================================
+FILE: main.js
+==================================================
+
+import { app, BrowserWindow, ipcMain } from 'electron';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { APP_CONFIG } from './config/app-config.js';
+
+function resolveProjectRoot(projectPath) {
+  if (!projectPath) {
+    return path.join(process.cwd(), APP_CONFIG.project.defaultProjectRelativePath);
+  }
+
+  return path.resolve(projectPath);
+}
+
+function createWindow() {
+  const win = new BrowserWindow({
+    width: APP_CONFIG.platform.window.width,
+    height: APP_CONFIG.platform.window.height,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(process.cwd(), 'preload.js')
+    }
+  });
+
+  win.loadURL(APP_CONFIG.platform.window.devServerUrl);
+}
+
+app.whenReady().then(() => {
+  ipcMain.handle('fs:get-default-project-root', async () => {
+    return resolveProjectRoot();
+  });
+
+  ipcMain.handle('fs:ensure-dir', async (_event, targetPath) => {
+    await fs.mkdir(targetPath, { recursive: true });
+    return true;
+  });
+
+  ipcMain.handle('fs:exists', async (_event, targetPath) => {
+    try {
+      await fs.access(targetPath);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  ipcMain.handle('fs:read-text', async (_event, targetPath) => {
+    return fs.readFile(targetPath, 'utf-8');
+  });
+
+  ipcMain.handle('fs:write-text', async (_event, targetPath, text) => {
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    await fs.writeFile(targetPath, text, 'utf-8');
+    return true;
+  });
+
+  ipcMain.handle('fs:rename', async (_event, fromPath, toPath) => {
+    await fs.mkdir(path.dirname(toPath), { recursive: true });
+    await fs.rename(fromPath, toPath);
+    return true;
+  });
+
+  ipcMain.handle('fs:delete-file', async (_event, targetPath) => {
+    await fs.rm(targetPath, { force: true });
+    return true;
+  });
+
+  ipcMain.handle('fs:list-files', async (_event, targetDir, extensions = []) => {
+    const output = [];
+
+    async function walk(currentDir) {
+      const entries = await fs.readdir(currentDir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(currentDir, entry.name);
+
+        if (entry.isDirectory()) {
+          await walk(fullPath);
+          continue;
+        }
+
+        if (!extensions.length) {
+          output.push(fullPath);
+          continue;
+        }
+
+        const normalized = entry.name.toLowerCase();
+        if (extensions.some((ext) => normalized.endsWith(ext.toLowerCase()))) {
+          output.push(fullPath);
+        }
+      }
+    }
+
+    const exists = await fs.access(targetDir).then(() => true).catch(() => false);
+    if (!exists) {
+      return [];
+    }
+
+    await walk(targetDir);
+    return output;
+  });
+
+  createWindow();
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== APP_CONFIG.platform.platform.mac) {
+    app.quit();
+  }
+});
+
+==================================================
+FILE: preload.js
+==================================================
+
+import { contextBridge, ipcRenderer } from 'electron';
+
+contextBridge.exposeInMainWorld('MetaPlatformFS', {
+  getDefaultProjectRoot: () => ipcRenderer.invoke('fs:get-default-project-root'),
+  ensureDir: (targetPath) => ipcRenderer.invoke('fs:ensure-dir', targetPath),
+  exists: (targetPath) => ipcRenderer.invoke('fs:exists', targetPath),
+  readText: (targetPath) => ipcRenderer.invoke('fs:read-text', targetPath),
+  writeText: (targetPath, text) => ipcRenderer.invoke('fs:write-text', targetPath, text),
+  rename: (fromPath, toPath) => ipcRenderer.invoke('fs:rename', fromPath, toPath),
+  deleteFile: (targetPath) => ipcRenderer.invoke('fs:delete-file', targetPath),
+  listFiles: (targetDir, extensions) => ipcRenderer.invoke('fs:list-files', targetDir, extensions)
+});
+
+==================================================
+FILE: vite.config.js
+==================================================
+
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  root: 'renderer',
+  server: {
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: true
+  }
+});
+
+==================================================
+FILE: config\app-config.js
+==================================================
+
+export const PLATFORM_CONFIG = {
+  locale: 'ru-RU',
+
+  platform: {
+    mac: 'darwin'
+  },
+
+  window: {
+    width: 1600,
+    height: 980,
+    devServerUrl: 'http://127.0.0.1:5173/'
+  },
+
+  app: {
+    title: 'MetaPlatform',
+    topPanelTitle: '⚡ MetaPlatform'
+  },
+
+  logging: {
+    defaultSource: 'app'
+  }
+};
+
+==================================================
+FILE: config\platform-config.js
+==================================================
+
+
+
+==================================================
+FILE: config\project-config.js
+==================================================
+
+export const PROJECT_CONFIG = {
+  defaultProjectRelativePath: 'project-examples/demo-feedmill',
+  projectFileName: 'project.yaml',
+
+  folders: {
+    metagen: 'metagen',
+    metalab: 'metalab',
+    metaview: 'metaview',
+    generated: 'generated'
+  },
+
+  fileExtensions: {
+    yaml: ['.yaml', '.yml']
+  },
+
+  projectKinds: {
+    root: 'metaplatform.project'
+  }
+};
+
+==================================================
+FILE: config\ui-config.js
+==================================================
+
+export const UI_CONFIG = {
+  dom: {
+    titleSelector: 'title',
+    topPanelTitleSelector: '#top-panel-title',
+    projectTitleSelector: '#project-title',
+    logsPanelHeaderSelector: '#bottom-panel-header',
+    tabsListId: 'tabs-list',
+    editorHostId: 'editor-host',
+    logContainerId: 'log-output',
+    projectTreeId: 'project-tree'
+  },
+
+  classNames: {
+    tab: 'workbench-tab',
+    tabActive: 'is-active',
+    page: 'workbench-page',
+    pageActive: 'is-active',
+    treeItem: 'tree-item',
+    treeItemLabel: 'tree-item-label',
+    projectNode: 'project-node',
+    editorRoot: 'metagen-editor',
+    editorGrid: 'metagen-editor-grid',
+    editorPanel: 'metagen-editor-panel',
+    editorPanelHeader: 'metagen-editor-panel-header',
+    editorTextarea: 'metagen-editor-textarea'
+  },
+
+  panelHeaders: {
+    logs: '📋 Логи',
+    params: '📊 Параметры',
+    data: '📈 Данные',
+    code: '📝 Шаблон ST',
+    project: '📁 Проект'
+  },
+
+  text: {
+    metaGenSectionTitle: 'MetaGen',
+    addButtonLabel: '+',
+    untitled: 'Без имени',
+    defaultMetaGenDocumentName: 'Новый компонент'
+  }
+};
+
+==================================================
+FILE: renderer\app.js
+==================================================
+
+import { APP_CONFIG } from '../config/app-config.js';
+import { applyStaticText } from './ui/applyStaticText.js';
+import { createLogger } from './core/logger.js';
+import { createCommandBus } from './core/commandBus.js';
+import { createModuleRegistry } from './core/moduleRegistry.js';
+import { createProjectManager } from './core/projectManager.js';
+import { createFileSystemBridge } from './runtime/fileSystemBridge.js';
+import { createWorkbenchShell } from './ui/workbenchShell.js';
+import { createWorkbenchTabs } from './ui/createWorkbenchTabs.js';
+import { createProjectTree } from './ui/createProjectTree.js';
+
+import { createMetaGenModule } from './modules/metagen/metagenModule.js';
+import { createMetaLabModule } from './modules/metalab/metalabModule.js';
+import { createMetaViewModule } from './modules/metaview/metaviewModule.js';
+
+document.addEventListener('DOMContentLoaded', async () => {
+  applyStaticText();
+
+  const logger = createLogger();
+  const commandBus = createCommandBus({ logger });
+  const moduleRegistry = createModuleRegistry({ logger });
+  const fileSystem = createFileSystemBridge();
+  const workbench = createWorkbenchShell();
+
+  let projectManager = null;
+
+  const getProjectManager = () => projectManager;
+
+  const metaGenModule = createMetaGenModule({
+    logger,
+    getProjectManager
+  });
+
+  const metaLabModule = createMetaLabModule({
+    logger,
+    getProjectManager
+  });
+
+  const metaViewModule = createMetaViewModule({
+    logger,
+    getProjectManager
+  });
+
+  moduleRegistry.registerModule(metaGenModule);
+  moduleRegistry.registerModule(metaLabModule);
+  moduleRegistry.registerModule(metaViewModule);
+
+  const tabs = createWorkbenchTabs({
+    logger,
+    moduleRegistry,
+    openEditor: async ({ documentRecord, mountElement }) => {
+      const module = moduleRegistry.findModuleByDocumentKind(documentRecord.document?.kind);
+
+      if (!module) {
+        throw new Error(`Не найден модуль для kind=${documentRecord.document?.kind}`);
+      }
+
+      return module.openDocument({ documentRecord, mountElement });
+    }
+  });
+
+  projectManager = createProjectManager({
+    logger,
+    fileSystem,
+    moduleRegistry,
+    onProjectLoaded: ({ projectRuntime }) => {
+      const projectTitle = document.querySelector(APP_CONFIG.ui.dom.projectTitleSelector);
+      if (projectTitle) {
+        projectTitle.textContent = `• ${projectRuntime.project.name}`;
+      }
+    }
+  });
+
+  createProjectTree({
+    logger,
+    projectManager,
+    tabs,
+    commandBus
+  });
+
+  logger.info(APP_CONFIG.platform.logging.defaultSource, 'Инициализация MetaPlatform...');
+  const defaultProjectRoot = await fileSystem.getDefaultProjectRoot();
+  await projectManager.openProject(defaultProjectRoot);
+  logger.info(APP_CONFIG.platform.logging.defaultSource, 'Проект открыт');
+
+  window.MetaPlatformRuntime = {
+    logger,
+    commandBus,
+    moduleRegistry,
+    projectManager,
+    fileSystem,
+    workbench,
+    tabs
+  };
+});
+
+==================================================
+FILE: renderer\core\commandBus.js
+==================================================
+
+export function createCommandBus({ logger }) {
+  const handlers = new Map();
+
+  function register(commandType, handler) {
+    handlers.set(commandType, handler);
+  }
+
+  async function execute(command) {
+    const type = command?.type;
+
+    if (!type) {
+      throw new Error('Command type is required');
+    }
+
+    const handler = handlers.get(type);
+
+    if (!handler) {
+      logger.warn('command-bus', `Не найден обработчик команды: ${type}`);
+      return null;
+    }
+
+    logger.info('command-bus', `Выполнение команды: ${type}`, command?.meta || null);
+
+    try {
+      const result = await handler(command);
+      logger.info('command-bus', `Команда выполнена: ${type}`);
+      return result;
+    } catch (error) {
+      logger.error('command-bus', `Ошибка команды: ${type}`, {
+        message: error?.message || String(error)
+      });
+      throw error;
+    }
+  }
+
+  return {
+    register,
+    execute
+  };
+}
+
+==================================================
+FILE: renderer\core\layout.js
+==================================================
+
+export function initWorkbenchLayout() {
+  return {
+    dispose() {}
+  };
+}
+
+==================================================
+FILE: renderer\core\logger.js
+==================================================
+
+import { APP_CONFIG } from '../../config/app-config.js';
+
+export function createLogger() {
+  const output = document.getElementById(APP_CONFIG.ui.dom.logContainerId);
+
+  function normalizeDetails(details) {
+    if (details == null) {
+      return '';
+    }
+
+    if (typeof details === 'string') {
+      return details;
+    }
+
+    try {
+      return JSON.stringify(details, null, 2);
+    } catch {
+      return String(details);
+    }
+  }
+
+  function write(level, source, message, details = null) {
+    const ts = new Date().toLocaleTimeString(APP_CONFIG.platform.locale);
+    const line = `[${ts}] [${source}] ${level.toUpperCase()} ${message}`;
+
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+
+    const lineNode = document.createElement('div');
+    lineNode.className = 'log-line';
+    lineNode.textContent = line;
+    entry.appendChild(lineNode);
+
+    if (details != null) {
+      const detailsNode = document.createElement('pre');
+      detailsNode.className = 'log-details';
+      detailsNode.textContent = normalizeDetails(details);
+      entry.appendChild(detailsNode);
+    }
+
+    output?.appendChild(entry);
+    output?.scrollTo({ top: output.scrollHeight });
+  }
+
+  return {
+    debug: (source, message, details = null) => write('debug', source, message, details),
+    info: (source, message, details = null) => write('info', source, message, details),
+    warn: (source, message, details = null) => write('warn', source, message, details),
+    error: (source, message, details = null) => write('error', source, message, details)
+  };
+}
+
+==================================================
+FILE: renderer\core\moduleRegistry.js
+==================================================
+
+export function createModuleRegistry({ logger }) {
+  const modulesById = new Map();
+  const documentKindToModuleId = new Map();
+
+  function registerModule(module) {
+    if (!module?.id) {
+      throw new Error('Module id is required');
+    }
+
+    modulesById.set(module.id, module);
+
+    for (const kind of module.documentKinds || []) {
+      documentKindToModuleId.set(kind, module.id);
+    }
+
+    logger.info('module-registry', 'Модуль зарегистрирован', {
+      id: module.id,
+      name: module.name,
+      documentKinds: module.documentKinds || []
+    });
+  }
+
+  function getModule(moduleId) {
+    return modulesById.get(moduleId) || null;
+  }
+
+  function getAllModules() {
+    return [...modulesById.values()];
+  }
+
+  function findModuleByDocumentKind(kind) {
+    const moduleId = documentKindToModuleId.get(kind);
+    return moduleId ? getModule(moduleId) : null;
+  }
+
+  return {
+    registerModule,
+    getModule,
+    getAllModules,
+    findModuleByDocumentKind
+  };
+}
+
+==================================================
+FILE: renderer\core\projectManager.js
+==================================================
+
+import { APP_CONFIG } from '../../config/app-config.js';
+import { createDocumentLoader } from '../runtime/documentLoader.js';
+
+function joinPaths(...parts) {
+  return parts
+    .filter(Boolean)
+    .join('/')
+    .replace(/\\/g, '/')
+    .replace(/\/{2,}/g, '/');
+}
+
+function buildProjectFilePath(projectRoot) {
+  return joinPaths(projectRoot, APP_CONFIG.project.projectFileName);
+}
+
+function buildModuleDir(projectRoot, moduleFolder) {
+  return joinPaths(projectRoot, moduleFolder);
+}
+
+export function createProjectManager({
+  logger,
+  fileSystem,
+  moduleRegistry,
+  onProjectLoaded
+}) {
+  const documentLoader = createDocumentLoader({ fileSystem });
+  let currentProject = null;
+  const listeners = new Set();
+
+  function emitChange() {
+    for (const listener of listeners) {
+      listener(currentProject);
+    }
+  }
+
+  function subscribe(listener) {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  }
+
+  async function ensureProjectStructure(projectRoot) {
+    await fileSystem.ensureDir(projectRoot);
+    await fileSystem.ensureDir(buildModuleDir(projectRoot, APP_CONFIG.project.folders.metagen));
+    await fileSystem.ensureDir(buildModuleDir(projectRoot, APP_CONFIG.project.folders.metalab));
+    await fileSystem.ensureDir(buildModuleDir(projectRoot, APP_CONFIG.project.folders.metaview));
+    await fileSystem.ensureDir(buildModuleDir(projectRoot, APP_CONFIG.project.folders.generated));
+
+    const projectFilePath = buildProjectFilePath(projectRoot);
+    const exists = await fileSystem.exists(projectFilePath);
+
+    if (!exists) {
+      await documentLoader.saveYaml(projectFilePath, {
+        kind: APP_CONFIG.project.projectKinds.root,
+        version: 1,
+        project: {
+          id: 'demo_feedmill',
+          name: 'Demo Feedmill',
+          description: 'Demo project for MetaPlatform'
+        },
+        modules: ['MetaGen', 'MetaLab', 'MetaView'],
+        paths: {
+          metagen: APP_CONFIG.project.folders.metagen,
+          metalab: APP_CONFIG.project.folders.metalab,
+          metaview: APP_CONFIG.project.folders.metaview,
+          generated: APP_CONFIG.project.folders.generated
+        }
+      });
+    }
+  }
+
+  async function scanModuleDocuments(projectRoot, moduleFolder, moduleId) {
+    const dir = buildModuleDir(projectRoot, moduleFolder);
+    const paths = await fileSystem.listFiles(dir, APP_CONFIG.project.fileExtensions.yaml);
+    const output = [];
+
+    for (const filePath of paths) {
+      try {
+        const loaded = await documentLoader.loadYaml(filePath);
+
+        if (!loaded.data || typeof loaded.data !== 'object') {
+          logger.warn('project', 'Пропущен пустой документ', { path: filePath });
+          continue;
+        }
+
+        const module = moduleRegistry.findModuleByDocumentKind(loaded.data.kind);
+
+        if (!module) {
+          logger.warn('project', 'Пропущен документ с неизвестным kind', {
+            path: filePath,
+            kind: loaded.data.kind
+          });
+          continue;
+        }
+
+        if (module.id !== moduleId) {
+          continue;
+        }
+
+        output.push({
+          moduleId,
+          path: filePath,
+          document: loaded.data
+        });
+      } catch (error) {
+        logger.warn('project', 'Ошибка чтения документа, файл пропущен', {
+          path: filePath,
+          message: error?.message || String(error)
+        });
+      }
+    }
+
+    output.sort((a, b) =>
+      String(a.document?.component?.name || a.document?.name || '')
+        .localeCompare(String(b.document?.component?.name || b.document?.name || ''))
+    );
+
+    return output;
+  }
+
+  async function openProject(projectRoot) {
+    await ensureProjectStructure(projectRoot);
+
+    const projectFilePath = buildProjectFilePath(projectRoot);
+    const projectFile = await documentLoader.loadYaml(projectFilePath);
+
+    currentProject = {
+      rootPath: projectRoot,
+      projectFilePath,
+      project: projectFile.data.project,
+      raw: projectFile.data,
+      documents: {
+        metagen: await scanModuleDocuments(projectRoot, APP_CONFIG.project.folders.metagen, 'metagen'),
+        metalab: await scanModuleDocuments(projectRoot, APP_CONFIG.project.folders.metalab, 'metalab'),
+        metaview: await scanModuleDocuments(projectRoot, APP_CONFIG.project.folders.metaview, 'metaview')
+      }
+    };
+
+    if (typeof onProjectLoaded === 'function') {
+      onProjectLoaded({ projectRuntime: currentProject });
+    }
+
+    emitChange();
+    return currentProject;
+  }
+
+  async function refresh() {
+    if (!currentProject) {
+      return null;
+    }
+
+    currentProject.documents.metagen = await scanModuleDocuments(
+      currentProject.rootPath,
+      APP_CONFIG.project.folders.metagen,
+      'metagen'
+    );
+
+    currentProject.documents.metalab = await scanModuleDocuments(
+      currentProject.rootPath,
+      APP_CONFIG.project.folders.metalab,
+      'metalab'
+    );
+
+    currentProject.documents.metaview = await scanModuleDocuments(
+      currentProject.rootPath,
+      APP_CONFIG.project.folders.metaview,
+      'metaview'
+    );
+
+    emitChange();
+    return currentProject;
+  }
+
+  async function createDocument(moduleId, name) {
+    if (!currentProject) {
+      throw new Error('Project is not opened');
+    }
+
+    const module = moduleRegistry.getModule(moduleId);
+
+    if (!module) {
+      throw new Error(`Module not found: ${moduleId}`);
+    }
+
+    const document = module.createDefaultDocument({ name });
+    const fileName = module.getFileName(document);
+
+    const folderMap = {
+      metagen: APP_CONFIG.project.folders.metagen,
+      metalab: APP_CONFIG.project.folders.metalab,
+      metaview: APP_CONFIG.project.folders.metaview
+    };
+
+    const fullPath = joinPaths(currentProject.rootPath, folderMap[moduleId], fileName);
+
+    await documentLoader.saveYaml(fullPath, document);
+    logger.info('project', 'Создан документ', { moduleId, path: fullPath, name });
+
+    await refresh();
+    return getDocumentByPath(fullPath);
+  }
+
+  function getDocumentByPath(targetPath) {
+    if (!currentProject) {
+      return null;
+    }
+
+    const allDocuments = [
+      ...currentProject.documents.metagen,
+      ...currentProject.documents.metalab,
+      ...currentProject.documents.metaview
+    ];
+
+    return allDocuments.find((entry) => entry.path === targetPath) || null;
+  }
+
+  async function saveDocument(documentRecord) {
+    if (!documentRecord?.path || !documentRecord?.document) {
+      throw new Error('Invalid document record');
+    }
+
+    await documentLoader.saveYaml(documentRecord.path, documentRecord.document);
+    logger.info('project', 'Документ сохранён', { path: documentRecord.path });
+    await refresh();
+    return true;
+  }
+
+  return {
+    openProject,
+    refresh,
+    subscribe,
+    getCurrentProject: () => currentProject,
+    getMetaGenDocuments: () => currentProject?.documents?.metagen || [],
+    getDocumentByPath,
+    createDocument,
+    saveDocument
+  };
+}
+
+==================================================
+FILE: renderer\editors\metagen\createMetaGenEditor.js
+==================================================
+
+import { APP_CONFIG } from '../../../config/app-config.js';
+import { METAGEN_CONFIG } from '../../modules/metagen/metagenConfig.js';
+import { clearMountElement } from '../shared/editorHost.js';
+
+function createElement(tagName, classNames = []) {
+  const node = document.createElement(tagName);
+  classNames.forEach((className) => node.classList.add(className));
+  return node;
+}
+
+function buildEditor(documentRecord) {
+  const root = createElement('div', [APP_CONFIG.ui.classNames.editorRoot]);
+  const grid = createElement('div', [APP_CONFIG.ui.classNames.editorGrid]);
+
+  const paramsPanel = createElement('div', [APP_CONFIG.ui.classNames.editorPanel]);
+  const codePanel = createElement('div', [APP_CONFIG.ui.classNames.editorPanel]);
+  const dataPanel = createElement('div', [APP_CONFIG.ui.classNames.editorPanel]);
+
+  const paramsHeader = createElement('div', [APP_CONFIG.ui.classNames.editorPanelHeader]);
+  const codeHeader = createElement('div', [APP_CONFIG.ui.classNames.editorPanelHeader]);
+  const dataHeader = createElement('div', [APP_CONFIG.ui.classNames.editorPanelHeader]);
+
+  paramsHeader.textContent = APP_CONFIG.ui.panelHeaders.params;
+  codeHeader.textContent = APP_CONFIG.ui.panelHeaders.code;
+  dataHeader.textContent = APP_CONFIG.ui.panelHeaders.data;
+
+  const paramsTextarea = createElement('textarea', [APP_CONFIG.ui.classNames.editorTextarea]);
+  const codeTextarea = createElement('textarea', [APP_CONFIG.ui.classNames.editorTextarea]);
+  const dataTextarea = createElement('textarea', [APP_CONFIG.ui.classNames.editorTextarea]);
+
+  paramsTextarea.value = JSON.stringify(documentRecord.document?.params || {}, null, 2);
+  dataTextarea.value = JSON.stringify(documentRecord.document?.data || {}, null, 2);
+  codeTextarea.value = documentRecord.document?.code?.text || '';
+
+  paramsPanel.appendChild(paramsHeader);
+  paramsPanel.appendChild(paramsTextarea);
+
+  codePanel.appendChild(codeHeader);
+  codePanel.appendChild(codeTextarea);
+
+  dataPanel.appendChild(dataHeader);
+  dataPanel.appendChild(dataTextarea);
+
+  grid.appendChild(paramsPanel);
+  grid.appendChild(codePanel);
+  grid.appendChild(dataPanel);
+  root.appendChild(grid);
+
+  return {
+    root,
+    paramsTextarea,
+    dataTextarea,
+    codeTextarea
+  };
+}
+
+export async function createMetaGenEditor({
+  documentRecord,
+  mountElement,
+  onSave
+}) {
+  clearMountElement(mountElement);
+
+  const { root, paramsTextarea, dataTextarea, codeTextarea } = buildEditor(documentRecord);
+  mountElement.appendChild(root);
+
+  function extractValue() {
+    documentRecord.document.params = JSON.parse(paramsTextarea.value || '{}');
+    documentRecord.document.data = JSON.parse(dataTextarea.value || '{}');
+    documentRecord.document.code.text = codeTextarea.value;
+    return documentRecord;
+  }
+
+  async function trySave() {
+    try {
+      const nextRecord = extractValue();
+      await onSave(nextRecord);
+    } catch (error) {
+      window.alert(`Ошибка сохранения: ${error?.message || String(error)}`);
+    }
+  }
+
+  function bindSaveShortcut(textarea) {
+    textarea.addEventListener('keydown', async (event) => {
+      if (event.ctrlKey && event.key.toLowerCase() === METAGEN_CONFIG.editor.saveShortcutKey) {
+        event.preventDefault();
+        await trySave();
+      }
+    });
+  }
+
+  bindSaveShortcut(paramsTextarea);
+  bindSaveShortcut(dataTextarea);
+  bindSaveShortcut(codeTextarea);
+
+  return {
+    dispose() {
+      clearMountElement(mountElement);
+    }
+  };
+}
+
+==================================================
+FILE: renderer\editors\metalab\createMetaLabEditor.js
+==================================================
+
+export async function createMetaLabEditor() {
+  return {
+    dispose() {}
+  };
+}
+
+==================================================
+FILE: renderer\editors\metaview\createMetaViewEditor.js
+==================================================
+
+export async function createMetaViewEditor() {
+  return {
+    dispose() {}
+  };
+}
+
+==================================================
+FILE: renderer\editors\shared\editorHost.js
+==================================================
+
+export function clearMountElement(mountElement) {
+  mountElement.innerHTML = '';
+}
+
+==================================================
+FILE: renderer\modules\metagen\metagenCommands.js
+==================================================
+
+export function createMetaGenCommands() {
+  return {
+    CREATE_METAGEN_DOCUMENT: async () => {
+      throw new Error('CREATE_METAGEN_DOCUMENT будет подключена на следующем шаге');
+    },
+    GENERATE_METAGEN_CODE: async () => {
+      throw new Error('GENERATE_METAGEN_CODE будет подключена на следующем шаге');
+    },
+    VALIDATE_METAGEN_DOCUMENT: async () => {
+      throw new Error('VALIDATE_METAGEN_DOCUMENT будет подключена на следующем шаге');
+    }
+  };
+}
+
+==================================================
+FILE: renderer\modules\metagen\metagenConfig.js
+==================================================
+
+export const METAGEN_CONFIG = {
+  moduleId: 'metagen',
+  moduleName: 'MetaGen',
+
+  documentKind: 'metagen.component',
+  defaultType: 'template',
+
+  generation: {
+    defaultEngine: 'python',
+    defaultEntrypoint: 'gen_v2.py',
+    defaultMode: 'external',
+    defaultOutputLanguage: 'st'
+  },
+
+  editor: {
+    saveShortcutKey: 's'
+  },
+
+  defaults: {
+    newDocumentName: 'Новый компонент'
+  }
+};
+
+==================================================
+FILE: renderer\modules\metagen\metagenDocumentFactory.js
+==================================================
+
+import { slugifyDocumentName } from '../../runtime/naming.js';
+import { METAGEN_CONFIG } from './metagenConfig.js';
+
+export function createMetaGenDocument({ name }) {
+  const safeName = String(name || METAGEN_CONFIG.defaults.newDocumentName).trim();
+  const safeId = slugifyDocumentName(safeName) || 'new_component';
+
+  return {
+    kind: METAGEN_CONFIG.documentKind,
+    version: 1,
+    component: {
+      id: safeId,
+      name: safeName,
+      type: METAGEN_CONFIG.defaultType,
+      module: METAGEN_CONFIG.moduleName,
+      description: ''
+    },
+    params: {
+      format: 'header-plus-rows',
+      header: [],
+      rows: []
+    },
+    data: {
+      format: 'table',
+      columns: [],
+      rows: []
+    },
+    instances: {
+      format: 'list',
+      rows: []
+    },
+    code: {
+      format: 'template-text',
+      language: 'st-template',
+      text: ''
+    },
+    generation: {
+      engine: METAGEN_CONFIG.generation.defaultEngine,
+      entrypoint: METAGEN_CONFIG.generation.defaultEntrypoint,
+      mode: METAGEN_CONFIG.generation.defaultMode,
+      output: {
+        language: METAGEN_CONFIG.generation.defaultOutputLanguage,
+        fileName: `${safeId}.st`
+      }
+    },
+    meta: {
+      author: '',
+      importedFrom: '',
+      importedSheet: ''
+    }
+  };
+}
+
+==================================================
+FILE: renderer\modules\metagen\metagenGeneratorBridge.js
+==================================================
+
+export function createMetaGenGeneratorBridge() {
+  return {
+    async generate() {
+      throw new Error('MetaGen generator bridge is reserved for the next step');
+    }
+  };
+}
+
+==================================================
+FILE: renderer\modules\metagen\metagenModule.js
+==================================================
+
+import { createMetaGenDocument } from './metagenDocumentFactory.js';
+import { validateMetaGenDocument } from './metagenSchema.js';
+import { createMetaGenEditor } from '../../editors/metagen/createMetaGenEditor.js';
+import { slugifyDocumentName } from '../../runtime/naming.js';
+import { METAGEN_CONFIG } from './metagenConfig.js';
+
+export function createMetaGenModule({ logger, getProjectManager }) {
+  return {
+    id: METAGEN_CONFIG.moduleId,
+    name: METAGEN_CONFIG.moduleName,
+    documentKinds: [METAGEN_CONFIG.documentKind],
+
+    createDefaultDocument({ name }) {
+      return createMetaGenDocument({ name });
+    },
+
+    getFileName(document) {
+      return `${slugifyDocumentName(document?.component?.name || 'new_component')}.yaml`;
+    },
+
+    validate(document) {
+      return validateMetaGenDocument(document);
+    },
+
+    async openDocument({ documentRecord, mountElement }) {
+      return createMetaGenEditor({
+        documentRecord,
+        mountElement,
+        onSave: async (nextRecord) => {
+          const validation = validateMetaGenDocument(nextRecord.document);
+
+          if (!validation.isValid) {
+            logger.warn(METAGEN_CONFIG.moduleId, 'Документ MetaGen не прошёл валидацию', validation.errors);
+            throw new Error(validation.errors.join('; '));
+          }
+
+          const projectManager = getProjectManager();
+
+          if (!projectManager) {
+            throw new Error('ProjectManager is not available');
+          }
+
+          await projectManager.saveDocument(nextRecord);
+
+          logger.info(METAGEN_CONFIG.moduleId, 'Документ MetaGen сохранён', {
+            path: nextRecord.path
+          });
+
+          return true;
+        }
+      });
+    }
+  };
+}
+
+==================================================
+FILE: renderer\modules\metagen\metagenSchema.js
+==================================================
+
+import { METAGEN_CONFIG } from './metagenConfig.js';
+
+export function validateMetaGenDocument(document) {
+  const errors = [];
+
+  if (!document || document.kind !== METAGEN_CONFIG.documentKind) {
+    errors.push(`kind должен быть ${METAGEN_CONFIG.documentKind}`);
+  }
+
+  if (!document?.component?.name) {
+    errors.push('component.name обязателен');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+==================================================
+FILE: renderer\modules\metalab\metalabCommands.js
+==================================================
+
+export function createMetaLabCommands() {
+  return {
+    CREATE_SCENARIO: async () => {
+      throw new Error('CREATE_SCENARIO будет подключена на следующем шаге');
+    },
+    RUN_SCENARIO: async () => {
+      throw new Error('RUN_SCENARIO будет подключена на следующем шаге');
+    },
+    STOP_SCENARIO: async () => {
+      throw new Error('STOP_SCENARIO будет подключена на следующем шаге');
+    }
+  };
+}
+
+==================================================
+FILE: renderer\modules\metalab\metalabConfig.js
+==================================================
+
+export const METALAB_CONFIG = {
+  moduleId: 'metalab',
+  moduleName: 'MetaLab',
+  documentKind: 'metalab.scenario'
+};
+
+==================================================
+FILE: renderer\modules\metalab\metalabDocumentFactory.js
+==================================================
+
+import { METALAB_CONFIG } from './metalabConfig.js';
+
+export function createMetaLabDocument() {
+  return {
+    kind: METALAB_CONFIG.documentKind,
+    version: 1
+  };
+}
+
+==================================================
+FILE: renderer\modules\metalab\metalabModule.js
+==================================================
+
+import { METALAB_CONFIG } from './metalabConfig.js';
+import { createMetaLabDocument } from './metalabDocumentFactory.js';
+
+export function createMetaLabModule() {
+  return {
+    id: METALAB_CONFIG.moduleId,
+    name: METALAB_CONFIG.moduleName,
+    documentKinds: [METALAB_CONFIG.documentKind],
+
+    createDefaultDocument() {
+      return createMetaLabDocument();
+    },
+
+    getFileName() {
+      return 'new_scenario.yaml';
+    },
+
+    async openDocument() {
+      return {
+        dispose() {}
+      };
+    }
+  };
+}
+
+==================================================
+FILE: renderer\modules\metaview\metaviewCommands.js
+==================================================
+
+export function createMetaViewCommands() {
+  return {
+    CREATE_SCREEN: async () => {
+      throw new Error('CREATE_SCREEN будет подключена на следующем шаге');
+    }
+  };
+}
+
+==================================================
+FILE: renderer\modules\metaview\metaviewConfig.js
+==================================================
+
+export const METAVIEW_CONFIG = {
+  moduleId: 'metaview',
+  moduleName: 'MetaView',
+  documentKind: 'metaview.screen'
+};
+
+==================================================
+FILE: renderer\modules\metaview\metaviewDocumentFactory.js
+==================================================
+
+import { METAVIEW_CONFIG } from './metaviewConfig.js';
+
+export function createMetaViewDocument() {
+  return {
+    kind: METAVIEW_CONFIG.documentKind,
+    version: 1
+  };
+}
+
+==================================================
+FILE: renderer\modules\metaview\metaviewModule.js
+==================================================
+
+import { METAVIEW_CONFIG } from './metaviewConfig.js';
+import { createMetaViewDocument } from './metaviewDocumentFactory.js';
+
+export function createMetaViewModule() {
+  return {
+    id: METAVIEW_CONFIG.moduleId,
+    name: METAVIEW_CONFIG.moduleName,
+    documentKinds: [METAVIEW_CONFIG.documentKind],
+
+    createDefaultDocument() {
+      return createMetaViewDocument();
+    },
+
+    getFileName() {
+      return 'new_screen.yaml';
+    },
+
+    async openDocument() {
+      return {
+        dispose() {}
+      };
+    }
+  };
+}
+
+==================================================
+FILE: renderer\runtime\documentLoader.js
+==================================================
+
+import YAML from 'yaml';
+
+export function createDocumentLoader({ fileSystem }) {
+  return {
+    async loadYaml(targetPath) {
+      const text = await fileSystem.readText(targetPath);
+      return {
+        rawText: text,
+        data: YAML.parse(text)
+      };
+    },
+
+    async saveYaml(targetPath, value) {
+      const text = YAML.stringify(value);
+      await fileSystem.writeText(targetPath, text);
+      return text;
+    }
+  };
+}
+
+==================================================
+FILE: renderer\runtime\fileSystemBridge.js
+==================================================
+
+export function createFileSystemBridge() {
+  const api = window.MetaPlatformFS;
+
+  if (!api) {
+    throw new Error('MetaPlatformFS bridge is not available');
+  }
+
+  return {
+    getDefaultProjectRoot: () => api.getDefaultProjectRoot(),
+    ensureDir: (targetPath) => api.ensureDir(targetPath),
+    exists: (targetPath) => api.exists(targetPath),
+    readText: (targetPath) => api.readText(targetPath),
+    writeText: (targetPath, text) => api.writeText(targetPath, text),
+    rename: (fromPath, toPath) => api.rename(fromPath, toPath),
+    deleteFile: (targetPath) => api.deleteFile(targetPath),
+    listFiles: (targetDir, extensions = []) => api.listFiles(targetDir, extensions)
+  };
+}
+
+==================================================
+FILE: renderer\runtime\naming.js
+==================================================
+
+export function slugifyDocumentName(name) {
+  return String(name ?? '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^\w\-А-Яа-яЁё]/g, '')
+    .toLowerCase();
+}
+
+==================================================
+FILE: renderer\tables\createDataSheet.js
+==================================================
+
+export async function createDataSheetInstance() {
+  return null;
+}
+
+==================================================
+FILE: renderer\tables\createParamsSheet.js
+==================================================
+
+export function createParamsSheetInstance() {
+  return null;
+}
+
+==================================================
+FILE: renderer\tables\createSimpleSheet.js
+==================================================
+
+export function createSimpleSheetInstance() {
+  return null;
+}
+
+==================================================
+FILE: renderer\tables\paramsTableAutoStyle.js
+==================================================
+
+export function createParamsTableAutoStyleController() {
+  return null;
+}
+
+==================================================
+FILE: renderer\ui\applyStaticText.js
+==================================================
+
+import { APP_CONFIG } from '../../config/app-config.js';
+
+export function applyStaticText() {
+  const titleNode = document.querySelector(APP_CONFIG.ui.dom.titleSelector);
+  const topPanelTitleNode = document.querySelector(APP_CONFIG.ui.dom.topPanelTitleSelector);
+  const logsHeaderNode = document.querySelector(APP_CONFIG.ui.dom.logsPanelHeaderSelector);
+
+  if (titleNode) {
+    titleNode.textContent = APP_CONFIG.platform.app.title;
+  }
+
+  if (topPanelTitleNode) {
+    topPanelTitleNode.textContent = APP_CONFIG.platform.app.topPanelTitle;
+  }
+
+  if (logsHeaderNode) {
+    logsHeaderNode.textContent = APP_CONFIG.ui.panelHeaders.logs;
+  }
+}
+
+==================================================
+FILE: renderer\ui\createProjectTree.js
+==================================================
+
+import { APP_CONFIG } from '../../config/app-config.js';
+
+function createElement(tagName, classNames = []) {
+  const node = document.createElement(tagName);
+  classNames.forEach((className) => node.classList.add(className));
+  return node;
+}
+
+export function createProjectTree({
+  logger,
+  projectManager,
+  tabs
+}) {
+  const treeRoot = document.getElementById(APP_CONFIG.ui.dom.projectTreeId);
+
+  async function render() {
+    const project = projectManager.getCurrentProject();
+
+    if (!project) {
+      treeRoot.innerHTML = '';
+      return;
+    }
+
+    treeRoot.innerHTML = '';
+
+    const projectNode = createElement('div', [APP_CONFIG.ui.classNames.projectNode]);
+    projectNode.textContent = project.project.name;
+    treeRoot.appendChild(projectNode);
+
+    const metagenSection = createElement('div');
+    const header = createElement('div', ['tree-section-header']);
+    header.textContent = APP_CONFIG.ui.text.metaGenSectionTitle;
+
+    const addButton = createElement('button', ['tree-add-button']);
+    addButton.type = 'button';
+    addButton.textContent = APP_CONFIG.ui.text.addButtonLabel;
+    addButton.addEventListener('click', async () => {
+      const nextName = window.prompt(
+        'Имя документа MetaGen',
+        APP_CONFIG.ui.text.defaultMetaGenDocumentName
+      );
+
+      if (!nextName) {
+        return;
+      }
+
+      const created = await projectManager.createDocument('metagen', nextName);
+
+      if (created) {
+        await tabs.openDocument(created);
+      }
+    });
+
+    header.appendChild(addButton);
+    metagenSection.appendChild(header);
+
+    for (const documentRecord of projectManager.getMetaGenDocuments()) {
+      const item = createElement('div', [APP_CONFIG.ui.classNames.treeItem]);
+      const label = createElement('button', [APP_CONFIG.ui.classNames.treeItemLabel]);
+      label.type = 'button';
+      label.textContent =
+        documentRecord.document?.component?.name || APP_CONFIG.ui.text.untitled;
+
+      label.addEventListener('click', async () => {
+        await tabs.openDocument(documentRecord);
+      });
+
+      item.appendChild(label);
+      metagenSection.appendChild(item);
+    }
+
+    treeRoot.appendChild(metagenSection);
+    logger.info('project-tree', 'Дерево проекта обновлено');
+  }
+
+  projectManager.subscribe(() => {
+    render().catch((error) => {
+      logger.error('project-tree', 'Ошибка рендера дерева проекта', {
+        message: error?.message || String(error)
+      });
+    });
+  });
+
+  return { render };
+}
+
+==================================================
+FILE: renderer\ui\createWorkbenchTabs.js
+==================================================
+
+import { APP_CONFIG } from '../../config/app-config.js';
+
+function createElement(tagName, classNames = []) {
+  const node = document.createElement(tagName);
+  classNames.forEach((className) => node.classList.add(className));
+  return node;
+}
+
+export function createWorkbenchTabs({ logger, moduleRegistry, openEditor }) {
+  const tabsList = document.getElementById(APP_CONFIG.ui.dom.tabsListId);
+  const editorHost = document.getElementById(APP_CONFIG.ui.dom.editorHostId);
+  const tabs = new Map();
+
+  function activateTab(tabId) {
+    for (const entry of tabs.values()) {
+      entry.tabNode.classList.toggle(APP_CONFIG.ui.classNames.tabActive, entry.tabId === tabId);
+      entry.pageNode.classList.toggle(APP_CONFIG.ui.classNames.pageActive, entry.tabId === tabId);
+    }
+  }
+
+  async function openDocument(documentRecord) {
+    const tabId = documentRecord.path;
+
+    if (tabs.has(tabId)) {
+      activateTab(tabId);
+      return tabs.get(tabId);
+    }
+
+    const tabNode = createElement('button', [APP_CONFIG.ui.classNames.tab]);
+    tabNode.type = 'button';
+    tabNode.textContent = documentRecord.document?.component?.name || APP_CONFIG.ui.text.untitled;
+
+    const pageNode = createElement('div', [APP_CONFIG.ui.classNames.page]);
+    editorHost.appendChild(pageNode);
+
+    const runtime = await openEditor({
+      documentRecord,
+      mountElement: pageNode
+    });
+
+    const entry = { tabId, tabNode, pageNode, runtime, documentRecord };
+    tabs.set(tabId, entry);
+
+    tabNode.addEventListener('click', () => activateTab(tabId));
+    tabsList.appendChild(tabNode);
+    activateTab(tabId);
+
+    logger.info('tabs', 'Открыта вкладка', { tabId });
+    return entry;
+  }
+
+  return {
+    openDocument,
+    activateTab
+  };
+}
+
+==================================================
+FILE: renderer\ui\dialogs.js
+==================================================
+
+export function showPrompt(message, defaultValue = '') {
+  return window.prompt(message, defaultValue);
+}
+
+export function showAlert(message) {
+  window.alert(message);
+}
+
+==================================================
+FILE: renderer\ui\workbenchShell.js
+==================================================
+
+import { APP_CONFIG } from '../../config/app-config.js';
+
+export function createWorkbenchShell() {
+  return {
+    projectTreeId: APP_CONFIG.ui.dom.projectTreeId,
+    tabsListId: APP_CONFIG.ui.dom.tabsListId,
+    editorHostId: APP_CONFIG.ui.dom.editorHostId
+  };
+}
+
+==================================================
+FILE: package.json
+==================================================
+
+{
+  "name": "metaplatform",
+  "version": "1.0.0",
+  "description": "MetaPlatform v1",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "split.js": "^1.6.5",
+    "yaml": "^2.5.1"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "vite": "^5.0.0"
+  }
+}
+
+==================================================
+FILE: renderer\index.html
+==================================================
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title></title>
+  <link rel="stylesheet" href="/styles/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="top-panel">
+      <div class="top-panel-left">
+        <span id="top-panel-title"></span>
+        <span class="project-title" id="project-title"></span>
+      </div>
+    </div>
+
+    <div class="main-layout">
+      <div class="project-tree-container">
+        <div class="side-header">📁 Проект</div>
+        <div id="project-tree" class="project-tree"></div>
+      </div>
+
+      <div class="workspace-container">
+        <div class="tabs-bar">
+          <div class="tabs-list" id="tabs-list"></div>
+        </div>
+        <div class="editor-host" id="editor-host"></div>
+      </div>
+    </div>
+
+    <div class="bottom-panel">
+      <div class="bottom-panel-header" id="bottom-panel-header"></div>
+      <div class="bottom-panel-content" id="log-output"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
+
+==================================================
+FILE: renderer\styles\styles.css
+==================================================
+
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --border: #dfe3e8;
+  --text: #1f2328;
+  --muted: #667085;
+  --header: #f0f2f5;
+  --tab: #eef2f6;
+  --active: #ffffff;
+  --shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+}
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+#app {
+  display: grid;
+  grid-template-rows: 48px 1fr 220px;
+  height: 100%;
+}
+
+.top-panel {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.top-panel-left {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.project-title {
+  color: var(--muted);
+}
+
+.main-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 0;
+}
+
+.project-tree-container {
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.side-header {
+  padding: 10px 12px;
+  font-weight: 600;
+  background: var(--header);
+  border-bottom: 1px solid var(--border);
+}
+
+.project-tree {
+  overflow: auto;
+  padding: 12px;
+}
+
+.project-node {
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.tree-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 12px 0 8px;
+  font-weight: 600;
+}
+
+.tree-add-button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+}
+
+.tree-item {
+  margin-bottom: 6px;
+}
+
+.tree-item-label {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: #fafafa;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.workspace-container {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 42px 1fr;
+}
+
+.tabs-bar {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tabs-list {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  overflow-x: auto;
+}
+
+.workbench-tab {
+  border: 1px solid var(--border);
+  background: var(--tab);
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.workbench-tab.is-active {
+  background: var(--active);
+  font-weight: 600;
+}
+
+.editor-host {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg);
+}
+
+.workbench-page {
+  display: none;
+  height: 100%;
+}
+
+.workbench-page.is-active {
+  display: block;
+}
+
+.metagen-editor {
+  height: 100%;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.metagen-editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  height: 100%;
+}
+
+.metagen-editor-panel {
+  display: grid;
+  grid-template-rows: 40px 1fr;
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.metagen-editor-panel-header {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--header);
+  font-weight: 600;
+}
+
+.metagen-editor-textarea {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  resize: none;
+  outline: none;
+  padding: 12px;
+  box-sizing: border-box;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 13px;
+}
+
+.bottom-panel {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  display: grid;
+  grid-template-rows: 36px 1fr;
+  min-height: 0;
+}
+
+.bottom-panel-header {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: var(--header);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.bottom-panel-content {
+  overflow: auto;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: Consolas, Monaco, monospace;
+}
+
+.log-entry {
+  margin-bottom: 8px;
+}
+
+.log-line {
+  white-space: pre-wrap;
+}
+
+.log-details {
+  white-space: pre-wrap;
+  color: var(--muted);
+}
+
+==================================================
+FILE: project-examples\demo-feedmill\project.yaml
+==================================================
+
+kind: metaplatform.project
+version: 1
+
+project:
+  id: demo_feedmill
+  name: Demo Feedmill
+  description: Demo project for MetaPlatform
+
+modules:
+  - MetaGen
+  - MetaLab
+  - MetaView
+
+paths:
+  metagen: metagen
+  metalab: metalab
+  metaview: metaview
+  generated: generated
+
+==================================================
+FILE: project-examples\demo-feedmill\metagen\conveyors.yaml
+==================================================
+
+kind: metagen.component
+version: 1
+
+component:
+  id: conveyors
+  name: Conveyors
+  type: template
+  module: MetaGen
+  description: Demo Conveyors document
+
+params:
+  format: header-plus-rows
+  header: []
+  rows: []
+
+data:
+  format: table
+  columns: []
+  rows: []
+
+instances:
+  format: list
+  rows: []
+
+code:
+  format: template-text
+  language: st-template
+  text: |
+    // Demo Conveyors template
+
+generation:
+  engine: python
+  entrypoint: gen_v2.py
+  mode: external
+  output:
+    language: st
+    fileName: conveyors.st
+
+==================================================
+FILE: project-examples\demo-feedmill\metagen\pumps.yaml
+==================================================
+
+
+
+==================================================
+FILE: project-examples\demo-feedmill\metagen\valves.yaml
+==================================================
+
+kind: metagen.component
+version: 1
+
+component:
+  id: valves
+  name: Valves
+  type: template
+  module: MetaGen
+  description: Demo Valves document
+
+params:
+  format: header-plus-rows
+  header: []
+  rows: []
+
+data:
+  format: table
+  columns: []
+  rows: []
+
+instances:
+  format: list
+  rows: []
+
+code:
+  format: template-text
+  language: st-template
+  text: |
+    // Demo Valves template
+
+generation:
+  engine: python
+  entrypoint: gen_v2.py
+  mode: external
+  output:
+    language: st
+    fileName: valves.st
+
+==================================================
+FILE: project-examples\demo-feedmill\metalab\startup_scenario.yaml
+==================================================
+
+kind: metalab.scenario
+version: 1
+
+==================================================
+FILE: project-examples\demo-feedmill\metaview\main_screen.yaml
+==================================================
+
+kind: metaview.screen
+version: 1
+
+==================================================
+FILE: create_project_structure.bat
+==================================================
+
+@echo off
+chcp 65001 >nul
+setlocal EnableDelayedExpansion
+
+echo ============================================================
+echo Creating MetaPlatform v1 project structure
+echo Existing files will NOT be overwritten
+echo ============================================================
+echo.
+
+REM ============================================================
+REM Root
+REM ============================================================
+if not exist "config" mkdir "config"
+if not exist "renderer" mkdir "renderer"
+if not exist "project-examples" mkdir "project-examples"
+
+if not exist "main.js" type nul > "main.js"
+if not exist "preload.js" type nul > "preload.js"
+if not exist "package.json" type nul > "package.json"
+if not exist "vite.config.js" type nul > "vite.config.js"
+
+REM ============================================================
+REM Config
+REM ============================================================
+if not exist "config\app-config.js" type nul > "config\app-config.js"
+if not exist "config\platform-config.js" type nul > "config\platform-config.js"
+if not exist "config\project-config.js" type nul > "config\project-config.js"
+if not exist "config\ui-config.js" type nul > "config\ui-config.js"
+
+REM ============================================================
+REM Renderer root
+REM ============================================================
+if not exist "renderer\index.html" type nul > "renderer\index.html"
+if not exist "renderer\app.js" type nul > "renderer\app.js"
+
+REM ============================================================
+REM Core
+REM ============================================================
+if not exist "renderer\core" mkdir "renderer\core"
+if not exist "renderer\core\logger.js" type nul > "renderer\core\logger.js"
+if not exist "renderer\core\layout.js" type nul > "renderer\core\layout.js"
+if not exist "renderer\core\commandBus.js" type nul > "renderer\core\commandBus.js"
+if not exist "renderer\core\moduleRegistry.js" type nul > "renderer\core\moduleRegistry.js"
+if not exist "renderer\core\projectManager.js" type nul > "renderer\core\projectManager.js"
+if not exist "renderer\core\platformCommands.js" type nul > "renderer\core\platformCommands.js"
+
+REM ============================================================
+REM Runtime
+REM ============================================================
+if not exist "renderer\runtime" mkdir "renderer\runtime"
+if not exist "renderer\runtime\naming.js" type nul > "renderer\runtime\naming.js"
+if not exist "renderer\runtime\fileSystemBridge.js" type nul > "renderer\runtime\fileSystemBridge.js"
+if not exist "renderer\runtime\documentLoader.js" type nul > "renderer\runtime\documentLoader.js"
+
+REM ============================================================
+REM UI
+REM ============================================================
+if not exist "renderer\ui" mkdir "renderer\ui"
+if not exist "renderer\ui\applyStaticText.js" type nul > "renderer\ui\applyStaticText.js"
+if not exist "renderer\ui\createWorkbenchTabs.js" type nul > "renderer\ui\createWorkbenchTabs.js"
+if not exist "renderer\ui\createProjectTree.js" type nul > "renderer\ui\createProjectTree.js"
+if not exist "renderer\ui\workbenchShell.js" type nul > "renderer\ui\workbenchShell.js"
+if not exist "renderer\ui\dialogs.js" type nul > "renderer\ui\dialogs.js"
+
+REM ============================================================
+REM Editors
+REM ============================================================
+if not exist "renderer\editors" mkdir "renderer\editors"
+if not exist "renderer\editors\shared" mkdir "renderer\editors\shared"
+if not exist "renderer\editors\metagen" mkdir "renderer\editors\metagen"
+if not exist "renderer\editors\metalab" mkdir "renderer\editors\metalab"
+if not exist "renderer\editors\metaview" mkdir "renderer\editors\metaview"
+
+if not exist "renderer\editors\shared\editorHost.js" type nul > "renderer\editors\shared\editorHost.js"
+if not exist "renderer\editors\metagen\createMetaGenEditor.js" type nul > "renderer\editors\metagen\createMetaGenEditor.js"
+if not exist "renderer\editors\metalab\createMetaLabEditor.js" type nul > "renderer\editors\metalab\createMetaLabEditor.js"
+if not exist "renderer\editors\metaview\createMetaViewEditor.js" type nul > "renderer\editors\metaview\createMetaViewEditor.js"
+
+REM ============================================================
+REM Modules
+REM ============================================================
+if not exist "renderer\modules" mkdir "renderer\modules"
+
+REM ----- MetaGen
+if not exist "renderer\modules\metagen" mkdir "renderer\modules\metagen"
+if not exist "renderer\modules\metagen\tables" mkdir "renderer\modules\metagen\tables"
+
+if not exist "renderer\modules\metagen\metagenConfig.js" type nul > "renderer\modules\metagen\metagenConfig.js"
+if not exist "renderer\modules\metagen\metagenModule.js" type nul > "renderer\modules\metagen\metagenModule.js"
+if not exist "renderer\modules\metagen\metagenDocumentFactory.js" type nul > "renderer\modules\metagen\metagenDocumentFactory.js"
+if not exist "renderer\modules\metagen\metagenCommands.js" type nul > "renderer\modules\metagen\metagenCommands.js"
+if not exist "renderer\modules\metagen\metagenGeneratorBridge.js" type nul > "renderer\modules\metagen\metagenGeneratorBridge.js"
+if not exist "renderer\modules\metagen\metagenSchema.js" type nul > "renderer\modules\metagen\metagenSchema.js"
+if not exist "renderer\modules\metagen\tables\createMetaGenParamsSheet.js" type nul > "renderer\modules\metagen\tables\createMetaGenParamsSheet.js"
+if not exist "renderer\modules\metagen\tables\createMetaGenDataSheet.js" type nul > "renderer\modules\metagen\tables\createMetaGenDataSheet.js"
+if not exist "renderer\modules\metagen\tables\metaGenParamsTableAutoStyle.js" type nul > "renderer\modules\metagen\tables\metaGenParamsTableAutoStyle.js"
+
+REM ----- MetaLab
+if not exist "renderer\modules\metalab" mkdir "renderer\modules\metalab"
+if not exist "renderer\modules\metalab\metalabConfig.js" type nul > "renderer\modules\metalab\metalabConfig.js"
+if not exist "renderer\modules\metalab\metalabModule.js" type nul > "renderer\modules\metalab\metalabModule.js"
+if not exist "renderer\modules\metalab\metalabDocumentFactory.js" type nul > "renderer\modules\metalab\metalabDocumentFactory.js"
+if not exist "renderer\modules\metalab\metalabCommands.js" type nul > "renderer\modules\metalab\metalabCommands.js"
+
+REM ----- MetaView
+if not exist "renderer\modules\metaview" mkdir "renderer\modules\metaview"
+if not exist "renderer\modules\metaview\metaviewConfig.js" type nul > "renderer\modules\metaview\metaviewConfig.js"
+if not exist "renderer\modules\metaview\metaviewModule.js" type nul > "renderer\modules\metaview\metaviewModule.js"
+if not exist "renderer\modules\metaview\metaviewDocumentFactory.js" type nul > "renderer\modules\metaview\metaviewDocumentFactory.js"
+if not exist "renderer\modules\metaview\metaviewCommands.js" type nul > "renderer\modules\metaview\metaviewCommands.js"
+
+REM ============================================================
+REM Styles
+REM ============================================================
+if not exist "renderer\styles" mkdir "renderer\styles"
+if not exist "renderer\styles\styles.css" type nul > "renderer\styles\styles.css"
+
+REM ============================================================
+REM Demo project
+REM ============================================================
+if not exist "project-examples\demo-feedmill" mkdir "project-examples\demo-feedmill"
+if not exist "project-examples\demo-feedmill\metagen" mkdir "project-examples\demo-feedmill\metagen"
+if not exist "project-examples\demo-feedmill\metalab" mkdir "project-examples\demo-feedmill\metalab"
+if not exist "project-examples\demo-feedmill\metaview" mkdir "project-examples\demo-feedmill\metaview"
+if not exist "project-examples\demo-feedmill\generated" mkdir "project-examples\demo-feedmill\generated"
+
+REM ============================================================
+REM Demo YAML files (create only if missing)
+REM Using PowerShell because YAML is unreliable through plain ECHO
+REM ============================================================
+
+if not exist "project-examples\demo-feedmill\project.yaml" powershell -NoProfile -Command ^
+  "$p='project-examples\demo-feedmill\project.yaml';" ^
+  "$content=@'
+kind: metaplatform.project
+version: 1
+
+project:
+  id: demo_feedmill
+  name: Demo Feedmill
+  description: Demo project for MetaPlatform
+
+modules:
+  - MetaGen
+  - MetaLab
+  - MetaView
+
+paths:
+  metagen: metagen
+  metalab: metalab
+  metaview: metaview
+  generated: generated
+'@;" ^
+  "Set-Content -Path $p -Value $content -Encoding UTF8"
+
+if not exist "project-examples\demo-feedmill\metagen\pumps.yaml" powershell -NoProfile -Command ^
+  "$p='project-examples\demo-feedmill\metagen\pumps.yaml';" ^
+  "$content=@'
+kind: metagen.component
+version: 1
+
+component:
+  id: pumps
+  name: Pumps
+  type: template
+  module: MetaGen
+  description: Demo Pumps document
+
+params:
+  format: header-plus-rows
+  header: []
+  rows: []
+
+data:
+  format: table
+  columns: []
+  rows: []
+
+instances:
+  format: list
+  rows: []
+
+code:
+  format: template-text
+  language: st-template
+  text: // Demo ST template
+
+generation:
+  engine: python
+  entrypoint: gen_v2.py
+  mode: external
+  output:
+    language: st
+    fileName: pumps.st
+'@;" ^
+  "Set-Content -Path $p -Value $content -Encoding UTF8"
+
+if not exist "project-examples\demo-feedmill\metagen\valves.yaml" powershell -NoProfile -Command ^
+  "$p='project-examples\demo-feedmill\metagen\valves.yaml';" ^
+  "$content=@'
+kind: metagen.component
+version: 1
+
+component:
+  id: valves
+  name: Valves
+  type: template
+  module: MetaGen
+  description: Demo Valves document
+
+params:
+  format: header-plus-rows
+  header: []
+  rows: []
+
+data:
+  format: table
+  columns: []
+  rows: []
+
+instances:
+  format: list
+  rows: []
+
+code:
+  format: template-text
+  language: st-template
+  text: // Demo Valves template
+
+generation:
+  engine: python
+  entrypoint: gen_v2.py
+  mode: external
+  output:
+    language: st
+    fileName: valves.st
+'@;" ^
+  "Set-Content -Path $p -Value $content -Encoding UTF8"
+
+if not exist "project-examples\demo-feedmill\metagen\conveyors.yaml" powershell -NoProfile -Command ^
+  "$p='project-examples\demo-feedmill\metagen\conveyors.yaml';" ^
+  "$content=@'
+kind: metagen.component
+version: 1
+
+component:
+  id: conveyors
+  name: Conveyors
+  type: template
+  module: MetaGen
+  description: Demo Conveyors document
+
+params:
+  format: header-plus-rows
+  header: []
+  rows: []
+
+data:
+  format: table
+  columns: []
+  rows: []
+
+instances:
+  format: list
+  rows: []
+
+code:
+  format: template-text
+  language: st-template
+  text: // Demo Conveyors template
+
+generation:
+  engine: python
+  entrypoint: gen_v2.py
+  mode: external
+  output:
+    language: st
+    fileName: conveyors.st
+'@;" ^
+  "Set-Content -Path $p -Value $content -Encoding UTF8"
+
+if not exist "project-examples\demo-feedmill\metalab\startup_scenario.yaml" powershell -NoProfile -Command ^
+  "$p='project-examples\demo-feedmill\metalab\startup_scenario.yaml';" ^
+  "$content=@'
+kind: metalab.scenario
+version: 1
+'@;" ^
+  "Set-Content -Path $p -Value $content -Encoding UTF8"
+
+if not exist "project-examples\demo-feedmill\metaview\main_screen.yaml" powershell -NoProfile -Command ^
+  "$p='project-examples\demo-feedmill\metaview\main_screen.yaml';" ^
+  "$content=@'
+kind: metaview.screen
+version: 1
+'@;" ^
+  "Set-Content -Path $p -Value $content -Encoding UTF8"
+
+echo.
+echo ============================================================
+echo MetaPlatform v1 structure created
+echo Existing files preserved
+echo ============================================================
+echo.
+pause
+
+==================================================
+FILE: export_project_to_txt.bat
+==================================================
+
+@echo off
+chcp 65001 >nul
+setlocal EnableDelayedExpansion
+
+echo.
+echo ==========================================
+echo   MetaPlatform project export
+echo ==========================================
+echo.
+
+set "ROOT=%~dp0"
+if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
+
+set "OUTFILE=%ROOT%\metaplatform_project_dump.txt"
+set "TEMPFILE=%ROOT%\metaplatform_project_dump.tmp"
+
+if exist "%OUTFILE%" del "%OUTFILE%"
+if exist "%TEMPFILE%" del "%TEMPFILE%"
+
+echo ==================================================>> "%TEMPFILE%"
+echo METAPLATFORM PROJECT EXPORT>> "%TEMPFILE%"
+echo ROOT: %ROOT%>> "%TEMPFILE%"
+echo ==================================================>> "%TEMPFILE%"
+echo(>> "%TEMPFILE%"
+
+REM ============================================================
+REM Recurse from project root
+REM ============================================================
+for %%E in (js json html css md txt yml yaml xml bat cmd ps1) do (
+    for /r "%ROOT%" %%F in (*.%%E) do (
+        call :AppendFile "%%~fF"
+    )
+)
+
+move /Y "%TEMPFILE%" "%OUTFILE%" >nul
+
+echo.
+echo ==========================================
+echo Export finished
+echo File:
+echo %OUTFILE%
+echo ==========================================
+echo.
+
+pause
+exit /b
+
+:AppendFile
+set "FILE=%~1"
+
+if not exist "%FILE%" exit /b
+if /I "%FILE%"=="%OUTFILE%" exit /b
+if /I "%FILE%"=="%TEMPFILE%" exit /b
+
+echo %FILE% | findstr /I "\node_modules\" >nul
+if not errorlevel 1 exit /b
+
+echo %FILE% | findstr /I "\.git\" >nul
+if not errorlevel 1 exit /b
+
+echo %FILE% | findstr /I "\dist\" >nul
+if not errorlevel 1 exit /b
+
+echo %FILE% | findstr /I "\coverage\" >nul
+if not errorlevel 1 exit /b
+
+set "REL=%FILE%"
+set "REL=!REL:%ROOT%\=!"
+
+echo ==================================================>> "%TEMPFILE%"
+echo FILE: !REL!>> "%TEMPFILE%"
+echo ==================================================>> "%TEMPFILE%"
+echo(>> "%TEMPFILE%"
+type "%FILE%" >> "%TEMPFILE%" 2>nul
+echo(>> "%TEMPFILE%"
+echo(>> "%TEMPFILE%"
+
+exit /b
+

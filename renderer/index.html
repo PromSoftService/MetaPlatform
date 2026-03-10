@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title></title>
+  <link rel="stylesheet" href="/styles/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="top-panel">
+      <div class="top-panel-left">
+        <span id="top-panel-title"></span>
+        <span class="project-title" id="project-title"></span>
+      </div>
+    </div>
+
+    <div class="main-layout">
+      <div class="project-tree-container">
+        <div class="side-header">📁 Проект</div>
+        <div id="project-tree" class="project-tree"></div>
+      </div>
+
+      <div class="workspace-container">
+        <div class="tabs-bar">
+          <div class="tabs-list" id="tabs-list"></div>
+        </div>
+        <div class="editor-host" id="editor-host"></div>
+      </div>
+    </div>
+
+    <div class="bottom-panel">
+      <div class="bottom-panel-header" id="bottom-panel-header"></div>
+      <div class="bottom-panel-content" id="log-output"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

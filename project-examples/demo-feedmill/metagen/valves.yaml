@@ -1,0 +1,37 @@
+kind: metagen.component
+version: 1
+
+component:
+  id: valves
+  name: Valves
+  type: template
+  module: MetaGen
+  description: Demo Valves document
+
+params:
+  format: header-plus-rows
+  header: []
+  rows: []
+
+data:
+  format: table
+  columns: []
+  rows: []
+
+instances:
+  format: list
+  rows: []
+
+code:
+  format: template-text
+  language: st-template
+  text: |
+    // Demo Valves template
+
+generation:
+  engine: python
+  entrypoint: gen_v2.py
+  mode: external
+  output:
+    language: st
+    fileName: valves.st
