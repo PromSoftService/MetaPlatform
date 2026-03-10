@@ -1,7 +1,9 @@
+import { METAVIEW_CONFIG } from './metaviewConfig.js';
+
 export function createMetaViewCommands() {
   return {
-    CREATE_SCREEN: async () => {
-      throw new Error('CREATE_SCREEN будет подключена на следующем шаге');
+    [METAVIEW_CONFIG.commands.createScreen]: async () => {
+      throw new Error(`${METAVIEW_CONFIG.commands.createScreen} будет подключена на следующем шаге`);
     }
   };
 }

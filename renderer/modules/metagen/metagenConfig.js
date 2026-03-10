@@ -5,6 +5,12 @@ export const METAGEN_CONFIG = {
   documentKind: 'metagen.component',
   defaultType: 'template',
 
+  commands: {
+    createDocument: 'METAGEN_CREATE_DOCUMENT',
+    generateCode: 'METAGEN_GENERATE_CODE',
+    validateDocument: 'METAGEN_VALIDATE_DOCUMENT'
+  },
+
   generation: {
     defaultEngine: 'python',
     defaultEntrypoint: 'gen_v2.py',
@@ -18,5 +24,9 @@ export const METAGEN_CONFIG = {
 
   defaults: {
     newDocumentName: 'Новый компонент'
+  },
+
+  ui: {
+    createPromptTitle: 'Имя документа MetaGen'
   }
 };

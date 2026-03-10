@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('MetaPlatformFS', {
   getDefaultProjectRoot: () => ipcRenderer.invoke('fs:get-default-project-root'),

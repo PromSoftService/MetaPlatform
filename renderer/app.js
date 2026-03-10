@@ -23,23 +23,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const workbench = createWorkbenchShell();
 
   let projectManager = null;
-
   const getProjectManager = () => projectManager;
 
-  const metaGenModule = createMetaGenModule({
-    logger,
-    getProjectManager
-  });
-
-  const metaLabModule = createMetaLabModule({
-    logger,
-    getProjectManager
-  });
-
-  const metaViewModule = createMetaViewModule({
-    logger,
-    getProjectManager
-  });
+  const metaGenModule = createMetaGenModule({ logger, getProjectManager });
+  const metaLabModule = createMetaLabModule({ logger, getProjectManager });
+  const metaViewModule = createMetaViewModule({ logger, getProjectManager });
 
   moduleRegistry.registerModule(metaGenModule);
   moduleRegistry.registerModule(metaLabModule);
@@ -47,7 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const tabs = createWorkbenchTabs({
     logger,
-    moduleRegistry,
     openEditor: async ({ documentRecord, mountElement }) => {
       const module = moduleRegistry.findModuleByDocumentKind(documentRecord.document?.kind);
 
@@ -74,8 +61,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   createProjectTree({
     logger,
     projectManager,
-    tabs,
-    commandBus
+    tabs
   });
 
   logger.info(APP_CONFIG.platform.logging.defaultSource, 'Инициализация MetaPlatform...');

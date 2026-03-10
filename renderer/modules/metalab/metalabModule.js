@@ -1,5 +1,6 @@
 import { METALAB_CONFIG } from './metalabConfig.js';
 import { createMetaLabDocument } from './metalabDocumentFactory.js';
+import { createMetaLabEditor } from '../../editors/metalab/createMetaLabEditor.js';
 
 export function createMetaLabModule() {
   return {
@@ -15,10 +16,8 @@ export function createMetaLabModule() {
       return 'new_scenario.yaml';
     },
 
-    async openDocument() {
-      return {
-        dispose() {}
-      };
+    async openDocument({ documentRecord, mountElement }) {
+      return createMetaLabEditor({ documentRecord, mountElement });
     }
   };
 }

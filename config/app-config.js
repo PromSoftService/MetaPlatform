@@ -1,22 +1,9 @@
-export const PLATFORM_CONFIG = {
-  locale: 'ru-RU',
+import { PLATFORM_CONFIG } from './platform-config.js';
+import { PROJECT_CONFIG } from './project-config.js';
+import { UI_CONFIG } from './ui-config.js';
 
-  platform: {
-    mac: 'darwin'
-  },
-
-  window: {
-    width: 1600,
-    height: 980,
-    devServerUrl: 'http://127.0.0.1:5173/'
-  },
-
-  app: {
-    title: 'MetaPlatform',
-    topPanelTitle: '⚡ MetaPlatform'
-  },
-
-  logging: {
-    defaultSource: 'app'
-  }
+export const APP_CONFIG = {
+  platform: PLATFORM_CONFIG,
+  project: PROJECT_CONFIG,
+  ui: UI_CONFIG
 };

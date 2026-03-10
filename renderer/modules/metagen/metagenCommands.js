@@ -1,13 +1,17 @@
+import { METAGEN_CONFIG } from './metagenConfig.js';
+
 export function createMetaGenCommands() {
   return {
-    CREATE_METAGEN_DOCUMENT: async () => {
-      throw new Error('CREATE_METAGEN_DOCUMENT будет подключена на следующем шаге');
+    [METAGEN_CONFIG.commands.createDocument]: async () => {
+      throw new Error(`${METAGEN_CONFIG.commands.createDocument} будет подключена на следующем шаге`);
     },
-    GENERATE_METAGEN_CODE: async () => {
-      throw new Error('GENERATE_METAGEN_CODE будет подключена на следующем шаге');
+
+    [METAGEN_CONFIG.commands.generateCode]: async () => {
+      throw new Error(`${METAGEN_CONFIG.commands.generateCode} будет подключена на следующем шаге`);
     },
-    VALIDATE_METAGEN_DOCUMENT: async () => {
-      throw new Error('VALIDATE_METAGEN_DOCUMENT будет подключена на следующем шаге');
+
+    [METAGEN_CONFIG.commands.validateDocument]: async () => {
+      throw new Error(`${METAGEN_CONFIG.commands.validateDocument} будет подключена на следующем шаге`);
     }
   };
 }

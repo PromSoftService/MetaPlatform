@@ -23,9 +23,6 @@ echo ROOT: %ROOT%>> "%TEMPFILE%"
 echo ==================================================>> "%TEMPFILE%"
 echo(>> "%TEMPFILE%"
 
-REM ============================================================
-REM Recurse from project root
-REM ============================================================
 for %%E in (js json html css md txt yml yaml xml bat cmd ps1) do (
     for /r "%ROOT%" %%F in (*.%%E) do (
         call :AppendFile "%%~fF"

@@ -113,7 +113,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== APP_CONFIG.platform.platform.mac) {
+  if (process.platform !== APP_CONFIG.platform.runtime.mac) {
     app.quit();
   }
 });
@@ -154,10 +154,24 @@ export default defineConfig({
 FILE: config\app-config.js
 ==================================================
 
+import { PLATFORM_CONFIG } from './platform-config.js';
+import { PROJECT_CONFIG } from './project-config.js';
+import { UI_CONFIG } from './ui-config.js';
+
+export const APP_CONFIG = {
+  platform: PLATFORM_CONFIG,
+  project: PROJECT_CONFIG,
+  ui: UI_CONFIG
+};
+
+==================================================
+FILE: config\platform-config.js
+==================================================
+
 export const PLATFORM_CONFIG = {
   locale: 'ru-RU',
 
-  platform: {
+  runtime: {
     mac: 'darwin'
   },
 
@@ -176,12 +190,6 @@ export const PLATFORM_CONFIG = {
     defaultSource: 'app'
   }
 };
-
-==================================================
-FILE: config\platform-config.js
-==================================================
-
-
 
 ==================================================
 FILE: config\project-config.js
@@ -216,6 +224,7 @@ export const UI_CONFIG = {
     titleSelector: 'title',
     topPanelTitleSelector: '#top-panel-title',
     projectTitleSelector: '#project-title',
+    projectPanelTitleSelector: '#project-panel-title',
     logsPanelHeaderSelector: '#bottom-panel-header',
     tabsListId: 'tabs-list',
     editorHostId: 'editor-host',
@@ -240,17 +249,14 @@ export const UI_CONFIG = {
 
   panelHeaders: {
     logs: '📋 Логи',
+    project: '📁 Проект',
     params: '📊 Параметры',
     data: '📈 Данные',
-    code: '📝 Шаблон ST',
-    project: '📁 Проект'
+    code: '📝 Шаблон ST'
   },
 
   text: {
-    metaGenSectionTitle: 'MetaGen',
-    addButtonLabel: '+',
-    untitled: 'Без имени',
-    defaultMetaGenDocumentName: 'Новый компонент'
+    untitled: 'Без имени'
   }
 };
 
@@ -283,23 +289,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const workbench = createWorkbenchShell();
 
   let projectManager = null;
-
   const getProjectManager = () => projectManager;
 
-  const metaGenModule = createMetaGenModule({
-    logger,
-    getProjectManager
-  });
-
-  const metaLabModule = createMetaLabModule({
-    logger,
-    getProjectManager
-  });
-
-  const metaViewModule = createMetaViewModule({
-    logger,
-    getProjectManager
-  });
+  const metaGenModule = createMetaGenModule({ logger, getProjectManager });
+  const metaLabModule = createMetaLabModule({ logger, getProjectManager });
+  const metaViewModule = createMetaViewModule({ logger, getProjectManager });
 
   moduleRegistry.registerModule(metaGenModule);
   moduleRegistry.registerModule(metaLabModule);
@@ -307,7 +301,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const tabs = createWorkbenchTabs({
     logger,
-    moduleRegistry,
     openEditor: async ({ documentRecord, mountElement }) => {
       const module = moduleRegistry.findModuleByDocumentKind(documentRecord.document?.kind);
 
@@ -334,8 +327,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   createProjectTree({
     logger,
     projectManager,
-    tabs,
-    commandBus
+    tabs
   });
 
   logger.info(APP_CONFIG.platform.logging.defaultSource, 'Инициализация MetaPlatform...');
@@ -511,6 +503,23 @@ export function createModuleRegistry({ logger }) {
     findModuleByDocumentKind
   };
 }
+
+==================================================
+FILE: renderer\core\platformCommands.js
+==================================================
+
+export const PLATFORM_COMMANDS = {
+  createProject: 'PLATFORM_CREATE_PROJECT',
+  openProject: 'PLATFORM_OPEN_PROJECT',
+  saveProject: 'PLATFORM_SAVE_PROJECT',
+  closeProject: 'PLATFORM_CLOSE_PROJECT',
+  openDocument: 'PLATFORM_OPEN_DOCUMENT',
+  saveDocument: 'PLATFORM_SAVE_DOCUMENT',
+  renameDocument: 'PLATFORM_RENAME_DOCUMENT',
+  deleteDocument: 'PLATFORM_DELETE_DOCUMENT',
+  activateTab: 'PLATFORM_ACTIVATE_TAB',
+  closeTab: 'PLATFORM_CLOSE_TAB'
+};
 
 ==================================================
 FILE: renderer\core\projectManager.js
@@ -892,16 +901,20 @@ export function clearMountElement(mountElement) {
 FILE: renderer\modules\metagen\metagenCommands.js
 ==================================================
 
+import { METAGEN_CONFIG } from './metagenConfig.js';
+
 export function createMetaGenCommands() {
   return {
-    CREATE_METAGEN_DOCUMENT: async () => {
-      throw new Error('CREATE_METAGEN_DOCUMENT будет подключена на следующем шаге');
+    [METAGEN_CONFIG.commands.createDocument]: async () => {
+      throw new Error(`${METAGEN_CONFIG.commands.createDocument} будет подключена на следующем шаге`);
     },
-    GENERATE_METAGEN_CODE: async () => {
-      throw new Error('GENERATE_METAGEN_CODE будет подключена на следующем шаге');
+
+    [METAGEN_CONFIG.commands.generateCode]: async () => {
+      throw new Error(`${METAGEN_CONFIG.commands.generateCode} будет подключена на следующем шаге`);
     },
-    VALIDATE_METAGEN_DOCUMENT: async () => {
-      throw new Error('VALIDATE_METAGEN_DOCUMENT будет подключена на следующем шаге');
+
+    [METAGEN_CONFIG.commands.validateDocument]: async () => {
+      throw new Error(`${METAGEN_CONFIG.commands.validateDocument} будет подключена на следующем шаге`);
     }
   };
 }
@@ -917,6 +930,12 @@ export const METAGEN_CONFIG = {
   documentKind: 'metagen.component',
   defaultType: 'template',
 
+  commands: {
+    createDocument: 'METAGEN_CREATE_DOCUMENT',
+    generateCode: 'METAGEN_GENERATE_CODE',
+    validateDocument: 'METAGEN_VALIDATE_DOCUMENT'
+  },
+
   generation: {
     defaultEngine: 'python',
     defaultEntrypoint: 'gen_v2.py',
@@ -930,6 +949,10 @@ export const METAGEN_CONFIG = {
 
   defaults: {
     newDocumentName: 'Новый компонент'
+  },
+
+  ui: {
+    createPromptTitle: 'Имя документа MetaGen'
   }
 };
 
@@ -1085,19 +1108,47 @@ export function validateMetaGenDocument(document) {
 }
 
 ==================================================
+FILE: renderer\modules\metagen\tables\createMetaGenDataSheet.js
+==================================================
+
+export function createMetaGenDataSheet() {
+  return null;
+}
+
+==================================================
+FILE: renderer\modules\metagen\tables\createMetaGenParamsSheet.js
+==================================================
+
+export function createMetaGenParamsSheet() {
+  return null;
+}
+
+==================================================
+FILE: renderer\modules\metagen\tables\metaGenParamsTableAutoStyle.js
+==================================================
+
+export function createMetaGenParamsTableAutoStyle() {
+  return null;
+}
+
+==================================================
 FILE: renderer\modules\metalab\metalabCommands.js
 ==================================================
 
+import { METALAB_CONFIG } from './metalabConfig.js';
+
 export function createMetaLabCommands() {
   return {
-    CREATE_SCENARIO: async () => {
-      throw new Error('CREATE_SCENARIO будет подключена на следующем шаге');
+    [METALAB_CONFIG.commands.createScenario]: async () => {
+      throw new Error(`${METALAB_CONFIG.commands.createScenario} будет подключена на следующем шаге`);
     },
-    RUN_SCENARIO: async () => {
-      throw new Error('RUN_SCENARIO будет подключена на следующем шаге');
+
+    [METALAB_CONFIG.commands.runScenario]: async () => {
+      throw new Error(`${METALAB_CONFIG.commands.runScenario} будет подключена на следующем шаге`);
     },
-    STOP_SCENARIO: async () => {
-      throw new Error('STOP_SCENARIO будет подключена на следующем шаге');
+
+    [METALAB_CONFIG.commands.stopScenario]: async () => {
+      throw new Error(`${METALAB_CONFIG.commands.stopScenario} будет подключена на следующем шаге`);
     }
   };
 }
@@ -1109,7 +1160,13 @@ FILE: renderer\modules\metalab\metalabConfig.js
 export const METALAB_CONFIG = {
   moduleId: 'metalab',
   moduleName: 'MetaLab',
-  documentKind: 'metalab.scenario'
+  documentKind: 'metalab.scenario',
+
+  commands: {
+    createScenario: 'METALAB_CREATE_SCENARIO',
+    runScenario: 'METALAB_RUN_SCENARIO',
+    stopScenario: 'METALAB_STOP_SCENARIO'
+  }
 };
 
 ==================================================
@@ -1131,6 +1188,7 @@ FILE: renderer\modules\metalab\metalabModule.js
 
 import { METALAB_CONFIG } from './metalabConfig.js';
 import { createMetaLabDocument } from './metalabDocumentFactory.js';
+import { createMetaLabEditor } from '../../editors/metalab/createMetaLabEditor.js';
 
 export function createMetaLabModule() {
   return {
@@ -1146,10 +1204,8 @@ export function createMetaLabModule() {
       return 'new_scenario.yaml';
     },
 
-    async openDocument() {
-      return {
-        dispose() {}
-      };
+    async openDocument({ documentRecord, mountElement }) {
+      return createMetaLabEditor({ documentRecord, mountElement });
     }
   };
 }
@@ -1158,10 +1214,12 @@ export function createMetaLabModule() {
 FILE: renderer\modules\metaview\metaviewCommands.js
 ==================================================
 
+import { METAVIEW_CONFIG } from './metaviewConfig.js';
+
 export function createMetaViewCommands() {
   return {
-    CREATE_SCREEN: async () => {
-      throw new Error('CREATE_SCREEN будет подключена на следующем шаге');
+    [METAVIEW_CONFIG.commands.createScreen]: async () => {
+      throw new Error(`${METAVIEW_CONFIG.commands.createScreen} будет подключена на следующем шаге`);
     }
   };
 }
@@ -1173,7 +1231,11 @@ FILE: renderer\modules\metaview\metaviewConfig.js
 export const METAVIEW_CONFIG = {
   moduleId: 'metaview',
   moduleName: 'MetaView',
-  documentKind: 'metaview.screen'
+  documentKind: 'metaview.screen',
+
+  commands: {
+    createScreen: 'METAVIEW_CREATE_SCREEN'
+  }
 };
 
 ==================================================
@@ -1195,6 +1257,7 @@ FILE: renderer\modules\metaview\metaviewModule.js
 
 import { METAVIEW_CONFIG } from './metaviewConfig.js';
 import { createMetaViewDocument } from './metaviewDocumentFactory.js';
+import { createMetaViewEditor } from '../../editors/metaview/createMetaViewEditor.js';
 
 export function createMetaViewModule() {
   return {
@@ -1210,10 +1273,8 @@ export function createMetaViewModule() {
       return 'new_screen.yaml';
     },
 
-    async openDocument() {
-      return {
-        dispose() {}
-      };
+    async openDocument({ documentRecord, mountElement }) {
+      return createMetaViewEditor({ documentRecord, mountElement });
     }
   };
 }
@@ -1278,38 +1339,6 @@ export function slugifyDocumentName(name) {
 }
 
 ==================================================
-FILE: renderer\tables\createDataSheet.js
-==================================================
-
-export async function createDataSheetInstance() {
-  return null;
-}
-
-==================================================
-FILE: renderer\tables\createParamsSheet.js
-==================================================
-
-export function createParamsSheetInstance() {
-  return null;
-}
-
-==================================================
-FILE: renderer\tables\createSimpleSheet.js
-==================================================
-
-export function createSimpleSheetInstance() {
-  return null;
-}
-
-==================================================
-FILE: renderer\tables\paramsTableAutoStyle.js
-==================================================
-
-export function createParamsTableAutoStyleController() {
-  return null;
-}
-
-==================================================
 FILE: renderer\ui\applyStaticText.js
 ==================================================
 
@@ -1318,6 +1347,7 @@ import { APP_CONFIG } from '../../config/app-config.js';
 export function applyStaticText() {
   const titleNode = document.querySelector(APP_CONFIG.ui.dom.titleSelector);
   const topPanelTitleNode = document.querySelector(APP_CONFIG.ui.dom.topPanelTitleSelector);
+  const projectPanelTitleNode = document.querySelector(APP_CONFIG.ui.dom.projectPanelTitleSelector);
   const logsHeaderNode = document.querySelector(APP_CONFIG.ui.dom.logsPanelHeaderSelector);
 
   if (titleNode) {
@@ -1326,6 +1356,10 @@ export function applyStaticText() {
 
   if (topPanelTitleNode) {
     topPanelTitleNode.textContent = APP_CONFIG.platform.app.topPanelTitle;
+  }
+
+  if (projectPanelTitleNode) {
+    projectPanelTitleNode.textContent = APP_CONFIG.ui.panelHeaders.project;
   }
 
   if (logsHeaderNode) {
@@ -1338,6 +1372,7 @@ FILE: renderer\ui\createProjectTree.js
 ==================================================
 
 import { APP_CONFIG } from '../../config/app-config.js';
+import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -1368,22 +1403,22 @@ export function createProjectTree({
 
     const metagenSection = createElement('div');
     const header = createElement('div', ['tree-section-header']);
-    header.textContent = APP_CONFIG.ui.text.metaGenSectionTitle;
+    header.textContent = METAGEN_CONFIG.moduleName;
 
     const addButton = createElement('button', ['tree-add-button']);
     addButton.type = 'button';
-    addButton.textContent = APP_CONFIG.ui.text.addButtonLabel;
+    addButton.textContent = '+';
     addButton.addEventListener('click', async () => {
       const nextName = window.prompt(
-        'Имя документа MetaGen',
-        APP_CONFIG.ui.text.defaultMetaGenDocumentName
+        METAGEN_CONFIG.ui.createPromptTitle,
+        METAGEN_CONFIG.defaults.newDocumentName
       );
 
       if (!nextName) {
         return;
       }
 
-      const created = await projectManager.createDocument('metagen', nextName);
+      const created = await projectManager.createDocument(METAGEN_CONFIG.moduleId, nextName);
 
       if (created) {
         await tabs.openDocument(created);
@@ -1435,7 +1470,7 @@ function createElement(tagName, classNames = []) {
   return node;
 }
 
-export function createWorkbenchTabs({ logger, moduleRegistry, openEditor }) {
+export function createWorkbenchTabs({ logger, openEditor }) {
   const tabsList = document.getElementById(APP_CONFIG.ui.dom.tabsListId);
   const editorHost = document.getElementById(APP_CONFIG.ui.dom.editorHostId);
   const tabs = new Map();
@@ -1557,7 +1592,7 @@ FILE: renderer\index.html
 
     <div class="main-layout">
       <div class="project-tree-container">
-        <div class="side-header">📁 Проект</div>
+        <div class="side-header" id="project-panel-title"></div>
         <div id="project-tree" class="project-tree"></div>
       </div>
 
@@ -1893,7 +1928,43 @@ generation:
 FILE: project-examples\demo-feedmill\metagen\pumps.yaml
 ==================================================
 
+kind: metagen.component
+version: 1
 
+component:
+  id: pumps
+  name: Pumps
+  type: template
+  module: MetaGen
+  description: Demo Pumps document
+
+params:
+  format: header-plus-rows
+  header: []
+  rows: []
+
+data:
+  format: table
+  columns: []
+  rows: []
+
+instances:
+  format: list
+  rows: []
+
+code:
+  format: template-text
+  language: st-template
+  text: |
+    // Demo ST template
+
+generation:
+  engine: python
+  entrypoint: gen_v2.py
+  mode: external
+  output:
+    language: st
+    fileName: pumps.st
 
 ==================================================
 FILE: project-examples\demo-feedmill\metagen\valves.yaml
@@ -1997,10 +2068,10 @@ REM ============================================================
 if not exist "renderer\core" mkdir "renderer\core"
 if not exist "renderer\core\logger.js" type nul > "renderer\core\logger.js"
 if not exist "renderer\core\layout.js" type nul > "renderer\core\layout.js"
+if not exist "renderer\core\platformCommands.js" type nul > "renderer\core\platformCommands.js"
 if not exist "renderer\core\commandBus.js" type nul > "renderer\core\commandBus.js"
 if not exist "renderer\core\moduleRegistry.js" type nul > "renderer\core\moduleRegistry.js"
 if not exist "renderer\core\projectManager.js" type nul > "renderer\core\projectManager.js"
-if not exist "renderer\core\platformCommands.js" type nul > "renderer\core\platformCommands.js"
 
 REM ============================================================
 REM Runtime
@@ -2042,7 +2113,6 @@ if not exist "renderer\modules" mkdir "renderer\modules"
 REM ----- MetaGen
 if not exist "renderer\modules\metagen" mkdir "renderer\modules\metagen"
 if not exist "renderer\modules\metagen\tables" mkdir "renderer\modules\metagen\tables"
-
 if not exist "renderer\modules\metagen\metagenConfig.js" type nul > "renderer\modules\metagen\metagenConfig.js"
 if not exist "renderer\modules\metagen\metagenModule.js" type nul > "renderer\modules\metagen\metagenModule.js"
 if not exist "renderer\modules\metagen\metagenDocumentFactory.js" type nul > "renderer\modules\metagen\metagenDocumentFactory.js"
@@ -2074,7 +2144,7 @@ if not exist "renderer\styles" mkdir "renderer\styles"
 if not exist "renderer\styles\styles.css" type nul > "renderer\styles\styles.css"
 
 REM ============================================================
-REM Demo project
+REM Demo project structure
 REM ============================================================
 if not exist "project-examples\demo-feedmill" mkdir "project-examples\demo-feedmill"
 if not exist "project-examples\demo-feedmill\metagen" mkdir "project-examples\demo-feedmill\metagen"
@@ -2083,175 +2153,171 @@ if not exist "project-examples\demo-feedmill\metaview" mkdir "project-examples\d
 if not exist "project-examples\demo-feedmill\generated" mkdir "project-examples\demo-feedmill\generated"
 
 REM ============================================================
-REM Demo YAML files (create only if missing)
-REM Using PowerShell because YAML is unreliable through plain ECHO
+REM Demo YAML files
 REM ============================================================
 
-if not exist "project-examples\demo-feedmill\project.yaml" powershell -NoProfile -Command ^
-  "$p='project-examples\demo-feedmill\project.yaml';" ^
-  "$content=@'
-kind: metaplatform.project
-version: 1
+if not exist "project-examples\demo-feedmill\project.yaml" (
+  > "project-examples\demo-feedmill\project.yaml" (
+    echo kind: metaplatform.project
+    echo version: 1
+    echo.
+    echo project:
+    echo   id: demo_feedmill
+    echo   name: Demo Feedmill
+    echo   description: Demo project for MetaPlatform
+    echo.
+    echo modules:
+    echo   - MetaGen
+    echo   - MetaLab
+    echo   - MetaView
+    echo.
+    echo paths:
+    echo   metagen: metagen
+    echo   metalab: metalab
+    echo   metaview: metaview
+    echo   generated: generated
+  )
+)
 
-project:
-  id: demo_feedmill
-  name: Demo Feedmill
-  description: Demo project for MetaPlatform
+if not exist "project-examples\demo-feedmill\metagen\pumps.yaml" (
+  > "project-examples\demo-feedmill\metagen\pumps.yaml" (
+    echo kind: metagen.component
+    echo version: 1
+    echo.
+    echo component:
+    echo   id: pumps
+    echo   name: Pumps
+    echo   type: template
+    echo   module: MetaGen
+    echo   description: Demo Pumps document
+    echo.
+    echo params:
+    echo   format: header-plus-rows
+    echo   header: []
+    echo   rows: []
+    echo.
+    echo data:
+    echo   format: table
+    echo   columns: []
+    echo   rows: []
+    echo.
+    echo instances:
+    echo   format: list
+    echo   rows: []
+    echo.
+    echo code:
+    echo   format: template-text
+    echo   language: st-template
+    echo   text: ^|
+    echo     // Demo ST template
+    echo.
+    echo generation:
+    echo   engine: python
+    echo   entrypoint: gen_v2.py
+    echo   mode: external
+    echo   output:
+    echo     language: st
+    echo     fileName: pumps.st
+  )
+)
 
-modules:
-  - MetaGen
-  - MetaLab
-  - MetaView
+if not exist "project-examples\demo-feedmill\metagen\valves.yaml" (
+  > "project-examples\demo-feedmill\metagen\valves.yaml" (
+    echo kind: metagen.component
+    echo version: 1
+    echo.
+    echo component:
+    echo   id: valves
+    echo   name: Valves
+    echo   type: template
+    echo   module: MetaGen
+    echo   description: Demo Valves document
+    echo.
+    echo params:
+    echo   format: header-plus-rows
+    echo   header: []
+    echo   rows: []
+    echo.
+    echo data:
+    echo   format: table
+    echo   columns: []
+    echo   rows: []
+    echo.
+    echo instances:
+    echo   format: list
+    echo   rows: []
+    echo.
+    echo code:
+    echo   format: template-text
+    echo   language: st-template
+    echo   text: ^|
+    echo     // Demo Valves template
+    echo.
+    echo generation:
+    echo   engine: python
+    echo   entrypoint: gen_v2.py
+    echo   mode: external
+    echo   output:
+    echo     language: st
+    echo     fileName: valves.st
+  )
+)
 
-paths:
-  metagen: metagen
-  metalab: metalab
-  metaview: metaview
-  generated: generated
-'@;" ^
-  "Set-Content -Path $p -Value $content -Encoding UTF8"
+if not exist "project-examples\demo-feedmill\metagen\conveyors.yaml" (
+  > "project-examples\demo-feedmill\metagen\conveyors.yaml" (
+    echo kind: metagen.component
+    echo version: 1
+    echo.
+    echo component:
+    echo   id: conveyors
+    echo   name: Conveyors
+    echo   type: template
+    echo   module: MetaGen
+    echo   description: Demo Conveyors document
+    echo.
+    echo params:
+    echo   format: header-plus-rows
+    echo   header: []
+    echo   rows: []
+    echo.
+    echo data:
+    echo   format: table
+    echo   columns: []
+    echo   rows: []
+    echo.
+    echo instances:
+    echo   format: list
+    echo   rows: []
+    echo.
+    echo code:
+    echo   format: template-text
+    echo   language: st-template
+    echo   text: ^|
+    echo     // Demo Conveyors template
+    echo.
+    echo generation:
+    echo   engine: python
+    echo   entrypoint: gen_v2.py
+    echo   mode: external
+    echo   output:
+    echo     language: st
+    echo     fileName: conveyors.st
+  )
+)
 
-if not exist "project-examples\demo-feedmill\metagen\pumps.yaml" powershell -NoProfile -Command ^
-  "$p='project-examples\demo-feedmill\metagen\pumps.yaml';" ^
-  "$content=@'
-kind: metagen.component
-version: 1
+if not exist "project-examples\demo-feedmill\metalab\startup_scenario.yaml" (
+  > "project-examples\demo-feedmill\metalab\startup_scenario.yaml" (
+    echo kind: metalab.scenario
+    echo version: 1
+  )
+)
 
-component:
-  id: pumps
-  name: Pumps
-  type: template
-  module: MetaGen
-  description: Demo Pumps document
-
-params:
-  format: header-plus-rows
-  header: []
-  rows: []
-
-data:
-  format: table
-  columns: []
-  rows: []
-
-instances:
-  format: list
-  rows: []
-
-code:
-  format: template-text
-  language: st-template
-  text: // Demo ST template
-
-generation:
-  engine: python
-  entrypoint: gen_v2.py
-  mode: external
-  output:
-    language: st
-    fileName: pumps.st
-'@;" ^
-  "Set-Content -Path $p -Value $content -Encoding UTF8"
-
-if not exist "project-examples\demo-feedmill\metagen\valves.yaml" powershell -NoProfile -Command ^
-  "$p='project-examples\demo-feedmill\metagen\valves.yaml';" ^
-  "$content=@'
-kind: metagen.component
-version: 1
-
-component:
-  id: valves
-  name: Valves
-  type: template
-  module: MetaGen
-  description: Demo Valves document
-
-params:
-  format: header-plus-rows
-  header: []
-  rows: []
-
-data:
-  format: table
-  columns: []
-  rows: []
-
-instances:
-  format: list
-  rows: []
-
-code:
-  format: template-text
-  language: st-template
-  text: // Demo Valves template
-
-generation:
-  engine: python
-  entrypoint: gen_v2.py
-  mode: external
-  output:
-    language: st
-    fileName: valves.st
-'@;" ^
-  "Set-Content -Path $p -Value $content -Encoding UTF8"
-
-if not exist "project-examples\demo-feedmill\metagen\conveyors.yaml" powershell -NoProfile -Command ^
-  "$p='project-examples\demo-feedmill\metagen\conveyors.yaml';" ^
-  "$content=@'
-kind: metagen.component
-version: 1
-
-component:
-  id: conveyors
-  name: Conveyors
-  type: template
-  module: MetaGen
-  description: Demo Conveyors document
-
-params:
-  format: header-plus-rows
-  header: []
-  rows: []
-
-data:
-  format: table
-  columns: []
-  rows: []
-
-instances:
-  format: list
-  rows: []
-
-code:
-  format: template-text
-  language: st-template
-  text: // Demo Conveyors template
-
-generation:
-  engine: python
-  entrypoint: gen_v2.py
-  mode: external
-  output:
-    language: st
-    fileName: conveyors.st
-'@;" ^
-  "Set-Content -Path $p -Value $content -Encoding UTF8"
-
-if not exist "project-examples\demo-feedmill\metalab\startup_scenario.yaml" powershell -NoProfile -Command ^
-  "$p='project-examples\demo-feedmill\metalab\startup_scenario.yaml';" ^
-  "$content=@'
-kind: metalab.scenario
-version: 1
-'@;" ^
-  "Set-Content -Path $p -Value $content -Encoding UTF8"
-
-if not exist "project-examples\demo-feedmill\metaview\main_screen.yaml" powershell -NoProfile -Command ^
-  "$p='project-examples\demo-feedmill\metaview\main_screen.yaml';" ^
-  "$content=@'
-kind: metaview.screen
-version: 1
-'@;" ^
-  "Set-Content -Path $p -Value $content -Encoding UTF8"
+if not exist "project-examples\demo-feedmill\metaview\main_screen.yaml" (
+  > "project-examples\demo-feedmill\metaview\main_screen.yaml" (
+    echo kind: metaview.screen
+    echo version: 1
+  )
+)
 
 echo.
 echo ============================================================
@@ -2290,9 +2356,6 @@ echo ROOT: %ROOT%>> "%TEMPFILE%"
 echo ==================================================>> "%TEMPFILE%"
 echo(>> "%TEMPFILE%"
 
-REM ============================================================
-REM Recurse from project root
-REM ============================================================
 for %%E in (js json html css md txt yml yaml xml bat cmd ps1) do (
     for /r "%ROOT%" %%F in (*.%%E) do (
         call :AppendFile "%%~fF"

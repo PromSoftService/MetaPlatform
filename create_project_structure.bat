@@ -40,10 +40,10 @@ REM ============================================================
 if not exist "renderer\core" mkdir "renderer\core"
 if not exist "renderer\core\logger.js" type nul > "renderer\core\logger.js"
 if not exist "renderer\core\layout.js" type nul > "renderer\core\layout.js"
+if not exist "renderer\core\platformCommands.js" type nul > "renderer\core\platformCommands.js"
 if not exist "renderer\core\commandBus.js" type nul > "renderer\core\commandBus.js"
 if not exist "renderer\core\moduleRegistry.js" type nul > "renderer\core\moduleRegistry.js"
 if not exist "renderer\core\projectManager.js" type nul > "renderer\core\projectManager.js"
-if not exist "renderer\core\platformCommands.js" type nul > "renderer\core\platformCommands.js"
 
 REM ============================================================
 REM Runtime
@@ -85,7 +85,6 @@ if not exist "renderer\modules" mkdir "renderer\modules"
 REM ----- MetaGen
 if not exist "renderer\modules\metagen" mkdir "renderer\modules\metagen"
 if not exist "renderer\modules\metagen\tables" mkdir "renderer\modules\metagen\tables"
-
 if not exist "renderer\modules\metagen\metagenConfig.js" type nul > "renderer\modules\metagen\metagenConfig.js"
 if not exist "renderer\modules\metagen\metagenModule.js" type nul > "renderer\modules\metagen\metagenModule.js"
 if not exist "renderer\modules\metagen\metagenDocumentFactory.js" type nul > "renderer\modules\metagen\metagenDocumentFactory.js"
@@ -117,7 +116,7 @@ if not exist "renderer\styles" mkdir "renderer\styles"
 if not exist "renderer\styles\styles.css" type nul > "renderer\styles\styles.css"
 
 REM ============================================================
-REM Demo project
+REM Demo project structure
 REM ============================================================
 if not exist "project-examples\demo-feedmill" mkdir "project-examples\demo-feedmill"
 if not exist "project-examples\demo-feedmill\metagen" mkdir "project-examples\demo-feedmill\metagen"
@@ -126,175 +125,171 @@ if not exist "project-examples\demo-feedmill\metaview" mkdir "project-examples\d
 if not exist "project-examples\demo-feedmill\generated" mkdir "project-examples\demo-feedmill\generated"
 
 REM ============================================================
-REM Demo YAML files (create only if missing)
-REM Using PowerShell because YAML is unreliable through plain ECHO
+REM Demo YAML files
 REM ============================================================
 
-if not exist "project-examples\demo-feedmill\project.yaml" powershell -NoProfile -Command ^
-  "$p='project-examples\demo-feedmill\project.yaml';" ^
-  "$content=@'
-kind: metaplatform.project
-version: 1
+if not exist "project-examples\demo-feedmill\project.yaml" (
+  > "project-examples\demo-feedmill\project.yaml" (
+    echo kind: metaplatform.project
+    echo version: 1
+    echo.
+    echo project:
+    echo   id: demo_feedmill
+    echo   name: Demo Feedmill
+    echo   description: Demo project for MetaPlatform
+    echo.
+    echo modules:
+    echo   - MetaGen
+    echo   - MetaLab
+    echo   - MetaView
+    echo.
+    echo paths:
+    echo   metagen: metagen
+    echo   metalab: metalab
+    echo   metaview: metaview
+    echo   generated: generated
+  )
+)
 
-project:
-  id: demo_feedmill
-  name: Demo Feedmill
-  description: Demo project for MetaPlatform
+if not exist "project-examples\demo-feedmill\metagen\pumps.yaml" (
+  > "project-examples\demo-feedmill\metagen\pumps.yaml" (
+    echo kind: metagen.component
+    echo version: 1
+    echo.
+    echo component:
+    echo   id: pumps
+    echo   name: Pumps
+    echo   type: template
+    echo   module: MetaGen
+    echo   description: Demo Pumps document
+    echo.
+    echo params:
+    echo   format: header-plus-rows
+    echo   header: []
+    echo   rows: []
+    echo.
+    echo data:
+    echo   format: table
+    echo   columns: []
+    echo   rows: []
+    echo.
+    echo instances:
+    echo   format: list
+    echo   rows: []
+    echo.
+    echo code:
+    echo   format: template-text
+    echo   language: st-template
+    echo   text: ^|
+    echo     // Demo ST template
+    echo.
+    echo generation:
+    echo   engine: python
+    echo   entrypoint: gen_v2.py
+    echo   mode: external
+    echo   output:
+    echo     language: st
+    echo     fileName: pumps.st
+  )
+)
 
-modules:
-  - MetaGen
-  - MetaLab
-  - MetaView
+if not exist "project-examples\demo-feedmill\metagen\valves.yaml" (
+  > "project-examples\demo-feedmill\metagen\valves.yaml" (
+    echo kind: metagen.component
+    echo version: 1
+    echo.
+    echo component:
+    echo   id: valves
+    echo   name: Valves
+    echo   type: template
+    echo   module: MetaGen
+    echo   description: Demo Valves document
+    echo.
+    echo params:
+    echo   format: header-plus-rows
+    echo   header: []
+    echo   rows: []
+    echo.
+    echo data:
+    echo   format: table
+    echo   columns: []
+    echo   rows: []
+    echo.
+    echo instances:
+    echo   format: list
+    echo   rows: []
+    echo.
+    echo code:
+    echo   format: template-text
+    echo   language: st-template
+    echo   text: ^|
+    echo     // Demo Valves template
+    echo.
+    echo generation:
+    echo   engine: python
+    echo   entrypoint: gen_v2.py
+    echo   mode: external
+    echo   output:
+    echo     language: st
+    echo     fileName: valves.st
+  )
+)
 
-paths:
-  metagen: metagen
-  metalab: metalab
-  metaview: metaview
-  generated: generated
-'@;" ^
-  "Set-Content -Path $p -Value $content -Encoding UTF8"
+if not exist "project-examples\demo-feedmill\metagen\conveyors.yaml" (
+  > "project-examples\demo-feedmill\metagen\conveyors.yaml" (
+    echo kind: metagen.component
+    echo version: 1
+    echo.
+    echo component:
+    echo   id: conveyors
+    echo   name: Conveyors
+    echo   type: template
+    echo   module: MetaGen
+    echo   description: Demo Conveyors document
+    echo.
+    echo params:
+    echo   format: header-plus-rows
+    echo   header: []
+    echo   rows: []
+    echo.
+    echo data:
+    echo   format: table
+    echo   columns: []
+    echo   rows: []
+    echo.
+    echo instances:
+    echo   format: list
+    echo   rows: []
+    echo.
+    echo code:
+    echo   format: template-text
+    echo   language: st-template
+    echo   text: ^|
+    echo     // Demo Conveyors template
+    echo.
+    echo generation:
+    echo   engine: python
+    echo   entrypoint: gen_v2.py
+    echo   mode: external
+    echo   output:
+    echo     language: st
+    echo     fileName: conveyors.st
+  )
+)
 
-if not exist "project-examples\demo-feedmill\metagen\pumps.yaml" powershell -NoProfile -Command ^
-  "$p='project-examples\demo-feedmill\metagen\pumps.yaml';" ^
-  "$content=@'
-kind: metagen.component
-version: 1
+if not exist "project-examples\demo-feedmill\metalab\startup_scenario.yaml" (
+  > "project-examples\demo-feedmill\metalab\startup_scenario.yaml" (
+    echo kind: metalab.scenario
+    echo version: 1
+  )
+)
 
-component:
-  id: pumps
-  name: Pumps
-  type: template
-  module: MetaGen
-  description: Demo Pumps document
-
-params:
-  format: header-plus-rows
-  header: []
-  rows: []
-
-data:
-  format: table
-  columns: []
-  rows: []
-
-instances:
-  format: list
-  rows: []
-
-code:
-  format: template-text
-  language: st-template
-  text: // Demo ST template
-
-generation:
-  engine: python
-  entrypoint: gen_v2.py
-  mode: external
-  output:
-    language: st
-    fileName: pumps.st
-'@;" ^
-  "Set-Content -Path $p -Value $content -Encoding UTF8"
-
-if not exist "project-examples\demo-feedmill\metagen\valves.yaml" powershell -NoProfile -Command ^
-  "$p='project-examples\demo-feedmill\metagen\valves.yaml';" ^
-  "$content=@'
-kind: metagen.component
-version: 1
-
-component:
-  id: valves
-  name: Valves
-  type: template
-  module: MetaGen
-  description: Demo Valves document
-
-params:
-  format: header-plus-rows
-  header: []
-  rows: []
-
-data:
-  format: table
-  columns: []
-  rows: []
-
-instances:
-  format: list
-  rows: []
-
-code:
-  format: template-text
-  language: st-template
-  text: // Demo Valves template
-
-generation:
-  engine: python
-  entrypoint: gen_v2.py
-  mode: external
-  output:
-    language: st
-    fileName: valves.st
-'@;" ^
-  "Set-Content -Path $p -Value $content -Encoding UTF8"
-
-if not exist "project-examples\demo-feedmill\metagen\conveyors.yaml" powershell -NoProfile -Command ^
-  "$p='project-examples\demo-feedmill\metagen\conveyors.yaml';" ^
-  "$content=@'
-kind: metagen.component
-version: 1
-
-component:
-  id: conveyors
-  name: Conveyors
-  type: template
-  module: MetaGen
-  description: Demo Conveyors document
-
-params:
-  format: header-plus-rows
-  header: []
-  rows: []
-
-data:
-  format: table
-  columns: []
-  rows: []
-
-instances:
-  format: list
-  rows: []
-
-code:
-  format: template-text
-  language: st-template
-  text: // Demo Conveyors template
-
-generation:
-  engine: python
-  entrypoint: gen_v2.py
-  mode: external
-  output:
-    language: st
-    fileName: conveyors.st
-'@;" ^
-  "Set-Content -Path $p -Value $content -Encoding UTF8"
-
-if not exist "project-examples\demo-feedmill\metalab\startup_scenario.yaml" powershell -NoProfile -Command ^
-  "$p='project-examples\demo-feedmill\metalab\startup_scenario.yaml';" ^
-  "$content=@'
-kind: metalab.scenario
-version: 1
-'@;" ^
-  "Set-Content -Path $p -Value $content -Encoding UTF8"
-
-if not exist "project-examples\demo-feedmill\metaview\main_screen.yaml" powershell -NoProfile -Command ^
-  "$p='project-examples\demo-feedmill\metaview\main_screen.yaml';" ^
-  "$content=@'
-kind: metaview.screen
-version: 1
-'@;" ^
-  "Set-Content -Path $p -Value $content -Encoding UTF8"
+if not exist "project-examples\demo-feedmill\metaview\main_screen.yaml" (
+  > "project-examples\demo-feedmill\metaview\main_screen.yaml" (
+    echo kind: metaview.screen
+    echo version: 1
+  )
+)
 
 echo.
 echo ============================================================

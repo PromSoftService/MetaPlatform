@@ -18,7 +18,7 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      preload: path.join(process.cwd(), 'preload.js')
+      preload: path.join(process.cwd(), 'preload.cjs')
     }
   });
 
@@ -85,6 +85,7 @@ app.whenReady().then(() => {
         }
 
         const normalized = entry.name.toLowerCase();
+
         if (extensions.some((ext) => normalized.endsWith(ext.toLowerCase()))) {
           output.push(fullPath);
         }
@@ -92,6 +93,7 @@ app.whenReady().then(() => {
     }
 
     const exists = await fs.access(targetDir).then(() => true).catch(() => false);
+
     if (!exists) {
       return [];
     }
@@ -104,7 +106,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== APP_CONFIG.platform.platform.mac) {
+  if (process.platform !== APP_CONFIG.platform.runtime.mac) {
     app.quit();
   }
 });

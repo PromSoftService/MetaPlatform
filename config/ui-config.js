@@ -3,6 +3,7 @@ export const UI_CONFIG = {
     titleSelector: 'title',
     topPanelTitleSelector: '#top-panel-title',
     projectTitleSelector: '#project-title',
+    projectPanelTitleSelector: '#project-panel-title',
     logsPanelHeaderSelector: '#bottom-panel-header',
     tabsListId: 'tabs-list',
     editorHostId: 'editor-host',
@@ -27,16 +28,13 @@ export const UI_CONFIG = {
 
   panelHeaders: {
     logs: '📋 Логи',
+    project: '📁 Проект',
     params: '📊 Параметры',
     data: '📈 Данные',
-    code: '📝 Шаблон ST',
-    project: '📁 Проект'
+    code: '📝 Шаблон ST'
   },
 
   text: {
-    metaGenSectionTitle: 'MetaGen',
-    addButtonLabel: '+',
-    untitled: 'Без имени',
-    defaultMetaGenDocumentName: 'Новый компонент'
+    untitled: 'Без имени'
   }
 };

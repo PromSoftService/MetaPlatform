@@ -1,4 +1,5 @@
 import { APP_CONFIG } from '../../config/app-config.js';
+import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -29,22 +30,22 @@ export function createProjectTree({
 
     const metagenSection = createElement('div');
     const header = createElement('div', ['tree-section-header']);
-    header.textContent = APP_CONFIG.ui.text.metaGenSectionTitle;
+    header.textContent = METAGEN_CONFIG.moduleName;
 
     const addButton = createElement('button', ['tree-add-button']);
     addButton.type = 'button';
-    addButton.textContent = APP_CONFIG.ui.text.addButtonLabel;
+    addButton.textContent = '+';
     addButton.addEventListener('click', async () => {
       const nextName = window.prompt(
-        'Имя документа MetaGen',
-        APP_CONFIG.ui.text.defaultMetaGenDocumentName
+        METAGEN_CONFIG.ui.createPromptTitle,
+        METAGEN_CONFIG.defaults.newDocumentName
       );
 
       if (!nextName) {
         return;
       }
 
-      const created = await projectManager.createDocument('metagen', nextName);
+      const created = await projectManager.createDocument(METAGEN_CONFIG.moduleId, nextName);
 
       if (created) {
         await tabs.openDocument(created);

@@ -1,5 +1,6 @@
 import { METAVIEW_CONFIG } from './metaviewConfig.js';
 import { createMetaViewDocument } from './metaviewDocumentFactory.js';
+import { createMetaViewEditor } from '../../editors/metaview/createMetaViewEditor.js';
 
 export function createMetaViewModule() {
   return {
@@ -15,10 +16,8 @@ export function createMetaViewModule() {
       return 'new_screen.yaml';
     },
 
-    async openDocument() {
-      return {
-        dispose() {}
-      };
+    async openDocument({ documentRecord, mountElement }) {
+      return createMetaViewEditor({ documentRecord, mountElement });
     }
   };
 }

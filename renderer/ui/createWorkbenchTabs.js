@@ -6,7 +6,7 @@ function createElement(tagName, classNames = []) {
   return node;
 }
 
-export function createWorkbenchTabs({ logger, moduleRegistry, openEditor }) {
+export function createWorkbenchTabs({ logger, openEditor }) {
   const tabsList = document.getElementById(APP_CONFIG.ui.dom.tabsListId);
   const editorHost = document.getElementById(APP_CONFIG.ui.dom.editorHostId);
   const tabs = new Map();
