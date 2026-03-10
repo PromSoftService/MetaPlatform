@@ -16,7 +16,7 @@ if not exist "renderer" mkdir "renderer"
 if not exist "project-examples" mkdir "project-examples"
 
 if not exist "main.js" type nul > "main.js"
-if not exist "preload.js" type nul > "preload.js"
+if not exist "preload.cjs" type nul > "preload.cjs"
 if not exist "package.json" type nul > "package.json"
 if not exist "vite.config.js" type nul > "vite.config.js"
 
@@ -290,6 +290,10 @@ if not exist "project-examples\demo-feedmill\metaview\main_screen.yaml" (
     echo version: 1
   )
 )
+
+if not exist "project-examples\demo-feedmill\generated\pumps.st" type nul > "project-examples\demo-feedmill\generated\pumps.st"
+if not exist "project-examples\demo-feedmill\generated\valves.st" type nul > "project-examples\demo-feedmill\generated\valves.st"
+if not exist "project-examples\demo-feedmill\generated\conveyors.st" type nul > "project-examples\demo-feedmill\generated\conveyors.st"
 
 echo.
 echo ============================================================

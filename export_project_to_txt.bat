@@ -23,7 +23,7 @@ echo ROOT: %ROOT%>> "%TEMPFILE%"
 echo ==================================================>> "%TEMPFILE%"
 echo(>> "%TEMPFILE%"
 
-for %%E in (js json html css md txt yml yaml xml bat cmd ps1) do (
+for %%E in (js cjs mjs json html css md txt yml yaml xml bat cmd ps1) do (
     for /r "%ROOT%" %%F in (*.%%E) do (
         call :AppendFile "%%~fF"
     )
@@ -59,6 +59,9 @@ echo %FILE% | findstr /I "\dist\" >nul
 if not errorlevel 1 exit /b
 
 echo %FILE% | findstr /I "\coverage\" >nul
+if not errorlevel 1 exit /b
+
+echo %FILE% | findstr /I "\out\" >nul
 if not errorlevel 1 exit /b
 
 set "REL=%FILE%"

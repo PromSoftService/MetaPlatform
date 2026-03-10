@@ -1,3 +1,178 @@
+diff --git a/create_project_structure.bat b/create_project_structure.bat
+index 282ab3838ec7e186669cfdfdd15706cb84939a39..3fe0087b840f2064d99e02416db7572621e122e9 100644
+--- a/create_project_structure.bat
++++ b/create_project_structure.bat
+@@ -1,44 +1,44 @@
+ @echo off
+ chcp 65001 >nul
+ setlocal EnableDelayedExpansion
+ 
+ echo ============================================================
+ echo Creating MetaPlatform v1 project structure
+ echo Existing files will NOT be overwritten
+ echo ============================================================
+ echo.
+ 
+ REM ============================================================
+ REM Root
+ REM ============================================================
+ if not exist "config" mkdir "config"
+ if not exist "renderer" mkdir "renderer"
+ if not exist "project-examples" mkdir "project-examples"
+ 
+ if not exist "main.js" type nul > "main.js"
+-if not exist "preload.js" type nul > "preload.js"
++if not exist "preload.cjs" type nul > "preload.cjs"
+ if not exist "package.json" type nul > "package.json"
+ if not exist "vite.config.js" type nul > "vite.config.js"
+ 
+ REM ============================================================
+ REM Config
+ REM ============================================================
+ if not exist "config\app-config.js" type nul > "config\app-config.js"
+ if not exist "config\platform-config.js" type nul > "config\platform-config.js"
+ if not exist "config\project-config.js" type nul > "config\project-config.js"
+ if not exist "config\ui-config.js" type nul > "config\ui-config.js"
+ 
+ REM ============================================================
+ REM Renderer root
+ REM ============================================================
+ if not exist "renderer\index.html" type nul > "renderer\index.html"
+ if not exist "renderer\app.js" type nul > "renderer\app.js"
+ 
+ REM ============================================================
+ REM Core
+ REM ============================================================
+ if not exist "renderer\core" mkdir "renderer\core"
+ if not exist "renderer\core\logger.js" type nul > "renderer\core\logger.js"
+ if not exist "renderer\core\layout.js" type nul > "renderer\core\layout.js"
+ if not exist "renderer\core\platformCommands.js" type nul > "renderer\core\platformCommands.js"
+ if not exist "renderer\core\commandBus.js" type nul > "renderer\core\commandBus.js"
+@@ -269,32 +269,36 @@ if not exist "project-examples\demo-feedmill\metagen\conveyors.yaml" (
+     echo.
+     echo generation:
+     echo   engine: python
+     echo   entrypoint: gen_v2.py
+     echo   mode: external
+     echo   output:
+     echo     language: st
+     echo     fileName: conveyors.st
+   )
+ )
+ 
+ if not exist "project-examples\demo-feedmill\metalab\startup_scenario.yaml" (
+   > "project-examples\demo-feedmill\metalab\startup_scenario.yaml" (
+     echo kind: metalab.scenario
+     echo version: 1
+   )
+ )
+ 
+ if not exist "project-examples\demo-feedmill\metaview\main_screen.yaml" (
+   > "project-examples\demo-feedmill\metaview\main_screen.yaml" (
+     echo kind: metaview.screen
+     echo version: 1
+   )
+ )
+ 
++if not exist "project-examples\demo-feedmill\generated\pumps.st" type nul > "project-examples\demo-feedmill\generated\pumps.st"
++if not exist "project-examples\demo-feedmill\generated\valves.st" type nul > "project-examples\demo-feedmill\generated\valves.st"
++if not exist "project-examples\demo-feedmill\generated\conveyors.st" type nul > "project-examples\demo-feedmill\generated\conveyors.st"
++
+ echo.
+ echo ============================================================
+ echo MetaPlatform v1 structure created
+ echo Existing files preserved
+ echo ============================================================
+ echo.
+-pause
+\ No newline at end of file
++pause
+diff --git a/export_project_to_txt.bat b/export_project_to_txt.bat
+index dcadfbb28c27d94d0ad557c4b1f45be3eda3a3da..ae31db057a763d924b8fdd6ed5eba7a1bbae1729 100644
+--- a/export_project_to_txt.bat
++++ b/export_project_to_txt.bat
+@@ -1,75 +1,78 @@
+ @echo off
+ chcp 65001 >nul
+ setlocal EnableDelayedExpansion
+ 
+ echo.
+ echo ==========================================
+ echo   MetaPlatform project export
+ echo ==========================================
+ echo.
+ 
+ set "ROOT=%~dp0"
+ if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
+ 
+ set "OUTFILE=%ROOT%\metaplatform_project_dump.txt"
+ set "TEMPFILE=%ROOT%\metaplatform_project_dump.tmp"
+ 
+ if exist "%OUTFILE%" del "%OUTFILE%"
+ if exist "%TEMPFILE%" del "%TEMPFILE%"
+ 
+ echo ==================================================>> "%TEMPFILE%"
+ echo METAPLATFORM PROJECT EXPORT>> "%TEMPFILE%"
+ echo ROOT: %ROOT%>> "%TEMPFILE%"
+ echo ==================================================>> "%TEMPFILE%"
+ echo(>> "%TEMPFILE%"
+ 
+-for %%E in (js json html css md txt yml yaml xml bat cmd ps1) do (
++for %%E in (js cjs mjs json html css md txt yml yaml xml bat cmd ps1) do (
+     for /r "%ROOT%" %%F in (*.%%E) do (
+         call :AppendFile "%%~fF"
+     )
+ )
+ 
+ move /Y "%TEMPFILE%" "%OUTFILE%" >nul
+ 
+ echo.
+ echo ==========================================
+ echo Export finished
+ echo File:
+ echo %OUTFILE%
+ echo ==========================================
+ echo.
+ 
+ pause
+ exit /b
+ 
+ :AppendFile
+ set "FILE=%~1"
+ 
+ if not exist "%FILE%" exit /b
+ if /I "%FILE%"=="%OUTFILE%" exit /b
+ if /I "%FILE%"=="%TEMPFILE%" exit /b
+ 
+ echo %FILE% | findstr /I "\node_modules\" >nul
+ if not errorlevel 1 exit /b
+ 
+ echo %FILE% | findstr /I "\.git\" >nul
+ if not errorlevel 1 exit /b
+ 
+ echo %FILE% | findstr /I "\dist\" >nul
+ if not errorlevel 1 exit /b
+ 
+ echo %FILE% | findstr /I "\coverage\" >nul
+ if not errorlevel 1 exit /b
+ 
++echo %FILE% | findstr /I "\out\" >nul
++if not errorlevel 1 exit /b
++
+ set "REL=%FILE%"
+ set "REL=!REL:%ROOT%\=!"
+ 
+ echo ==================================================>> "%TEMPFILE%"
+ echo FILE: !REL!>> "%TEMPFILE%"
+ echo ==================================================>> "%TEMPFILE%"
+ echo(>> "%TEMPFILE%"
+ type "%FILE%" >> "%TEMPFILE%" 2>nul
+ echo(>> "%TEMPFILE%"
+ echo(>> "%TEMPFILE%"
+ 
+-exit /b
+\ No newline at end of file
++exit /b
 diff --git a/renderer/core/projectManager.js b/renderer/core/projectManager.js
 index 1105248640cb43799433f6cc8e18d32f7b0113aa..0b82c33dfde072cf93531780b321d8670362723d 100644
 --- a/renderer/core/projectManager.js
