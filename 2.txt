@@ -1,6 +1,10 @@
-================================================================================
+==================================================
+PROJECT EXPORT
+==================================================
+
+==================================================
 FILE: .gitignore
-================================================================================
+==================================================
 
 node_modules/
 dist/
@@ -23,9 +27,9 @@ Thumbs.db
 codex.patch
 package-lock.json
 
-================================================================================
-FILE: config\app-config.js
-================================================================================
+==================================================
+FILE: config/app-config.js
+==================================================
 
 import { PLATFORM_CONFIG } from './platform-config.js';
 import { PROJECT_CONFIG } from './project-config.js';
@@ -37,9 +41,9 @@ export const APP_CONFIG = {
   ui: UI_CONFIG
 };
 
-================================================================================
-FILE: config\platform-config.js
-================================================================================
+==================================================
+FILE: config/platform-config.js
+==================================================
 
 export const PLATFORM_CONFIG = {
   locale: 'ru-RU',
@@ -64,9 +68,9 @@ export const PLATFORM_CONFIG = {
   }
 };
 
-================================================================================
-FILE: config\project-config.js
-================================================================================
+==================================================
+FILE: config/project-config.js
+==================================================
 
 export const PROJECT_CONFIG = {
   defaultProjectRelativePath: 'project-examples/demo-feedmill',
@@ -88,9 +92,9 @@ export const PROJECT_CONFIG = {
   }
 };
 
-================================================================================
-FILE: config\ui-config.js
-================================================================================
+==================================================
+FILE: config/ui-config.js
+==================================================
 
 export const UI_CONFIG = {
   dom: {
@@ -133,9 +137,9 @@ export const UI_CONFIG = {
   }
 };
 
-================================================================================
+==================================================
 FILE: create_project_structure.py
-================================================================================
+==================================================
 
 #!/usr/bin/env python3
 from __future__ import annotations
@@ -144,69 +148,69 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-IGNORED_DIRS = {".git", "node_modules", "__pycache__", "dist"}
-IGNORED_FILES = {"metaplatform_project_dump.txt"}
+IGNORED_DIRS = {'.git', 'node_modules', '__pycache__', 'dist', '.idea', '.vscode'}
+IGNORED_FILES = {'metaplatform_project_dump.txt', 'codex.patch'}
 
 
 def _is_ignored(path: Path) -> bool:
-    parts = set(path.parts)
-    return bool(parts & IGNORED_DIRS) or path.name in IGNORED_FILES
+  return any(part in IGNORED_DIRS for part in path.parts) or path.name in IGNORED_FILES
 
 
 def get_project_files() -> list[Path]:
-    """Return project files according to current repository structure."""
-    try:
-        result = subprocess.run(
-            ["git", "ls-files"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        files = [Path(line.strip()) for line in result.stdout.splitlines() if line.strip()]
-    except Exception:
-        files = [
-            p.relative_to(ROOT)
-            for p in ROOT.rglob("*")
-            if p.is_file() and not _is_ignored(p.relative_to(ROOT))
-        ]
+  """Return tracked + untracked project files from current repository state."""
+  try:
+    result = subprocess.run(
+      ['git', 'ls-files', '--cached', '--others', '--exclude-standard'],
+      cwd=ROOT,
+      check=True,
+      capture_output=True,
+      text=True
+    )
+    files = [Path(line.strip()) for line in result.stdout.splitlines() if line.strip()]
+  except Exception:
+    files = [
+      p.relative_to(ROOT)
+      for p in ROOT.rglob('*')
+      if p.is_file() and not _is_ignored(p.relative_to(ROOT))
+    ]
 
-    return sorted({p for p in files if not _is_ignored(p)})
+  existing_files = [p for p in files if (ROOT / p).exists() and not _is_ignored(p)]
+  return sorted(set(existing_files))
 
 
 def ensure_project_structure() -> tuple[int, int]:
-    created_dirs = 0
-    created_files = 0
+  created_dirs = 0
+  created_files = 0
 
-    for rel_file in get_project_files():
-        file_path = ROOT / rel_file
+  for rel_file in get_project_files():
+    file_path = ROOT / rel_file
 
-        if not file_path.parent.exists():
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            created_dirs += 1
+    if not file_path.parent.exists():
+      file_path.parent.mkdir(parents=True, exist_ok=True)
+      created_dirs += 1
 
-        if not file_path.exists():
-            file_path.touch()
-            created_files += 1
+    if not file_path.exists():
+      file_path.touch()
+      created_files += 1
 
-    return created_dirs, created_files
+  return created_dirs, created_files
 
 
 def main() -> None:
-    created_dirs, created_files = ensure_project_structure()
-    print(
-        "Project structure is ready. "
-        f"Created directories: {created_dirs}, created files: {created_files}."
-    )
+  created_dirs, created_files = ensure_project_structure()
+  print(
+    'Project structure is ready. '
+    f'Created directories: {created_dirs}, created files: {created_files}.'
+  )
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+  main()
 
 
-================================================================================
+==================================================
 FILE: export_project_to_txt.py
-================================================================================
+==================================================
 
 #!/usr/bin/env python3
 from __future__ import annotations
@@ -215,68 +219,71 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-OUTPUT_FILE = ROOT / "metaplatform_project_dump.txt"
-IGNORED_DIRS = {".git", "node_modules", "__pycache__", "dist"}
-IGNORED_FILES = {OUTPUT_FILE.name}
+OUTPUT_FILE = ROOT / 'metaplatform_project_dump.txt'
+IGNORED_DIRS = {'.git', 'node_modules', '__pycache__', 'dist', '.idea', '.vscode'}
+IGNORED_FILES = {OUTPUT_FILE.name, 'codex.patch'}
 
 
 def _is_ignored(path: Path) -> bool:
-    parts = set(path.parts)
-    return bool(parts & IGNORED_DIRS) or path.name in IGNORED_FILES
+  return any(part in IGNORED_DIRS for part in path.parts) or path.name in IGNORED_FILES
 
 
 def get_project_files() -> list[Path]:
-    """Return project files according to current repository structure."""
-    try:
-        result = subprocess.run(
-            ["git", "ls-files"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        files = [Path(line.strip()) for line in result.stdout.splitlines() if line.strip()]
-    except Exception:
-        files = [
-            p.relative_to(ROOT)
-            for p in ROOT.rglob("*")
-            if p.is_file() and not _is_ignored(p.relative_to(ROOT))
-        ]
+  """Return tracked + untracked project files from current repository state."""
+  try:
+    result = subprocess.run(
+      ['git', 'ls-files', '--cached', '--others', '--exclude-standard'],
+      cwd=ROOT,
+      check=True,
+      capture_output=True,
+      text=True
+    )
+    files = [Path(line.strip()) for line in result.stdout.splitlines() if line.strip()]
+  except Exception:
+    files = [
+      p.relative_to(ROOT)
+      for p in ROOT.rglob('*')
+      if p.is_file() and not _is_ignored(p.relative_to(ROOT))
+    ]
 
-    return sorted({p for p in files if not _is_ignored(p)})
+  existing_files = [p for p in files if (ROOT / p).exists() and not _is_ignored(p)]
+  return sorted(set(existing_files))
 
 
 def export_files() -> None:
-    lines: list[str] = []
+  lines: list[str] = []
+  lines.append('=' * 50)
+  lines.append('PROJECT EXPORT')
+  lines.append('=' * 50)
+  lines.append('')
 
-    for rel_file in get_project_files():
-        file_path = ROOT / rel_file
-        if not file_path.exists():
-            continue
+  for rel_file in get_project_files():
+    file_path = ROOT / rel_file
 
-        lines.append("=" * 80)
-        lines.append(f"FILE: {rel_file}")
-        lines.append("=" * 80)
-        lines.append("")
+    lines.append('=' * 50)
+    lines.append(f'FILE: {rel_file.as_posix()}')
+    lines.append('=' * 50)
+    lines.append('')
 
-        try:
-            lines.append(file_path.read_text(encoding="utf-8"))
-        except UnicodeDecodeError:
-            lines.append(file_path.read_text(encoding="utf-8", errors="replace"))
+    try:
+      content = file_path.read_text(encoding='utf-8')
+    except UnicodeDecodeError:
+      content = file_path.read_text(encoding='utf-8', errors='replace')
 
-        lines.append("")
+    lines.append(content)
+    lines.append('')
 
-    OUTPUT_FILE.write_text("\n".join(lines), encoding="utf-8")
-    print(f"Export finished: {OUTPUT_FILE}")
-
-
-if __name__ == "__main__":
-    export_files()
+  OUTPUT_FILE.write_text('\n'.join(lines), encoding='utf-8')
+  print(f'Export finished: {OUTPUT_FILE}')
 
 
-================================================================================
+if __name__ == '__main__':
+  export_files()
+
+
+==================================================
 FILE: main.js
-================================================================================
+==================================================
 
 import { app, BrowserWindow, ipcMain } from 'electron';
 import fs from 'node:fs/promises';
@@ -391,9 +398,9 @@ app.on('window-all-closed', () => {
   }
 });
 
-================================================================================
+==================================================
 FILE: package.json
-================================================================================
+==================================================
 
 {
   "name": "metaplatform",
@@ -407,7 +414,13 @@ FILE: package.json
   },
   "dependencies": {
     "split.js": "^1.6.5",
-    "yaml": "^2.5.1"
+    "yaml": "^2.5.1",
+    "@univerjs/presets": "0.15.0",
+    "@univerjs/preset-sheets-core": "0.15.0",
+    "@univerjs/preset-sheets-data-validation": "0.15.0",
+    "@univerjs/sheets": "0.15.0",
+    "@univerjs/sheets-ui": "0.15.0",
+    "@univerjs/sheets-data-validation": "0.15.0"
   },
   "devDependencies": {
     "electron": "^28.0.0",
@@ -415,9 +428,10 @@ FILE: package.json
   }
 }
 
-================================================================================
+
+==================================================
 FILE: preload.cjs
-================================================================================
+==================================================
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -432,9 +446,9 @@ contextBridge.exposeInMainWorld('MetaPlatformFS', {
   listFiles: (targetDir, extensions) => ipcRenderer.invoke('fs:list-files', targetDir, extensions)
 });
 
-================================================================================
-FILE: project-examples\demo-feedmill\metagen\conveyors.yaml
-================================================================================
+==================================================
+FILE: project-examples/demo-feedmill/metagen/conveyors.yaml
+==================================================
 
 kind: metagen.component
 version: 1
@@ -474,9 +488,9 @@ generation:
     language: st
     fileName: conveyors.st
 
-================================================================================
-FILE: project-examples\demo-feedmill\metagen\pumps.yaml
-================================================================================
+==================================================
+FILE: project-examples/demo-feedmill/metagen/pumps.yaml
+==================================================
 
 kind: metagen.component
 version: 1
@@ -516,9 +530,9 @@ generation:
     language: st
     fileName: pumps.st
 
-================================================================================
-FILE: project-examples\demo-feedmill\metagen\valves.yaml
-================================================================================
+==================================================
+FILE: project-examples/demo-feedmill/metagen/valves.yaml
+==================================================
 
 kind: metagen.component
 version: 1
@@ -558,23 +572,23 @@ generation:
     language: st
     fileName: valves.st
 
-================================================================================
-FILE: project-examples\demo-feedmill\metalab\startup_scenario.yaml
-================================================================================
+==================================================
+FILE: project-examples/demo-feedmill/metalab/startup_scenario.yaml
+==================================================
 
 kind: metalab.scenario
 version: 1
 
-================================================================================
-FILE: project-examples\demo-feedmill\metaview\main_screen.yaml
-================================================================================
+==================================================
+FILE: project-examples/demo-feedmill/metaview/main_screen.yaml
+==================================================
 
 kind: metaview.screen
 version: 1
 
-================================================================================
-FILE: project-examples\demo-feedmill\project.yaml
-================================================================================
+==================================================
+FILE: project-examples/demo-feedmill/project.yaml
+==================================================
 
 kind: metaplatform.project
 version: 1
@@ -595,9 +609,9 @@ paths:
   metaview: metaview
   generated: generated
 
-================================================================================
-FILE: renderer\app.js
-================================================================================
+==================================================
+FILE: renderer/app.js
+==================================================
 
 import { APP_CONFIG } from '../config/app-config.js';
 import { applyStaticText } from './ui/applyStaticText.js';
@@ -681,9 +695,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 });
 
-================================================================================
-FILE: renderer\core\commandBus.js
-================================================================================
+==================================================
+FILE: renderer/core/commandBus.js
+==================================================
 
 export function createCommandBus({ logger }) {
   const handlers = new Map();
@@ -726,9 +740,9 @@ export function createCommandBus({ logger }) {
   };
 }
 
-================================================================================
-FILE: renderer\core\layout.js
-================================================================================
+==================================================
+FILE: renderer/core/layout.js
+==================================================
 
 export function initWorkbenchLayout() {
   return {
@@ -736,9 +750,9 @@ export function initWorkbenchLayout() {
   };
 }
 
-================================================================================
-FILE: renderer\core\logger.js
-================================================================================
+==================================================
+FILE: renderer/core/logger.js
+==================================================
 
 import { APP_CONFIG } from '../../config/app-config.js';
 
@@ -792,9 +806,9 @@ export function createLogger() {
   };
 }
 
-================================================================================
-FILE: renderer\core\moduleRegistry.js
-================================================================================
+==================================================
+FILE: renderer/core/moduleRegistry.js
+==================================================
 
 export function createModuleRegistry({ logger }) {
   const modulesById = new Map();
@@ -839,9 +853,9 @@ export function createModuleRegistry({ logger }) {
   };
 }
 
-================================================================================
-FILE: renderer\core\platformCommands.js
-================================================================================
+==================================================
+FILE: renderer/core/platformCommands.js
+==================================================
 
 export const PLATFORM_COMMANDS = {
   createProject: 'PLATFORM_CREATE_PROJECT',
@@ -856,9 +870,9 @@ export const PLATFORM_COMMANDS = {
   closeTab: 'PLATFORM_CLOSE_TAB'
 };
 
-================================================================================
-FILE: renderer\core\projectManager.js
-================================================================================
+==================================================
+FILE: renderer/core/projectManager.js
+==================================================
 
 import { APP_CONFIG } from '../../config/app-config.js';
 import { createDocumentLoader } from '../runtime/documentLoader.js';
@@ -1123,13 +1137,27 @@ export function createProjectManager({
 }
 
 
-================================================================================
-FILE: renderer\editors\metagen\createMetaGenEditor.js
-================================================================================
+==================================================
+FILE: renderer/editors/metagen/createMetaGenEditor.js
+==================================================
+
+import Split from 'split.js';
+import { mergeLocales } from '@univerjs/presets';
+import UniverPresetSheetsCoreRuRU from '@univerjs/preset-sheets-core/locales/ru-RU';
+import { UniverSheetsDataValidationPreset } from '@univerjs/preset-sheets-data-validation';
+import UniverPresetSheetsDataValidationRuRU from '@univerjs/preset-sheets-data-validation/locales/ru-RU';
+
+import '@univerjs/sheets/facade';
+import '@univerjs/sheets-ui/facade';
+
+import '@univerjs/preset-sheets-core/lib/index.css';
+import '@univerjs/preset-sheets-data-validation/lib/index.css';
 
 import { APP_CONFIG } from '../../../config/app-config.js';
 import { METAGEN_CONFIG } from '../../modules/metagen/metagenConfig.js';
 import { clearMountElement } from '../shared/editorHost.js';
+import { createMetaGenParamsSheet } from '../../modules/metagen/tables/createMetaGenParamsSheet.js';
+import { createMetaGenDataSheet } from '../../modules/metagen/tables/createMetaGenDataSheet.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -1137,38 +1165,64 @@ function createElement(tagName, classNames = []) {
   return node;
 }
 
+function buildLocale() {
+  const locale = mergeLocales(UniverPresetSheetsCoreRuRU, UniverPresetSheetsDataValidationRuRU);
+  const labels = METAGEN_CONFIG.tableRuntime.contextMenuLabels;
+
+  if (locale.rightClick) {
+    locale.rightClick.copy = labels.copy;
+    locale.rightClick.cut = labels.cut;
+    locale.rightClick.paste = labels.paste;
+    locale.rightClick.insertRowBefore = labels.insertRowBefore;
+    locale.rightClick.insertColumnBefore = labels.insertColumnBefore;
+  }
+
+  return locale;
+}
+
+function createPanel({ headerText, panelClassName, contentNode }) {
+  const panelNode = createElement('div', [panelClassName]);
+  const headerNode = createElement('div', [APP_CONFIG.ui.classNames.editorPanelHeader]);
+  const contentWrapperNode = createElement('div', ['metagen-editor-panel-content']);
+
+  headerNode.textContent = headerText;
+  contentWrapperNode.appendChild(contentNode);
+  panelNode.appendChild(headerNode);
+  panelNode.appendChild(contentWrapperNode);
+
+  return panelNode;
+}
+
 function buildEditor(documentRecord) {
   const root = createElement('div', [APP_CONFIG.ui.classNames.editorRoot]);
   const grid = createElement('div', [APP_CONFIG.ui.classNames.editorGrid]);
 
-  const paramsPanel = createElement('div', [APP_CONFIG.ui.classNames.editorPanel]);
-  const codePanel = createElement('div', [APP_CONFIG.ui.classNames.editorPanel]);
-  const dataPanel = createElement('div', [APP_CONFIG.ui.classNames.editorPanel]);
-
-  const paramsHeader = createElement('div', [APP_CONFIG.ui.classNames.editorPanelHeader]);
-  const codeHeader = createElement('div', [APP_CONFIG.ui.classNames.editorPanelHeader]);
-  const dataHeader = createElement('div', [APP_CONFIG.ui.classNames.editorPanelHeader]);
-
-  paramsHeader.textContent = APP_CONFIG.ui.panelHeaders.params;
-  codeHeader.textContent = APP_CONFIG.ui.panelHeaders.code;
-  dataHeader.textContent = APP_CONFIG.ui.panelHeaders.data;
-
-  const paramsTextarea = createElement('textarea', [APP_CONFIG.ui.classNames.editorTextarea]);
+  const paramsContainer = createElement('div', ['metagen-editor-table-container']);
   const codeTextarea = createElement('textarea', [APP_CONFIG.ui.classNames.editorTextarea]);
-  const dataTextarea = createElement('textarea', [APP_CONFIG.ui.classNames.editorTextarea]);
+  const dataContainer = createElement('div', ['metagen-editor-table-container']);
 
-  paramsTextarea.value = JSON.stringify(documentRecord.document?.params || {}, null, 2);
-  dataTextarea.value = JSON.stringify(documentRecord.document?.data || {}, null, 2);
-  codeTextarea.value = documentRecord.document?.code?.text || '';
+  const uid = String(documentRecord.path || documentRecord.document?.component?.id || 'metagen').replace(/[^a-zA-Z0-9_-]/g, '_');
 
-  paramsPanel.appendChild(paramsHeader);
-  paramsPanel.appendChild(paramsTextarea);
+  paramsContainer.id = `metagen-params-${uid}`;
+  dataContainer.id = `metagen-data-${uid}`;
 
-  codePanel.appendChild(codeHeader);
-  codePanel.appendChild(codeTextarea);
+  const paramsPanel = createPanel({
+    headerText: APP_CONFIG.ui.panelHeaders.params,
+    panelClassName: APP_CONFIG.ui.classNames.editorPanel,
+    contentNode: paramsContainer
+  });
 
-  dataPanel.appendChild(dataHeader);
-  dataPanel.appendChild(dataTextarea);
+  const codePanel = createPanel({
+    headerText: APP_CONFIG.ui.panelHeaders.code,
+    panelClassName: APP_CONFIG.ui.classNames.editorPanel,
+    contentNode: codeTextarea
+  });
+
+  const dataPanel = createPanel({
+    headerText: APP_CONFIG.ui.panelHeaders.data,
+    panelClassName: APP_CONFIG.ui.classNames.editorPanel,
+    contentNode: dataContainer
+  });
 
   grid.appendChild(paramsPanel);
   grid.appendChild(codePanel);
@@ -1177,61 +1231,141 @@ function buildEditor(documentRecord) {
 
   return {
     root,
-    paramsTextarea,
-    dataTextarea,
+    grid,
+    paramsPanel,
+    codePanel,
+    dataPanel,
+    paramsContainer,
+    dataContainer,
     codeTextarea
   };
 }
 
-export async function createMetaGenEditor({
-  documentRecord,
-  mountElement,
-  onSave
-}) {
+function bindSaveShortcut(textarea, trySave) {
+  textarea.addEventListener('keydown', async (event) => {
+    if (event.ctrlKey && event.key.toLowerCase() === METAGEN_CONFIG.editor.saveShortcutKey) {
+      event.preventDefault();
+      await trySave();
+    }
+  });
+}
+
+export async function createMetaGenEditor({ documentRecord, mountElement, logger, onSave }) {
   clearMountElement(mountElement);
 
-  const { root, paramsTextarea, dataTextarea, codeTextarea } = buildEditor(documentRecord);
+  const locale = buildLocale();
+  const tableConfig = METAGEN_CONFIG.tableRuntime;
+  const logMessages = tableConfig.logMessages;
+  const loggerSource = `${METAGEN_CONFIG.moduleId}.editor`;
+  const paramsSource = `${METAGEN_CONFIG.moduleId}.table.params`;
+  const dataSource = `${METAGEN_CONFIG.moduleId}.table.data`;
+  const autoStyleSource = `${METAGEN_CONFIG.moduleId}.table.params.auto-style`;
+
+  const {
+    root,
+    grid,
+    paramsPanel,
+    codePanel,
+    dataPanel,
+    paramsContainer,
+    dataContainer,
+    codeTextarea
+  } = buildEditor(documentRecord);
+
+  codeTextarea.value = documentRecord.document?.code?.text || '';
+
   mountElement.appendChild(root);
 
-  function extractValue() {
-    documentRecord.document.params = JSON.parse(paramsTextarea.value || '{}');
-    documentRecord.document.data = JSON.parse(dataTextarea.value || '{}');
+  const split = Split([paramsPanel, codePanel, dataPanel], {
+    sizes: METAGEN_CONFIG.editor.layout.sizes,
+    minSize: METAGEN_CONFIG.editor.layout.minSize,
+    gutterSize: METAGEN_CONFIG.editor.layout.gutterSize,
+    cursor: METAGEN_CONFIG.editor.layout.cursor,
+    elementStyle: (dimension, size, gutterSize) => ({
+      'flex-basis': `calc(${size}% - ${gutterSize}px)`
+    }),
+    gutterStyle: (dimension, gutterSize) => ({
+      'flex-basis': `${gutterSize}px`
+    })
+  });
+
+  const documentComponentId = String(documentRecord.document?.component?.id || 'component');
+
+  const paramsTable = createMetaGenParamsSheet({
+    container: paramsContainer.id,
+    locale,
+    logger,
+    source: paramsSource,
+    autoStyleSource,
+    workbookId: `wb_params_${documentComponentId}`,
+    workbookName: tableConfig.workbooks.displayNames.params,
+    sheetId: `sheet_params_${documentComponentId}_1`,
+    sheetName: `params_sheet_${documentComponentId}_1`,
+    tableConfig: tableConfig.tables.params,
+    logMessages,
+    paramsDocument: documentRecord.document?.params || {}
+  });
+
+  const dataTable = await createMetaGenDataSheet({
+    container: dataContainer.id,
+    locale,
+    logger,
+    source: dataSource,
+    workbookId: `wb_data_${documentComponentId}`,
+    workbookName: tableConfig.workbooks.displayNames.data,
+    sheetId: `sheet_data_${documentComponentId}`,
+    sheetName: `data_sheet_${documentComponentId}`,
+    tableConfig: tableConfig.tables.data,
+    hiddenMenuCommands: tableConfig.hiddenDataTableMenuCommands,
+    logMessages,
+    dataValidationPreset: UniverSheetsDataValidationPreset,
+    dataDocument: documentRecord.document?.data || {}
+  });
+
+  async function extractValue() {
+    documentRecord.document.params = paramsTable?.extractDocumentValue?.() || {
+      format: 'header-plus-rows',
+      header: [],
+      rows: []
+    };
+    documentRecord.document.data = dataTable?.extractDocumentValue?.() || {
+      format: 'table',
+      columns: [],
+      rows: []
+    };
     documentRecord.document.code.text = codeTextarea.value;
     return documentRecord;
   }
 
   async function trySave() {
     try {
-      const nextRecord = extractValue();
+      const nextRecord = await extractValue();
       await onSave(nextRecord);
     } catch (error) {
       window.alert(`Ошибка сохранения: ${error?.message || String(error)}`);
     }
   }
 
-  function bindSaveShortcut(textarea) {
-    textarea.addEventListener('keydown', async (event) => {
-      if (event.ctrlKey && event.key.toLowerCase() === METAGEN_CONFIG.editor.saveShortcutKey) {
-        event.preventDefault();
-        await trySave();
-      }
-    });
-  }
+  bindSaveShortcut(codeTextarea, trySave);
 
-  bindSaveShortcut(paramsTextarea);
-  bindSaveShortcut(dataTextarea);
-  bindSaveShortcut(codeTextarea);
+  logger?.info(loggerSource, 'MetaGen табличный редактор инициализирован');
 
   return {
+    paramsTable,
+    dataTable,
     dispose() {
+      paramsTable?.dispose?.();
+      dataTable?.dispose?.();
+      split?.destroy?.();
       clearMountElement(mountElement);
     }
   };
 }
 
-================================================================================
-FILE: renderer\editors\metalab\createMetaLabEditor.js
-================================================================================
+
+==================================================
+FILE: renderer/editors/metalab/createMetaLabEditor.js
+==================================================
 
 export async function createMetaLabEditor() {
   return {
@@ -1239,9 +1373,9 @@ export async function createMetaLabEditor() {
   };
 }
 
-================================================================================
-FILE: renderer\editors\metaview\createMetaViewEditor.js
-================================================================================
+==================================================
+FILE: renderer/editors/metaview/createMetaViewEditor.js
+==================================================
 
 export async function createMetaViewEditor() {
   return {
@@ -1249,17 +1383,17 @@ export async function createMetaViewEditor() {
   };
 }
 
-================================================================================
-FILE: renderer\editors\shared\editorHost.js
-================================================================================
+==================================================
+FILE: renderer/editors/shared/editorHost.js
+==================================================
 
 export function clearMountElement(mountElement) {
   mountElement.innerHTML = '';
 }
 
-================================================================================
-FILE: renderer\index.html
-================================================================================
+==================================================
+FILE: renderer/index.html
+==================================================
 
 <!DOCTYPE html>
 <html lang="ru">
@@ -1302,9 +1436,9 @@ FILE: renderer\index.html
 </body>
 </html>
 
-================================================================================
-FILE: renderer\modules\metagen\metagenCommands.js
-================================================================================
+==================================================
+FILE: renderer/modules/metagen/metagenCommands.js
+==================================================
 
 import { METAGEN_CONFIG } from './metagenConfig.js';
 
@@ -1324,9 +1458,9 @@ export function createMetaGenCommands() {
   };
 }
 
-================================================================================
-FILE: renderer\modules\metagen\metagenConfig.js
-================================================================================
+==================================================
+FILE: renderer/modules/metagen/metagenConfig.js
+==================================================
 
 export const METAGEN_CONFIG = {
   moduleId: 'metagen',
@@ -1349,7 +1483,140 @@ export const METAGEN_CONFIG = {
   },
 
   editor: {
-    saveShortcutKey: 's'
+    saveShortcutKey: 's',
+    layout: {
+      sizes: [25, 50, 25],
+      minSize: [260, 280, 260],
+      gutterSize: 4,
+      cursor: 'col-resize'
+    }
+  },
+
+  tableRuntime: {
+    workbooks: {
+      displayNames: {
+        params: 'Параметры',
+        data: 'Данные'
+      }
+    },
+
+    tables: {
+      params: {
+        rows: 100,
+        defaultColumns: 10,
+        autoStyle: {
+          debounceDelayMs: 120,
+          maxRecursiveRangeDepth: 6,
+          fullRefreshCommandIdIncludes: [
+            'insert-row',
+            'remove-row',
+            'delete-row',
+            'move-row',
+            'move-rows',
+            'insert-column',
+            'remove-column',
+            'delete-column',
+            'move-column',
+            'move-columns',
+            'insert-range-move-down',
+            'delete-range-move-up',
+            'undo',
+            'redo'
+          ],
+          rowCategory: {
+            empty: 'empty',
+            key: 'key',
+            value: 'value'
+          },
+          border: {
+            type: 'ALL',
+            style: 'THIN',
+            color: '#d9d9d9'
+          },
+          rowStyles: {
+            key: {
+              backgroundColor: '#f3f4f6',
+              fontWeight: 'bold',
+              horizontalAlignment: 'center',
+              verticalAlignment: 'middle'
+            },
+            normal: {
+              backgroundColor: '#ffffff',
+              fontWeight: 'normal',
+              horizontalAlignment: 'left',
+              verticalAlignment: 'middle'
+            }
+          }
+        }
+      },
+
+      data: {
+        rows: 100,
+        headers: [
+          'Тип',
+          'Блок данных',
+          'Имя переменной',
+          'Значение',
+          'Комментарий',
+          'HMI',
+          'Flt',
+          'Wrn',
+          'Alm',
+          'Trend',
+          'Conf'
+        ],
+        headerConfig: {
+          mode: 'custom',
+          headerStyle: {}
+        },
+        checkboxColumns: ['HMI', 'Trend', 'Conf'],
+        permissions: {
+          allowSetCellValue: true,
+          allowInsertColumn: false,
+          allowDeleteColumn: false
+        },
+        headerApply: {
+          retryCount: 10,
+          retryDelayMs: 100
+        }
+      }
+    },
+
+    hiddenDataTableMenuCommands: [
+      'sheet.command.cancel-frozen',
+      'sheet.command.set-selection-frozen',
+      'sheet.command.set-row-frozen',
+      'sheet.command.set-col-frozen',
+      'sheet.command.add-range-protection-from-context-menu',
+      'sheet.command.set-range-protection-from-context-menu',
+      'sheet.command.delete-range-protection-from-context-menu',
+      'sheet.command.view-sheet-permission-from-context-menu'
+    ],
+
+    contextMenuLabels: {
+      copy: '📋 Копировать',
+      cut: '✂️ Вырезать',
+      paste: '📌 Вставить',
+      insertRowBefore: '⤴️ Вставить строку выше',
+      insertColumnBefore: '⤵️ Вставить колонку слева'
+    },
+
+    logMessages: {
+      tableCreated: 'Таблица создана',
+      tableCreateFailed: 'Ошибка создания таблицы',
+      dataColumnsProtectionApplied: 'Вставка и удаление столбцов запрещены',
+      checkboxColumnsConfigured: 'Колонки checkbox настроены',
+      checkboxColumnsFailed: 'Не удалось настроить checkbox-колонки',
+      customHeadersApplied: 'Кастомные заголовки колонок применены',
+      defaultHeadersApplied: 'Используются стандартные заголовки колонок A, B, C...',
+      headerMethodUnavailable: 'Метод customizeColumnHeader недоступен',
+      headerApplyRetryPrefix: 'Render unit ещё не готов, повтор применения заголовков',
+      headerApplyFailed: 'Не удалось применить кастомные заголовки колонок',
+      paramsAutoStyleInit: 'Автостили параметров инициализированы',
+      paramsAutoStyleRefreshScheduled: 'Запланировано обновление автостилей параметров',
+      paramsAutoStyleApplied: 'Автостили параметров обновлены',
+      paramsAutoStyleFailed: 'Ошибка автостилей параметров'
+    }
   },
 
   defaults: {
@@ -1361,9 +1628,10 @@ export const METAGEN_CONFIG = {
   }
 };
 
-================================================================================
-FILE: renderer\modules\metagen\metagenDocumentFactory.js
-================================================================================
+
+==================================================
+FILE: renderer/modules/metagen/metagenDocumentFactory.js
+==================================================
 
 import { slugifyDocumentName } from '../../runtime/naming.js';
 import { METAGEN_CONFIG } from './metagenConfig.js';
@@ -1418,9 +1686,9 @@ export function createMetaGenDocument({ name }) {
   };
 }
 
-================================================================================
-FILE: renderer\modules\metagen\metagenGeneratorBridge.js
-================================================================================
+==================================================
+FILE: renderer/modules/metagen/metagenGeneratorBridge.js
+==================================================
 
 export function createMetaGenGeneratorBridge() {
   return {
@@ -1430,9 +1698,9 @@ export function createMetaGenGeneratorBridge() {
   };
 }
 
-================================================================================
-FILE: renderer\modules\metagen\metagenModule.js
-================================================================================
+==================================================
+FILE: renderer/modules/metagen/metagenModule.js
+==================================================
 
 import { createMetaGenDocument } from './metagenDocumentFactory.js';
 import { validateMetaGenDocument } from './metagenSchema.js';
@@ -1462,6 +1730,7 @@ export function createMetaGenModule({ logger, getProjectManager }) {
       return createMetaGenEditor({
         documentRecord,
         mountElement,
+        logger,
         onSave: async (nextRecord) => {
           const validation = validateMetaGenDocument(nextRecord.document);
 
@@ -1489,9 +1758,9 @@ export function createMetaGenModule({ logger, getProjectManager }) {
   };
 }
 
-================================================================================
-FILE: renderer\modules\metagen\metagenSchema.js
-================================================================================
+==================================================
+FILE: renderer/modules/metagen/metagenSchema.js
+==================================================
 
 import { METAGEN_CONFIG } from './metagenConfig.js';
 
@@ -1512,33 +1781,893 @@ export function validateMetaGenDocument(document) {
   };
 }
 
-================================================================================
-FILE: renderer\modules\metagen\tables\createMetaGenDataSheet.js
-================================================================================
+==================================================
+FILE: renderer/modules/metagen/tables/createMetaGenDataSheet.js
+==================================================
 
-export function createMetaGenDataSheet() {
+import { createMetaGenSimpleSheet } from './createMetaGenSimpleSheet.js';
+
+function buildHiddenMenuConfig(commands) {
+  return Object.fromEntries(commands.map((command) => [command, { hidden: true }]));
+}
+
+function sleep(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function normalizeCellValue(cellValue) {
+  if (cellValue == null) {
+    return '';
+  }
+
+  if (typeof cellValue === 'object' && 'v' in cellValue) {
+    return normalizeCellValue(cellValue.v);
+  }
+
+  return String(cellValue).trim();
+}
+
+function trimTrailingEmptyCells(rowValues) {
+  const normalized = rowValues.map((value) => normalizeCellValue(value));
+
+  while (normalized.length > 0 && normalized[normalized.length - 1] === '') {
+    normalized.pop();
+  }
+
+  return normalized;
+}
+
+async function applyHeaderConfig({ sheet, headers, headerConfig, retryConfig, logger, source, logMessages }) {
+  if (!sheet || typeof sheet.customizeColumnHeader !== 'function') {
+    logger.warn(source, logMessages.headerMethodUnavailable);
+    return false;
+  }
+
+  const applyConfig = () => {
+    if (!headerConfig || headerConfig.mode === 'default') {
+      sheet.customizeColumnHeader({ columnsCfg: {} });
+      logger.info(source, logMessages.defaultHeadersApplied);
+      return;
+    }
+
+    const columnsCfg = headers.reduce((accumulator, text, index) => {
+      if (text != null && text !== '') {
+        accumulator[index] = text;
+      }
+      return accumulator;
+    }, {});
+
+    sheet.customizeColumnHeader({
+      columnsCfg,
+      headerStyle: headerConfig.headerStyle || {}
+    });
+
+    logger.info(source, logMessages.customHeadersApplied);
+  };
+
+  for (let attemptIndex = 0; attemptIndex < retryConfig.retryCount; attemptIndex += 1) {
+    try {
+      applyConfig();
+      return true;
+    } catch (error) {
+      const message = error?.message || String(error);
+
+      if (!message.includes('Render Unit with unitId')) {
+        throw error;
+      }
+
+      logger.warn(
+        source,
+        `${logMessages.headerApplyRetryPrefix} (${attemptIndex + 1}/${retryConfig.retryCount})`
+      );
+      await sleep(retryConfig.retryDelayMs);
+    }
+  }
+
+  logger.warn(source, logMessages.headerApplyFailed);
+  return false;
+}
+
+async function applyDataSheetPermissions({ univerAPI, sheet, permissions, logger, source, logMessages }) {
+  const worksheetPermission = sheet.getWorksheetPermission();
+
+  await worksheetPermission.protect();
+  await worksheetPermission.setPoint(
+    univerAPI.Enum.WorksheetPermissionPoint.SetCellValue,
+    permissions.allowSetCellValue
+  );
+  await worksheetPermission.setPoint(
+    univerAPI.Enum.WorksheetPermissionPoint.InsertColumn,
+    permissions.allowInsertColumn
+  );
+  await worksheetPermission.setPoint(
+    univerAPI.Enum.WorksheetPermissionPoint.DeleteColumn,
+    permissions.allowDeleteColumn
+  );
+
+  logger.info(source, logMessages.dataColumnsProtectionApplied);
+}
+
+function applyCheckboxValidation({ univerAPI, sheet, rowCount, headers, checkboxColumns, logger, source, logMessages }) {
+  try {
+    checkboxColumns
+      .map((columnName) => headers.indexOf(columnName))
+      .filter((index) => index !== -1)
+      .forEach((columnIndex) => {
+        const range = sheet.getRange(0, columnIndex, rowCount, 1);
+        const checkboxRule = univerAPI.newDataValidation().requireCheckbox().build();
+        range.setDataValidation(checkboxRule);
+      });
+
+    logger.info(source, logMessages.checkboxColumnsConfigured);
+  } catch (error) {
+    logger.warn(source, logMessages.checkboxColumnsFailed, error);
+  }
+}
+
+function writeDataDocumentToSheet(sheet, dataDocument, columnCount) {
+  if (!Array.isArray(dataDocument?.rows)) {
+    return;
+  }
+
+  dataDocument.rows.forEach((rowValues, rowIndex) => {
+    if (!Array.isArray(rowValues) || rowValues.length === 0) {
+      return;
+    }
+
+    const limited = rowValues.slice(0, columnCount);
+    sheet.getRange(rowIndex, 0, 1, limited.length).setValues([limited]);
+  });
+}
+
+function extractRows(sheet, rowCount, columnCount) {
+  const rows = [];
+
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    const rowValues = sheet.getRange(rowIndex, 0, 1, columnCount).getValues()?.[0] || [];
+    const trimmed = trimTrailingEmptyCells(rowValues);
+
+    if (trimmed.length > 0) {
+      rows.push(trimmed);
+    }
+  }
+
+  return rows;
+}
+
+export async function createMetaGenDataSheet({
+  container,
+  locale,
+  logger,
+  source,
+  workbookId,
+  workbookName,
+  sheetId,
+  sheetName,
+  dataValidationPreset,
+  tableConfig,
+  hiddenMenuCommands,
+  logMessages,
+  dataDocument
+}) {
+  const sheetRuntime = createMetaGenSimpleSheet({
+    container,
+    locale,
+    menu: buildHiddenMenuConfig(hiddenMenuCommands),
+    workbookId,
+    workbookName,
+    sheetId,
+    sheetName,
+    rowCount: tableConfig.rows,
+    columnCount: tableConfig.headers.length,
+    logger,
+    source,
+    logMessages,
+    extraPresets: typeof dataValidationPreset === 'function' ? [dataValidationPreset()] : []
+  });
+
+  if (!sheetRuntime) {
+    return null;
+  }
+
+  writeDataDocumentToSheet(sheetRuntime.sheet, dataDocument, tableConfig.headers.length);
+
+  await applyDataSheetPermissions({
+    univerAPI: sheetRuntime.univerAPI,
+    sheet: sheetRuntime.sheet,
+    permissions: tableConfig.permissions,
+    logger,
+    source,
+    logMessages
+  });
+
+  applyCheckboxValidation({
+    univerAPI: sheetRuntime.univerAPI,
+    sheet: sheetRuntime.sheet,
+    rowCount: tableConfig.rows,
+    headers: tableConfig.headers,
+    checkboxColumns: tableConfig.checkboxColumns,
+    logger,
+    source,
+    logMessages
+  });
+
+  await applyHeaderConfig({
+    sheet: sheetRuntime.sheet,
+    headers: tableConfig.headers,
+    headerConfig: tableConfig.headerConfig,
+    retryConfig: tableConfig.headerApply,
+    logger,
+    source,
+    logMessages
+  });
+
+  return {
+    ...sheetRuntime,
+    extractDocumentValue() {
+      return {
+        format: 'table',
+        columns: [...tableConfig.headers],
+        rows: extractRows(sheetRuntime.sheet, tableConfig.rows, tableConfig.headers.length)
+      };
+    }
+  };
+}
+
+
+==================================================
+FILE: renderer/modules/metagen/tables/createMetaGenParamsSheet.js
+==================================================
+
+import { createMetaGenSimpleSheet } from './createMetaGenSimpleSheet.js';
+import { createMetaGenParamsTableAutoStyle } from './metaGenParamsTableAutoStyle.js';
+
+function normalizeCellValue(cellValue) {
+  if (cellValue == null) {
+    return '';
+  }
+
+  if (typeof cellValue === 'object' && 'v' in cellValue) {
+    return normalizeCellValue(cellValue.v);
+  }
+
+  return String(cellValue).trim();
+}
+
+function trimTrailingEmptyCells(rowValues) {
+  const normalized = rowValues.map((value) => normalizeCellValue(value));
+
+  while (normalized.length > 0 && normalized[normalized.length - 1] === '') {
+    normalized.pop();
+  }
+
+  return normalized;
+}
+
+function writeParamsDocumentToSheet(sheet, paramsDocument, columnCount) {
+  const rows = [];
+
+  if (Array.isArray(paramsDocument?.header) && paramsDocument.header.length > 0) {
+    rows.push(paramsDocument.header);
+  }
+
+  if (Array.isArray(paramsDocument?.rows)) {
+    rows.push(...paramsDocument.rows);
+  }
+
+  rows.forEach((rowValues, rowIndex) => {
+    if (!Array.isArray(rowValues) || rowValues.length === 0) {
+      return;
+    }
+
+    const limited = rowValues.slice(0, columnCount);
+    sheet.getRange(rowIndex, 0, 1, limited.length).setValues([limited]);
+  });
+}
+
+function collectRowsFromSheet(sheet, rowCount, columnCount) {
+  const rows = [];
+
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    const rowValues = sheet.getRange(rowIndex, 0, 1, columnCount).getValues()?.[0] || [];
+    const trimmed = trimTrailingEmptyCells(rowValues);
+
+    if (trimmed.length > 0) {
+      rows.push(trimmed);
+    }
+  }
+
+  return rows;
+}
+
+export function createMetaGenParamsSheet({
+  container,
+  locale,
+  logger,
+  source,
+  autoStyleSource,
+  workbookId,
+  workbookName,
+  sheetId,
+  sheetName,
+  tableConfig,
+  logMessages,
+  paramsDocument
+}) {
+  const sheetRuntime = createMetaGenSimpleSheet({
+    container,
+    locale,
+    workbookId,
+    workbookName,
+    sheetId,
+    sheetName,
+    rowCount: tableConfig.rows,
+    columnCount: tableConfig.defaultColumns,
+    logger,
+    source,
+    logMessages
+  });
+
+  if (!sheetRuntime) {
+    return null;
+  }
+
+  writeParamsDocumentToSheet(sheetRuntime.sheet, paramsDocument, tableConfig.defaultColumns);
+
+  const autoStyleController = createMetaGenParamsTableAutoStyle({
+    univerAPI: sheetRuntime.univerAPI,
+    workbook: sheetRuntime.workbook,
+    sheet: sheetRuntime.sheet,
+    logger,
+    source: autoStyleSource,
+    logMessages,
+    rowCount: tableConfig.rows,
+    columnCount: tableConfig.defaultColumns,
+    autoStyleConfig: tableConfig.autoStyle
+  });
+
+  return {
+    ...sheetRuntime,
+    ...autoStyleController,
+    extractDocumentValue() {
+      const rowValues = collectRowsFromSheet(
+        sheetRuntime.sheet,
+        tableConfig.rows,
+        tableConfig.defaultColumns
+      );
+
+      return {
+        format: 'header-plus-rows',
+        header: rowValues[0] || [],
+        rows: rowValues.slice(1)
+      };
+    },
+    dispose() {
+      autoStyleController?.dispose?.();
+      sheetRuntime?.dispose?.();
+    }
+  };
+}
+
+
+==================================================
+FILE: renderer/modules/metagen/tables/createMetaGenSimpleSheet.js
+==================================================
+
+import { createUniver, LocaleType } from '@univerjs/presets';
+import { UniverSheetsCorePreset } from '@univerjs/preset-sheets-core';
+
+export function createMetaGenSimpleSheet({
+  container,
+  locale,
+  menu,
+  workbookId,
+  workbookName,
+  sheetId,
+  sheetName,
+  rowCount,
+  columnCount,
+  logger,
+  source,
+  logMessages,
+  extraPresets = []
+}) {
+  try {
+    const { univerAPI } = createUniver({
+      locale: LocaleType.RU_RU,
+      locales: {
+        [LocaleType.RU_RU]: locale
+      },
+      presets: [
+        UniverSheetsCorePreset({
+          container,
+          header: true,
+          toolbar: true,
+          contextMenu: true,
+          footer: false,
+          ...(menu ? { menu } : {})
+        }),
+        ...extraPresets
+      ]
+    });
+
+    const workbook = univerAPI.createWorkbook({
+      id: workbookId,
+      name: workbookName,
+      sheetOrder: [sheetId],
+      sheets: {
+        [sheetId]: {
+          id: sheetId,
+          name: sheetName,
+          rowCount,
+          columnCount
+        }
+      }
+    });
+
+    const sheet = workbook.getActiveSheet();
+
+    logger.info(source, logMessages.tableCreated, {
+      workbookId,
+      sheetId,
+      sheetName
+    });
+
+    return {
+      univerAPI,
+      workbook,
+      sheet,
+      dispose() {
+        if (typeof univerAPI.dispose === 'function') {
+          univerAPI.dispose();
+        }
+      }
+    };
+  } catch (error) {
+    logger.error(source, logMessages.tableCreateFailed, error);
+    return null;
+  }
+}
+
+
+==================================================
+FILE: renderer/modules/metagen/tables/metaGenParamsTableAutoStyle.js
+==================================================
+
+function normalizeCellValue(cellValue) {
+  if (cellValue == null) {
+    return '';
+  }
+
+  if (typeof cellValue === 'object') {
+    if ('v' in cellValue) {
+      return normalizeCellValue(cellValue.v);
+    }
+
+    return '';
+  }
+
+  return String(cellValue).trim();
+}
+
+function isRowEmpty(rowValues) {
+  return rowValues.every((cellValue) => normalizeCellValue(cellValue) === '');
+}
+
+function canAccessCell(sheet, rowIndex, columnIndex) {
+  try {
+    sheet.getRange(rowIndex, columnIndex, 1, 1);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveActualRowCount(sheet, currentHint) {
+  let count = Math.max(1, currentHint);
+
+  while (count > 1 && !canAccessCell(sheet, count - 1, 0)) {
+    count -= 1;
+  }
+
+  while (canAccessCell(sheet, count, 0)) {
+    count += 1;
+  }
+
+  return count;
+}
+
+function resolveActualColumnCount(sheet, currentHint) {
+  let count = Math.max(1, currentHint);
+
+  while (count > 1 && !canAccessCell(sheet, 0, count - 1)) {
+    count -= 1;
+  }
+
+  while (canAccessCell(sheet, 0, count)) {
+    count += 1;
+  }
+
+  return count;
+}
+
+function getRowValues(sheet, rowIndex, actualColumnCount) {
+  const safeColumnCount = Math.max(1, actualColumnCount);
+  const range = sheet.getRange(rowIndex, 0, 1, safeColumnCount);
+  const values = range.getValues();
+
+  if (!Array.isArray(values) || !Array.isArray(values[0])) {
+    return new Array(safeColumnCount).fill('');
+  }
+
+  return values[0];
+}
+
+function applyRowStyle(univerAPI, sheet, rowIndex, actualColumnCount, rowStyle, borderConfig) {
+  const rowRange = sheet.getRange(rowIndex, 0, 1, Math.max(1, actualColumnCount));
+
+  rowRange
+    .setBackgroundColor(rowStyle.backgroundColor)
+    .setFontWeight(rowStyle.fontWeight)
+    .setHorizontalAlignment(rowStyle.horizontalAlignment)
+    .setVerticalAlignment(rowStyle.verticalAlignment)
+    .setBorder(
+      univerAPI.Enum.BorderType[borderConfig.type],
+      univerAPI.Enum.BorderStyleTypes[borderConfig.style],
+      borderConfig.color
+    );
+}
+
+function createDebouncedExecutor(delayMs, callback) {
+  let timeoutId = null;
+
+  return {
+    schedule() {
+      if (timeoutId != null) {
+        clearTimeout(timeoutId);
+      }
+
+      timeoutId = setTimeout(() => {
+        timeoutId = null;
+        callback();
+      }, delayMs);
+    },
+
+    dispose() {
+      if (timeoutId != null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    }
+  };
+}
+
+function mergeBounds(currentBounds, nextBounds) {
+  if (!currentBounds) {
+    return { ...nextBounds };
+  }
+
+  return {
+    startRow: Math.min(currentBounds.startRow, nextBounds.startRow),
+    endRow: Math.max(currentBounds.endRow, nextBounds.endRow)
+  };
+}
+
+function isFullRefreshCommand(commandId, config) {
+  const normalizedCommandId = String(commandId || '').toLowerCase();
+
+  return config.fullRefreshCommandIdIncludes.some((fragment) =>
+    normalizedCommandId.includes(fragment)
+  );
+}
+
+function collectRowBoundsFromUnknownShape(value, depthLeft, rowBoundsList) {
+  if (depthLeft < 0 || value == null) {
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectRowBoundsFromUnknownShape(item, depthLeft - 1, rowBoundsList));
+    return;
+  }
+
+  if (typeof value !== 'object') {
+    return;
+  }
+
+  const hasRange = Number.isInteger(value.startRow) && Number.isInteger(value.endRow);
+
+  if (hasRange) {
+    rowBoundsList.push({ startRow: value.startRow, endRow: value.endRow });
+  } else if (Number.isInteger(value.row)) {
+    rowBoundsList.push({ startRow: value.row, endRow: value.row });
+  }
+
+  Object.values(value).forEach((nestedValue) => {
+    collectRowBoundsFromUnknownShape(nestedValue, depthLeft - 1, rowBoundsList);
+  });
+}
+
+function getFallbackBoundsFromActiveSelection(workbook) {
+  try {
+    const activeSheet = workbook.getActiveSheet();
+    const activeRange = activeSheet.getActiveRange();
+
+    if (!activeRange) {
+      return null;
+    }
+
+    const rangeInfo = activeRange.getRange();
+
+    if (rangeInfo && Number.isInteger(rangeInfo.startRow) && Number.isInteger(rangeInfo.endRow)) {
+      return {
+        startRow: rangeInfo.startRow,
+        endRow: rangeInfo.endRow
+      };
+    }
+  } catch {
+    return null;
+  }
+
   return null;
 }
 
-================================================================================
-FILE: renderer\modules\metagen\tables\createMetaGenParamsSheet.js
-================================================================================
+function extractAffectedBounds(command, workbook, rowCountHint, config) {
+  const commandId = String(command?.id || '');
 
-export function createMetaGenParamsSheet() {
-  return null;
+  if (isFullRefreshCommand(commandId, config)) {
+    return {
+      startRow: 0,
+      endRow: Math.max(0, rowCountHint - 1)
+    };
+  }
+
+  const rowBoundsList = [];
+  collectRowBoundsFromUnknownShape(command?.params, config.maxRecursiveRangeDepth, rowBoundsList);
+
+  if (rowBoundsList.length === 0) {
+    const fallbackBounds = getFallbackBoundsFromActiveSelection(workbook);
+    if (fallbackBounds) {
+      return fallbackBounds;
+    }
+
+    return {
+      startRow: 0,
+      endRow: Math.max(0, rowCountHint - 1)
+    };
+  }
+
+  const merged = rowBoundsList.reduce((accumulator, currentBounds) => ({
+    startRow: Math.min(accumulator.startRow, currentBounds.startRow),
+    endRow: Math.max(accumulator.endRow, currentBounds.endRow)
+  }));
+
+  return {
+    startRow: Math.max(0, merged.startRow),
+    endRow: Math.max(0, merged.endRow)
+  };
 }
 
-================================================================================
-FILE: renderer\modules\metagen\tables\metaGenParamsTableAutoStyle.js
-================================================================================
+function buildRowCategorySnapshot({
+  sheet,
+  startRow,
+  endRow,
+  actualColumnCount,
+  rowCategoryConfig
+}) {
+  const snapshot = new Map();
+  let previousRowIsNonEmpty = false;
 
-export function createMetaGenParamsTableAutoStyle() {
-  return null;
+  if (startRow > 0) {
+    const previousRowValues = getRowValues(sheet, startRow - 1, actualColumnCount);
+    previousRowIsNonEmpty = !isRowEmpty(previousRowValues);
+  }
+
+  for (let rowIndex = startRow; rowIndex <= endRow; rowIndex += 1) {
+    const rowValues = getRowValues(sheet, rowIndex, actualColumnCount);
+    const rowIsEmpty = isRowEmpty(rowValues);
+
+    if (rowIsEmpty) {
+      snapshot.set(rowIndex, rowCategoryConfig.empty);
+      previousRowIsNonEmpty = false;
+      continue;
+    }
+
+    snapshot.set(rowIndex, previousRowIsNonEmpty ? rowCategoryConfig.value : rowCategoryConfig.key);
+    previousRowIsNonEmpty = true;
+  }
+
+  return snapshot;
 }
 
-================================================================================
-FILE: renderer\modules\metalab\metalabCommands.js
-================================================================================
+function ensureRowStatesLength(rowStates, targetLength, emptyCategory) {
+  while (rowStates.length < targetLength) {
+    rowStates.push(emptyCategory);
+  }
+
+  if (rowStates.length > targetLength) {
+    rowStates.length = targetLength;
+  }
+}
+
+function trimTrailingEmptyCells(rowValues) {
+  const normalized = rowValues.map((value) => normalizeCellValue(value));
+
+  while (normalized.length > 0 && normalized[normalized.length - 1] === '') {
+    normalized.pop();
+  }
+
+  return normalized;
+}
+
+function buildStructuredBlocks(sheet, actualRowCount, actualColumnCount, rowCategoryConfig, rowStates) {
+  const blocks = [];
+  let currentBlock = null;
+
+  for (let rowIndex = 0; rowIndex < actualRowCount; rowIndex += 1) {
+    const category = rowStates[rowIndex] || rowCategoryConfig.empty;
+    const rowValues = trimTrailingEmptyCells(getRowValues(sheet, rowIndex, actualColumnCount));
+
+    if (category === rowCategoryConfig.empty) {
+      currentBlock = null;
+      continue;
+    }
+
+    if (category === rowCategoryConfig.key) {
+      currentBlock = {
+        keyRowIndex: rowIndex,
+        valueRowIndexes: [],
+        keyValues: rowValues,
+        valueRows: []
+      };
+      blocks.push(currentBlock);
+      continue;
+    }
+
+    if (currentBlock) {
+      currentBlock.valueRowIndexes.push(rowIndex);
+      currentBlock.valueRows.push(rowValues);
+    }
+  }
+
+  return blocks;
+}
+
+export function createMetaGenParamsTableAutoStyle({
+  univerAPI,
+  workbook,
+  sheet,
+  logger,
+  source,
+  logMessages,
+  rowCount,
+  columnCount,
+  autoStyleConfig
+}) {
+  const rowCategoryConfig = autoStyleConfig.rowCategory;
+
+  let actualRowCount = Math.max(1, rowCount);
+  let actualColumnCount = Math.max(1, columnCount);
+  let rowStates = Array.from({ length: actualRowCount }, () => rowCategoryConfig.empty);
+
+  let pendingBounds = null;
+  let disposed = false;
+
+  function syncActualDimensions() {
+    actualRowCount = resolveActualRowCount(sheet, actualRowCount);
+    actualColumnCount = resolveActualColumnCount(sheet, actualColumnCount);
+    ensureRowStatesLength(rowStates, actualRowCount, rowCategoryConfig.empty);
+  }
+
+  function applyRowCategoryStyle(rowIndex, rowCategory) {
+    const nextStyle = rowCategory === rowCategoryConfig.key
+      ? autoStyleConfig.rowStyles.key
+      : autoStyleConfig.rowStyles.normal;
+
+    applyRowStyle(univerAPI, sheet, rowIndex, actualColumnCount, nextStyle, autoStyleConfig.border);
+  }
+
+  function refreshBounds(bounds) {
+    if (disposed || !bounds) {
+      return;
+    }
+
+    try {
+      syncActualDimensions();
+
+      const clampedBounds = {
+        startRow: Math.max(0, Math.min(bounds.startRow, actualRowCount - 1)),
+        endRow: Math.max(0, Math.min(bounds.endRow, actualRowCount - 1))
+      };
+
+      const snapshot = buildRowCategorySnapshot({
+        sheet,
+        startRow: clampedBounds.startRow,
+        endRow: clampedBounds.endRow,
+        actualColumnCount,
+        rowCategoryConfig
+      });
+
+      let changedRowsCount = 0;
+
+      for (const [rowIndex, nextCategory] of snapshot.entries()) {
+        if (rowStates[rowIndex] !== nextCategory) {
+          rowStates[rowIndex] = nextCategory;
+          applyRowCategoryStyle(rowIndex, nextCategory);
+          changedRowsCount += 1;
+        }
+      }
+
+      logger.info(source, logMessages.paramsAutoStyleApplied, {
+        bounds: clampedBounds,
+        changedRowsCount,
+        actualRowCount,
+        actualColumnCount
+      });
+    } catch (error) {
+      logger.error(source, logMessages.paramsAutoStyleFailed, error);
+    }
+  }
+
+  const debouncedRefresh = createDebouncedExecutor(autoStyleConfig.debounceDelayMs, () => {
+    const boundsToRefresh = pendingBounds || {
+      startRow: 0,
+      endRow: Math.max(0, actualRowCount - 1)
+    };
+
+    pendingBounds = null;
+    refreshBounds(boundsToRefresh);
+  });
+
+  function scheduleRefresh(bounds, reason = 'unknown') {
+    pendingBounds = mergeBounds(pendingBounds, {
+      startRow: Math.max(0, bounds.startRow),
+      endRow: Math.max(0, bounds.endRow)
+    });
+
+    logger.info(source, logMessages.paramsAutoStyleRefreshScheduled, { reason, bounds: pendingBounds });
+    debouncedRefresh.schedule();
+  }
+
+  const commandDisposable = workbook.onCommandExecuted((command) => {
+    const affectedBounds = extractAffectedBounds(command, workbook, actualRowCount, autoStyleConfig);
+    scheduleRefresh(affectedBounds, String(command?.id || 'unknown'));
+  });
+
+  scheduleRefresh({ startRow: 0, endRow: Math.max(0, rowCount - 1) }, 'init');
+  logger.info(source, logMessages.paramsAutoStyleInit);
+
+  function getRowCategory(rowIndex) {
+    return rowStates[rowIndex] || rowCategoryConfig.empty;
+  }
+
+  function getStructuredBlocks() {
+    syncActualDimensions();
+    return buildStructuredBlocks(sheet, actualRowCount, actualColumnCount, rowCategoryConfig, rowStates);
+  }
+
+  function refreshAll() {
+    scheduleRefresh({ startRow: 0, endRow: Math.max(0, actualRowCount - 1) }, 'manual-refresh');
+  }
+
+  function dispose() {
+    disposed = true;
+    commandDisposable?.dispose?.();
+    debouncedRefresh.dispose();
+  }
+
+  return {
+    getRowCategory,
+    getStructuredBlocks,
+    refreshAll,
+    dispose
+  };
+}
+
+
+==================================================
+FILE: renderer/modules/metalab/metalabCommands.js
+==================================================
 
 import { METALAB_CONFIG } from './metalabConfig.js';
 
@@ -1558,9 +2687,9 @@ export function createMetaLabCommands() {
   };
 }
 
-================================================================================
-FILE: renderer\modules\metalab\metalabConfig.js
-================================================================================
+==================================================
+FILE: renderer/modules/metalab/metalabConfig.js
+==================================================
 
 export const METALAB_CONFIG = {
   moduleId: 'metalab',
@@ -1574,9 +2703,9 @@ export const METALAB_CONFIG = {
   }
 };
 
-================================================================================
-FILE: renderer\modules\metalab\metalabDocumentFactory.js
-================================================================================
+==================================================
+FILE: renderer/modules/metalab/metalabDocumentFactory.js
+==================================================
 
 import { METALAB_CONFIG } from './metalabConfig.js';
 
@@ -1592,9 +2721,9 @@ export function createMetaLabDocument({ name = 'Новый сценарий' } =
 }
 
 
-================================================================================
-FILE: renderer\modules\metalab\metalabModule.js
-================================================================================
+==================================================
+FILE: renderer/modules/metalab/metalabModule.js
+==================================================
 
 import { METALAB_CONFIG } from './metalabConfig.js';
 import { createMetaLabDocument } from './metalabDocumentFactory.js';
@@ -1622,9 +2751,9 @@ export function createMetaLabModule() {
 }
 
 
-================================================================================
-FILE: renderer\modules\metaview\metaviewCommands.js
-================================================================================
+==================================================
+FILE: renderer/modules/metaview/metaviewCommands.js
+==================================================
 
 import { METAVIEW_CONFIG } from './metaviewConfig.js';
 
@@ -1636,9 +2765,9 @@ export function createMetaViewCommands() {
   };
 }
 
-================================================================================
-FILE: renderer\modules\metaview\metaviewConfig.js
-================================================================================
+==================================================
+FILE: renderer/modules/metaview/metaviewConfig.js
+==================================================
 
 export const METAVIEW_CONFIG = {
   moduleId: 'metaview',
@@ -1650,9 +2779,9 @@ export const METAVIEW_CONFIG = {
   }
 };
 
-================================================================================
-FILE: renderer\modules\metaview\metaviewDocumentFactory.js
-================================================================================
+==================================================
+FILE: renderer/modules/metaview/metaviewDocumentFactory.js
+==================================================
 
 import { METAVIEW_CONFIG } from './metaviewConfig.js';
 
@@ -1668,9 +2797,9 @@ export function createMetaViewDocument({ name = 'Новый экран' } = {}) 
 }
 
 
-================================================================================
-FILE: renderer\modules\metaview\metaviewModule.js
-================================================================================
+==================================================
+FILE: renderer/modules/metaview/metaviewModule.js
+==================================================
 
 import { METAVIEW_CONFIG } from './metaviewConfig.js';
 import { createMetaViewDocument } from './metaviewDocumentFactory.js';
@@ -1698,9 +2827,9 @@ export function createMetaViewModule() {
 }
 
 
-================================================================================
-FILE: renderer\runtime\documentLoader.js
-================================================================================
+==================================================
+FILE: renderer/runtime/documentLoader.js
+==================================================
 
 import YAML from 'yaml';
 
@@ -1722,9 +2851,9 @@ export function createDocumentLoader({ fileSystem }) {
   };
 }
 
-================================================================================
-FILE: renderer\runtime\fileSystemBridge.js
-================================================================================
+==================================================
+FILE: renderer/runtime/fileSystemBridge.js
+==================================================
 
 export function createFileSystemBridge() {
   const api = window.MetaPlatformFS;
@@ -1745,9 +2874,9 @@ export function createFileSystemBridge() {
   };
 }
 
-================================================================================
-FILE: renderer\runtime\naming.js
-================================================================================
+==================================================
+FILE: renderer/runtime/naming.js
+==================================================
 
 export function slugifyDocumentName(name) {
   return String(name ?? '')
@@ -1757,9 +2886,9 @@ export function slugifyDocumentName(name) {
     .toLowerCase();
 }
 
-================================================================================
-FILE: renderer\styles\styles.css
-================================================================================
+==================================================
+FILE: renderer/styles/styles.css
+==================================================
 
 :root {
   --bg: #f7f8fa;
@@ -1928,20 +3057,22 @@ html, body {
 }
 
 .metagen-editor-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 12px;
+  display: flex;
+  gap: 0;
   height: 100%;
+  min-width: 0;
 }
 
 .metagen-editor-panel {
   display: grid;
   grid-template-rows: 40px 1fr;
   min-height: 0;
+  min-width: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
 .metagen-editor-panel-header {
@@ -2001,10 +3132,32 @@ html, body {
   white-space: pre-wrap;
   color: var(--muted);
 }
+.metagen-editor-panel-content {
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
 
-================================================================================
-FILE: renderer\ui\applyStaticText.js
-================================================================================
+.metagen-editor-table-container {
+  position: absolute;
+  inset: 0;
+}
+
+.gutter {
+  background-color: var(--border);
+  background-repeat: no-repeat;
+  background-position: 50%;
+}
+
+.gutter.gutter-horizontal {
+  cursor: col-resize;
+  width: 4px !important;
+}
+
+
+==================================================
+FILE: renderer/ui/applyStaticText.js
+==================================================
 
 import { APP_CONFIG } from '../../config/app-config.js';
 
@@ -2031,9 +3184,9 @@ export function applyStaticText() {
   }
 }
 
-================================================================================
-FILE: renderer\ui\createProjectTree.js
-================================================================================
+==================================================
+FILE: renderer/ui/createProjectTree.js
+==================================================
 
 import { APP_CONFIG } from '../../config/app-config.js';
 import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
@@ -2157,9 +3310,9 @@ export function createProjectTree({
 }
 
 
-================================================================================
-FILE: renderer\ui\createWorkbenchTabs.js
-================================================================================
+==================================================
+FILE: renderer/ui/createWorkbenchTabs.js
+==================================================
 
 import { APP_CONFIG } from '../../config/app-config.js';
 
@@ -2218,9 +3371,9 @@ export function createWorkbenchTabs({ logger, openEditor }) {
   };
 }
 
-================================================================================
-FILE: renderer\ui\dialogs.js
-================================================================================
+==================================================
+FILE: renderer/ui/dialogs.js
+==================================================
 
 export function showPrompt(message, defaultValue = '') {
   return window.prompt(message, defaultValue);
@@ -2230,9 +3383,9 @@ export function showAlert(message) {
   window.alert(message);
 }
 
-================================================================================
-FILE: renderer\ui\workbenchShell.js
-================================================================================
+==================================================
+FILE: renderer/ui/workbenchShell.js
+==================================================
 
 import { APP_CONFIG } from '../../config/app-config.js';
 
@@ -2244,9 +3397,9 @@ export function createWorkbenchShell() {
   };
 }
 
-================================================================================
+==================================================
 FILE: vite.config.js
-================================================================================
+==================================================
 
 import { defineConfig } from 'vite';
 
