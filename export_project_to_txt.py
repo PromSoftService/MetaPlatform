@@ -1,39 +1,69 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 OUTPUT_FILE = ROOT / 'metaplatform_project_dump.txt'
-IGNORED_DIRS = {'.git', 'node_modules', '__pycache__', 'dist', '.idea', '.vscode'}
-IGNORED_FILES = {OUTPUT_FILE.name, 'codex.patch'}
 
-
-def _is_ignored(path: Path) -> bool:
-  return any(part in IGNORED_DIRS for part in path.parts) or path.name in IGNORED_FILES
-
-
-def get_project_files() -> list[Path]:
-  """Return tracked + untracked project files from current repository state."""
-  try:
-    result = subprocess.run(
-      ['git', 'ls-files', '--cached', '--others', '--exclude-standard'],
-      cwd=ROOT,
-      check=True,
-      capture_output=True,
-      text=True
-    )
-    files = [Path(line.strip()) for line in result.stdout.splitlines() if line.strip()]
-  except Exception:
-    files = [
-      p.relative_to(ROOT)
-      for p in ROOT.rglob('*')
-      if p.is_file() and not _is_ignored(p.relative_to(ROOT))
-    ]
-
-  existing_files = [p for p in files if (ROOT / p).exists() and not _is_ignored(p)]
-  return sorted(set(existing_files))
+PROJECT_FILES = [
+  '.gitignore',
+  'config/app-config.js',
+  'config/platform-config.js',
+  'config/project-config.js',
+  'config/ui-config.js',
+  'create_project_structure.py',
+  'export_project_to_txt.py',
+  'main.js',
+  'package.json',
+  'preload.cjs',
+  'project-examples/demo-feedmill/metagen/conveyors.yaml',
+  'project-examples/demo-feedmill/metagen/pumps.yaml',
+  'project-examples/demo-feedmill/metagen/valves.yaml',
+  'project-examples/demo-feedmill/metalab/startup_scenario.yaml',
+  'project-examples/demo-feedmill/metaview/main_screen.yaml',
+  'project-examples/demo-feedmill/project.yaml',
+  'renderer/app.js',
+  'renderer/core/commandBus.js',
+  'renderer/core/layout.js',
+  'renderer/core/logger.js',
+  'renderer/core/moduleRegistry.js',
+  'renderer/core/platformCommands.js',
+  'renderer/core/projectManager.js',
+  'renderer/editors/metagen/createMetaGenEditor.js',
+  'renderer/editors/metalab/createMetaLabEditor.js',
+  'renderer/editors/metaview/createMetaViewEditor.js',
+  'renderer/editors/shared/editorHost.js',
+  'renderer/index.html',
+  'renderer/modules/metagen/metagenCommands.js',
+  'renderer/modules/metagen/metagenConfig.js',
+  'renderer/modules/metagen/metagenDocumentFactory.js',
+  'renderer/modules/metagen/metagenGeneratorBridge.js',
+  'renderer/modules/metagen/metagenModule.js',
+  'renderer/modules/metagen/metagenSchema.js',
+  'renderer/modules/metagen/tables/createMetaGenDataSheet.js',
+  'renderer/modules/metagen/tables/createMetaGenParamsSheet.js',
+  'renderer/modules/metagen/tables/createMetaGenSimpleSheet.js',
+  'renderer/modules/metagen/tables/metaGenParamsTableAutoStyle.js',
+  'renderer/modules/metalab/metalabCommands.js',
+  'renderer/modules/metalab/metalabConfig.js',
+  'renderer/modules/metalab/metalabDocumentFactory.js',
+  'renderer/modules/metalab/metalabModule.js',
+  'renderer/modules/metaview/metaviewCommands.js',
+  'renderer/modules/metaview/metaviewConfig.js',
+  'renderer/modules/metaview/metaviewDocumentFactory.js',
+  'renderer/modules/metaview/metaviewModule.js',
+  'renderer/runtime/documentLoader.js',
+  'renderer/runtime/fileSystemBridge.js',
+  'renderer/runtime/naming.js',
+  'renderer/styles/styles.css',
+  'renderer/ui/applyStaticText.js',
+  'renderer/ui/createProjectTree.js',
+  'renderer/ui/createWorkbenchTabs.js',
+  'renderer/ui/dialogs.js',
+  'renderer/ui/workbenchShell.js',
+  'vite.config.js',
+]
 
 
 def export_files() -> None:
@@ -43,13 +73,18 @@ def export_files() -> None:
   lines.append('=' * 50)
   lines.append('')
 
-  for rel_file in get_project_files():
-    file_path = ROOT / rel_file
+  for relative_path in PROJECT_FILES:
+    file_path = ROOT / relative_path
 
     lines.append('=' * 50)
-    lines.append(f'FILE: {rel_file.as_posix()}')
+    lines.append(f'FILE: {relative_path}')
     lines.append('=' * 50)
     lines.append('')
+
+    if not file_path.exists():
+      lines.append('[FILE NOT FOUND]')
+      lines.append('')
+      continue
 
     try:
       content = file_path.read_text(encoding='utf-8')
