@@ -165,20 +165,22 @@ html, body {
 }
 
 .metagen-editor-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 12px;
+  display: flex;
+  gap: 0;
   height: 100%;
+  min-width: 0;
 }
 
 .metagen-editor-panel {
   display: grid;
   grid-template-rows: 40px 1fr;
   min-height: 0;
+  min-width: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
 .metagen-editor-panel-header {
@@ -237,4 +239,25 @@ html, body {
 .log-details {
   white-space: pre-wrap;
   color: var(--muted);
+}
+.metagen-editor-panel-content {
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+
+.metagen-editor-table-container {
+  position: absolute;
+  inset: 0;
+}
+
+.gutter {
+  background-color: var(--border);
+  background-repeat: no-repeat;
+  background-position: 50%;
+}
+
+.gutter.gutter-horizontal {
+  cursor: col-resize;
+  width: 4px !important;
 }

@@ -26,6 +26,7 @@ export function createMetaGenModule({ logger, getProjectManager }) {
       return createMetaGenEditor({
         documentRecord,
         mountElement,
+        logger,
         onSave: async (nextRecord) => {
           const validation = validateMetaGenDocument(nextRecord.document);
 

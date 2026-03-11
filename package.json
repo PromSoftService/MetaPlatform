@@ -10,7 +10,13 @@
   },
   "dependencies": {
     "split.js": "^1.6.5",
-    "yaml": "^2.5.1"
+    "yaml": "^2.5.1",
+    "@univerjs/presets": "0.15.0",
+    "@univerjs/preset-sheets-core": "0.15.0",
+    "@univerjs/preset-sheets-data-validation": "0.15.0",
+    "@univerjs/sheets": "0.15.0",
+    "@univerjs/sheets-ui": "0.15.0",
+    "@univerjs/sheets-data-validation": "0.15.0"
   },
   "devDependencies": {
     "electron": "^28.0.0",
