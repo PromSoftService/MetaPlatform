@@ -111,6 +111,8 @@ export const UI_CONFIG = {
 
   classNames: {
     tab: 'workbench-tab',
+    tabTitle: 'workbench-tab-title',
+    tabClose: 'workbench-tab-close-button',
     tabActive: 'is-active',
     page: 'workbench-page',
     pageActive: 'is-active',
@@ -688,7 +690,7 @@ import { createCommandBus } from './core/commandBus.js';
 import { createModuleRegistry } from './core/moduleRegistry.js';
 import { createProjectManager } from './core/projectManager.js';
 import { createFileSystemBridge } from './runtime/fileSystemBridge.js';
-import { createWorkbenchShell } from './ui/workbenchShell.js';
+import { initWorkbenchLayout } from './core/layout.js';
 import { createWorkbenchTabs } from './ui/createWorkbenchTabs.js';
 import { createProjectTree } from './ui/createProjectTree.js';
 
@@ -703,7 +705,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const commandBus = createCommandBus({ logger });
   const moduleRegistry = createModuleRegistry({ logger });
   const fileSystem = createFileSystemBridge();
-  const workbench = createWorkbenchShell();
+  const workbenchLayout = initWorkbenchLayout();
 
   let projectManager = null;
   const getProjectManager = () => projectManager;
@@ -758,7 +760,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     moduleRegistry,
     projectManager,
     fileSystem,
-    workbench,
+    workbenchLayout,
     tabs
   };
 });
@@ -812,11 +814,46 @@ export function createCommandBus({ logger }) {
 FILE: renderer/core/layout.js
 ==================================================
 
-export function initWorkbenchLayout() {
+import Split from 'split.js';
+
+function getSplitSharedOptions() {
   return {
-    dispose() {}
+    elementStyle: (dimension, size, gutterSize) => ({
+      'flex-basis': `calc(${size}% - ${gutterSize}px)`
+    }),
+    gutterStyle: (dimension, gutterSize) => ({
+      'flex-basis': `${gutterSize}px`
+    })
   };
 }
+
+export function initWorkbenchLayout() {
+  const horizontalSplit = Split(['#project-tree-column', '#document-column'], {
+    direction: 'horizontal',
+    sizes: [18, 82],
+    minSize: [240, 420],
+    gutterSize: 4,
+    cursor: 'col-resize',
+    ...getSplitSharedOptions()
+  });
+
+  const verticalSplit = Split(['#editor-host-container', '#bottom-panel'], {
+    direction: 'vertical',
+    sizes: [74, 26],
+    minSize: [250, 150],
+    gutterSize: 4,
+    cursor: 'row-resize',
+    ...getSplitSharedOptions()
+  });
+
+  return {
+    dispose() {
+      horizontalSplit?.destroy?.();
+      verticalSplit?.destroy?.();
+    }
+  };
+}
+
 
 ==================================================
 FILE: renderer/core/logger.js
@@ -1480,29 +1517,35 @@ FILE: renderer/index.html
       </div>
     </div>
 
-    <div class="main-layout">
-      <div class="project-tree-container">
+    <div class="tabs-bar">
+      <div class="tabs-list" id="tabs-list"></div>
+    </div>
+
+    <div class="workbench-main-layout" id="workbench-main-layout">
+      <div class="project-tree-column" id="project-tree-column">
         <div class="side-header" id="project-panel-title"></div>
         <div id="project-tree" class="project-tree"></div>
       </div>
 
-      <div class="workspace-container">
-        <div class="tabs-bar">
-          <div class="tabs-list" id="tabs-list"></div>
-        </div>
-        <div class="editor-host" id="editor-host"></div>
-      </div>
-    </div>
+      <div class="document-column" id="document-column">
+        <div class="document-vertical-layout" id="document-vertical-layout">
+          <div class="editor-host-container" id="editor-host-container">
+            <div class="editor-host" id="editor-host"></div>
+          </div>
 
-    <div class="bottom-panel">
-      <div class="bottom-panel-header" id="bottom-panel-header"></div>
-      <div class="bottom-panel-content" id="log-output"></div>
+          <div class="bottom-panel" id="bottom-panel">
+            <div class="bottom-panel-header" id="bottom-panel-header"></div>
+            <div class="bottom-panel-content" id="log-output"></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
   <script type="module" src="/app.js"></script>
 </body>
 </html>
+
 
 ==================================================
 FILE: renderer/modules/metagen/metagenCommands.js
@@ -2959,41 +3002,55 @@ FILE: renderer/styles/styles.css
 ==================================================
 
 :root {
-  --bg: #f7f8fa;
-  --surface: #ffffff;
-  --border: #dfe3e8;
-  --text: #1f2328;
-  --muted: #667085;
-  --header: #f0f2f5;
-  --tab: #eef2f6;
-  --active: #ffffff;
-  --shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  --color-bg-app: #ffffff;
+  --color-bg-layout: #f7f8fa;
+  --color-bg-muted: #f3f5f8;
+  --color-bg-subtle: #fafbfd;
+  --color-border: #dfe3e8;
+  --color-border-soft: #e7ebf0;
+  --color-text: #1f2328;
+  --color-text-muted: #667085;
+  --color-text-soft: #7a8494;
+  --color-tab-bg: #eef2f6;
+  --color-tab-bg-active: #ffffff;
+  --color-tab-hover: #e7edf5;
+  --color-gutter-hover: #3b82f6;
+
+  --tabs-bar-height: 42px;
+  --tabs-padding-x: 10px;
+  --tab-fixed-width: 180px;
+  --tab-font-size: 13px;
+  --tab-close-size: 18px;
+  --panel-padding-x: 12px;
+  --gutter-size: 4px;
 }
 
-html, body {
+html,
+body {
   margin: 0;
   width: 100%;
   height: 100%;
-  font-family: var(--font);
-  background: var(--bg);
-  color: var(--text);
   overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  background: var(--color-bg-layout);
+  color: var(--color-text);
 }
 
 #app {
-  display: grid;
-  grid-template-rows: 48px 1fr 220px;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .top-panel {
+  height: 48px;
   display: flex;
   align-items: center;
   padding: 0 16px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow);
+  background: var(--color-bg-app);
+  border-bottom: 1px solid var(--color-border);
+  flex: 0 0 auto;
 }
 
 .top-panel-left {
@@ -3003,34 +3060,119 @@ html, body {
 }
 
 .project-title {
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
 
-.main-layout {
-  display: grid;
-  grid-template-columns: 280px 1fr;
+.tabs-bar {
+  height: var(--tabs-bar-height);
+  background-color: var(--color-bg-muted);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: stretch;
   min-height: 0;
+  flex: 0 0 auto;
 }
 
-.project-tree-container {
-  border-right: 1px solid var(--border);
-  background: var(--surface);
+.tabs-list {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
+}
+
+.workbench-tab {
+  width: var(--tab-fixed-width);
+  min-width: var(--tab-fixed-width);
+  max-width: var(--tab-fixed-width);
+  height: 100%;
+  border: none;
+  border-right: 1px solid var(--color-border-soft);
+  background: var(--color-tab-bg);
+  color: var(--color-text-muted);
+  padding: 0 var(--tabs-padding-x);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  cursor: pointer;
+  font-size: var(--tab-font-size);
+  text-align: left;
+  flex: 0 0 var(--tab-fixed-width);
+  box-sizing: border-box;
+}
+
+.workbench-tab:hover {
+  background: var(--color-tab-hover);
+}
+
+.workbench-tab.is-active {
+  background: var(--color-tab-bg-active);
+  color: var(--color-text);
+  box-shadow: inset 0 -2px 0 0 var(--color-gutter-hover);
+}
+
+.workbench-tab-title {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-tab-close-button {
+  width: var(--tab-close-size);
+  height: var(--tab-close-size);
+  min-width: var(--tab-close-size);
+  border: none;
+  background: transparent;
+  color: inherit;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  line-height: 1;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.workbench-tab-close-button:hover {
+  background: var(--color-tab-hover);
+}
+
+.workbench-main-layout {
+  flex: 1;
+  display: flex;
   min-height: 0;
+  min-width: 0;
+}
+
+.project-tree-column {
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-app);
   display: flex;
   flex-direction: column;
 }
 
 .side-header {
-  padding: 10px 12px;
+  padding: 10px var(--panel-padding-x);
   font-weight: 600;
-  background: var(--header);
-  border-bottom: 1px solid var(--border);
+  color: var(--color-text-muted);
+  background: var(--color-bg-muted);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .project-tree {
   overflow: auto;
   padding: 12px;
 }
+
 
 .project-node {
   font-weight: 700;
@@ -3046,12 +3188,12 @@ html, body {
 }
 
 .tree-add-button {
-  border: 1px solid var(--border);
-  background: var(--surface);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-app);
   cursor: pointer;
-  border-radius: 6px;
-  width: 28px;
-  height: 28px;
+  border-radius: 0;
+  width: 26px;
+  height: 26px;
 }
 
 .tree-item {
@@ -3061,57 +3203,52 @@ html, body {
 .tree-item-label {
   width: 100%;
   text-align: left;
-  border: 1px solid var(--border);
-  background: #fafafa;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-app);
+  color: var(--color-text);
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 0;
   cursor: pointer;
 }
 
-.workspace-container {
+.document-column {
+  flex: 1;
   min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-rows: 42px 1fr;
-}
-
-.tabs-bar {
   display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
 }
 
-.tabs-list {
+.document-vertical-layout {
+  flex: 1;
   display: flex;
-  gap: 6px;
-  padding: 6px;
-  overflow-x: auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
 }
 
-.workbench-tab {
-  border: 1px solid var(--border);
-  background: var(--tab);
-  padding: 8px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.workbench-tab.is-active {
-  background: var(--active);
-  font-weight: 600;
+.editor-host-container {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  background: var(--color-bg-app);
 }
 
 .editor-host {
-  position: relative;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
   min-height: 0;
-  overflow: auto;
-  background: var(--bg);
+  min-width: 0;
 }
 
 .workbench-page {
+  position: absolute;
+  inset: 0;
   display: none;
-  height: 100%;
+  min-height: 0;
+  min-width: 0;
 }
 
 .workbench-page.is-active {
@@ -3119,107 +3256,143 @@ html, body {
 }
 
 .metagen-editor {
+  width: 100%;
   height: 100%;
-  padding: 12px;
-  box-sizing: border-box;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
 }
 
 .metagen-editor-grid {
-  display: flex;
-  gap: 0;
+  width: 100%;
   height: 100%;
+  display: flex;
+  min-height: 0;
   min-width: 0;
+  background-color: var(--color-bg-layout);
 }
 
 .metagen-editor-panel {
-  display: grid;
-  grid-template-rows: 40px 1fr;
-  min-height: 0;
-  min-width: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
+  height: 100%;
+  background-color: var(--color-bg-app);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+  box-shadow: -1px 0 0 0 var(--color-border);
+  border: none;
+}
+
+.metagen-editor-panel:first-child {
+  box-shadow: none;
 }
 
 .metagen-editor-panel-header {
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--header);
+  padding: 10px var(--panel-padding-x);
+  background-color: var(--color-bg-muted);
+  border-bottom: 1px solid var(--color-border);
   font-weight: 600;
-}
-
-.metagen-editor-textarea {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  resize: none;
-  outline: none;
-  padding: 12px;
-  box-sizing: border-box;
-  font-family: Consolas, Monaco, monospace;
-  font-size: 13px;
-}
-
-.bottom-panel {
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  display: grid;
-  grid-template-rows: 36px 1fr;
-  min-height: 0;
-}
-
-.bottom-panel-header {
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  background: var(--header);
-  border-bottom: 1px solid var(--border);
-  font-weight: 600;
-}
-
-.bottom-panel-content {
-  overflow: auto;
-  padding: 8px 12px;
   font-size: 12px;
-  font-family: Consolas, Monaco, monospace;
+  color: var(--color-text-muted);
+  user-select: none;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
-.log-entry {
-  margin-bottom: 8px;
-}
-
-.log-line {
-  white-space: pre-wrap;
-}
-
-.log-details {
-  white-space: pre-wrap;
-  color: var(--muted);
-}
 .metagen-editor-panel-content {
+  flex: 1;
   min-height: 0;
   min-width: 0;
   position: relative;
+  background: var(--color-bg-app);
 }
 
 .metagen-editor-table-container {
   position: absolute;
   inset: 0;
+  background: #fff !important;
+  background-image: none !important;
+}
+
+.metagen-editor-table-container *,
+.metagen-editor-table-container *::before,
+.metagen-editor-table-container *::after {
+  background-image: none !important;
+}
+
+.metagen-editor-textarea {
+  width: 100%;
+  height: 100%;
+  border: none;
+  padding: 10px 12px;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  background-color: var(--color-bg-subtle);
+  color: var(--color-text);
+  box-sizing: border-box;
+}
+
+.bottom-panel {
+  background-color: var(--color-bg-app);
+  color: var(--color-text);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.bottom-panel-header {
+  padding: 8px var(--panel-padding-x);
+  background-color: var(--color-bg-muted);
+  border-bottom: 1px solid var(--color-border);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.bottom-panel-content {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 12px;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  background-color: var(--color-bg-app);
+  color: var(--color-text);
+}
+
+.log-entry { margin: 2px 0; }
+.log-line { white-space: pre-wrap; }
+.log-details {
+  margin-left: 16px;
+  color: var(--color-text-soft);
+  white-space: pre-wrap;
 }
 
 .gutter {
-  background-color: var(--border);
+  background-color: var(--color-border);
   background-repeat: no-repeat;
   background-position: 50%;
+  transition: background-color 0.2s;
+}
+
+.gutter:hover {
+  background-color: var(--color-gutter-hover);
 }
 
 .gutter.gutter-horizontal {
   cursor: col-resize;
-  width: 4px !important;
+  width: var(--gutter-size) !important;
+}
+
+.gutter.gutter-vertical {
+  cursor: row-resize;
+  height: var(--gutter-size) !important;
 }
 
 
@@ -3390,6 +3563,21 @@ function createElement(tagName, classNames = []) {
   return node;
 }
 
+function buildTabTitleNode(title) {
+  const titleNode = createElement('span', [APP_CONFIG.ui.classNames.tabTitle]);
+  titleNode.textContent = title;
+  return titleNode;
+}
+
+function buildCloseButtonNode(label) {
+  const closeButtonNode = createElement('button', [APP_CONFIG.ui.classNames.tabClose]);
+  closeButtonNode.type = 'button';
+  closeButtonNode.textContent = '×';
+  closeButtonNode.tabIndex = -1;
+  closeButtonNode.setAttribute('aria-label', `Закрыть ${label}`);
+  return closeButtonNode;
+}
+
 export function createWorkbenchTabs({ logger, openEditor }) {
   const tabsList = document.getElementById(APP_CONFIG.ui.dom.tabsListId);
   const editorHost = document.getElementById(APP_CONFIG.ui.dom.editorHostId);
@@ -3399,6 +3587,28 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     for (const entry of tabs.values()) {
       entry.tabNode.classList.toggle(APP_CONFIG.ui.classNames.tabActive, entry.tabId === tabId);
       entry.pageNode.classList.toggle(APP_CONFIG.ui.classNames.pageActive, entry.tabId === tabId);
+    }
+  }
+
+  function closeTab(tabId) {
+    const entry = tabs.get(tabId);
+
+    if (!entry) {
+      return;
+    }
+
+    const orderedEntries = Array.from(tabs.values());
+    const index = orderedEntries.findIndex((tabEntry) => tabEntry.tabId === tabId);
+
+    entry.runtime?.dispose?.();
+    entry.pageNode.remove();
+    entry.tabNode.remove();
+    tabs.delete(tabId);
+
+    const fallback = orderedEntries[index + 1] || orderedEntries[index - 1];
+
+    if (fallback && tabs.has(fallback.tabId)) {
+      activateTab(fallback.tabId);
     }
   }
 
@@ -3412,7 +3622,17 @@ export function createWorkbenchTabs({ logger, openEditor }) {
 
     const tabNode = createElement('button', [APP_CONFIG.ui.classNames.tab]);
     tabNode.type = 'button';
-    tabNode.textContent = documentRecord.document?.component?.name || APP_CONFIG.ui.text.untitled;
+
+    const tabTitle = documentRecord.document?.component?.name || APP_CONFIG.ui.text.untitled;
+    tabNode.appendChild(buildTabTitleNode(tabTitle));
+
+    const closeButton = buildCloseButtonNode(tabTitle);
+    closeButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeTab(tabId);
+    });
+    tabNode.appendChild(closeButton);
 
     const pageNode = createElement('div', [APP_CONFIG.ui.classNames.page]);
     editorHost.appendChild(pageNode);
@@ -3435,9 +3655,11 @@ export function createWorkbenchTabs({ logger, openEditor }) {
 
   return {
     openDocument,
-    activateTab
+    activateTab,
+    closeTab
   };
 }
+
 
 ==================================================
 FILE: renderer/ui/dialogs.js

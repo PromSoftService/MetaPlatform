@@ -6,6 +6,21 @@ function createElement(tagName, classNames = []) {
   return node;
 }
 
+function buildTabTitleNode(title) {
+  const titleNode = createElement('span', [APP_CONFIG.ui.classNames.tabTitle]);
+  titleNode.textContent = title;
+  return titleNode;
+}
+
+function buildCloseButtonNode(label) {
+  const closeButtonNode = createElement('button', [APP_CONFIG.ui.classNames.tabClose]);
+  closeButtonNode.type = 'button';
+  closeButtonNode.textContent = '×';
+  closeButtonNode.tabIndex = -1;
+  closeButtonNode.setAttribute('aria-label', `Закрыть ${label}`);
+  return closeButtonNode;
+}
+
 export function createWorkbenchTabs({ logger, openEditor }) {
   const tabsList = document.getElementById(APP_CONFIG.ui.dom.tabsListId);
   const editorHost = document.getElementById(APP_CONFIG.ui.dom.editorHostId);
@@ -15,6 +30,28 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     for (const entry of tabs.values()) {
       entry.tabNode.classList.toggle(APP_CONFIG.ui.classNames.tabActive, entry.tabId === tabId);
       entry.pageNode.classList.toggle(APP_CONFIG.ui.classNames.pageActive, entry.tabId === tabId);
+    }
+  }
+
+  function closeTab(tabId) {
+    const entry = tabs.get(tabId);
+
+    if (!entry) {
+      return;
+    }
+
+    const orderedEntries = Array.from(tabs.values());
+    const index = orderedEntries.findIndex((tabEntry) => tabEntry.tabId === tabId);
+
+    entry.runtime?.dispose?.();
+    entry.pageNode.remove();
+    entry.tabNode.remove();
+    tabs.delete(tabId);
+
+    const fallback = orderedEntries[index + 1] || orderedEntries[index - 1];
+
+    if (fallback && tabs.has(fallback.tabId)) {
+      activateTab(fallback.tabId);
     }
   }
 
@@ -28,7 +65,17 @@ export function createWorkbenchTabs({ logger, openEditor }) {
 
     const tabNode = createElement('button', [APP_CONFIG.ui.classNames.tab]);
     tabNode.type = 'button';
-    tabNode.textContent = documentRecord.document?.component?.name || APP_CONFIG.ui.text.untitled;
+
+    const tabTitle = documentRecord.document?.component?.name || APP_CONFIG.ui.text.untitled;
+    tabNode.appendChild(buildTabTitleNode(tabTitle));
+
+    const closeButton = buildCloseButtonNode(tabTitle);
+    closeButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeTab(tabId);
+    });
+    tabNode.appendChild(closeButton);
 
     const pageNode = createElement('div', [APP_CONFIG.ui.classNames.page]);
     editorHost.appendChild(pageNode);
@@ -51,6 +98,7 @@ export function createWorkbenchTabs({ logger, openEditor }) {
 
   return {
     openDocument,
-    activateTab
+    activateTab,
+    closeTab
   };
 }

@@ -13,6 +13,8 @@ export const UI_CONFIG = {
 
   classNames: {
     tab: 'workbench-tab',
+    tabTitle: 'workbench-tab-title',
+    tabClose: 'workbench-tab-close-button',
     tabActive: 'is-active',
     page: 'workbench-page',
     pageActive: 'is-active',

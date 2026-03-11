@@ -5,7 +5,7 @@ import { createCommandBus } from './core/commandBus.js';
 import { createModuleRegistry } from './core/moduleRegistry.js';
 import { createProjectManager } from './core/projectManager.js';
 import { createFileSystemBridge } from './runtime/fileSystemBridge.js';
-import { createWorkbenchShell } from './ui/workbenchShell.js';
+import { initWorkbenchLayout } from './core/layout.js';
 import { createWorkbenchTabs } from './ui/createWorkbenchTabs.js';
 import { createProjectTree } from './ui/createProjectTree.js';
 
@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const commandBus = createCommandBus({ logger });
   const moduleRegistry = createModuleRegistry({ logger });
   const fileSystem = createFileSystemBridge();
-  const workbench = createWorkbenchShell();
+  const workbenchLayout = initWorkbenchLayout();
 
   let projectManager = null;
   const getProjectManager = () => projectManager;
@@ -75,7 +75,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     moduleRegistry,
     projectManager,
     fileSystem,
-    workbench,
+    workbenchLayout,
     tabs
   };
 });
