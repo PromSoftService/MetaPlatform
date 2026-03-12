@@ -184,6 +184,23 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     await fileSystem.ensureDir(joinPaths(projectRoot, APP_CONFIG.project.folders.generated));
   }
 
+  async function clearModuleDocumentFiles(projectRoot) {
+    const moduleFolders = [
+      APP_CONFIG.project.folders.metagen,
+      APP_CONFIG.project.folders.metalab,
+      APP_CONFIG.project.folders.metaview
+    ];
+
+    for (const moduleFolder of moduleFolders) {
+      const moduleDir = joinPaths(projectRoot, moduleFolder);
+      const existingFiles = await fileSystem.listFiles(moduleDir, APP_CONFIG.project.fileExtensions.yaml);
+
+      for (const filePath of existingFiles) {
+        await fileSystem.deleteFile(filePath);
+      }
+    }
+  }
+
   function createProjectRuntime({ rootPath, raw, documents, isUnsaved = false, isDirty = false }) {
     return {
       rootPath,
@@ -441,7 +458,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return true;
   }
 
-  async function saveProjectToRoot(targetRoot, openDocuments = []) {
+  async function saveProjectToRoot(targetRoot, openDocuments = [], { renameProjectFromRoot = false } = {}) {
     if (!currentProject) {
       throw new Error('Project is not opened');
     }
@@ -461,16 +478,23 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const targetProjectName = getProjectNameFromRoot(targetRoot);
     const shouldReplaceDefaultName = currentProject.isUnsaved
       && normalizeDocumentName(currentProject.project?.name) === 'Новый проект';
+    const shouldRenameProject = renameProjectFromRoot || shouldReplaceDefaultName;
 
-    if (shouldReplaceDefaultName && targetProjectName) {
+    if (shouldRenameProject && targetProjectName) {
       currentProject.project.name = targetProjectName;
-      currentProject.raw.project = currentProject.project;
+      currentProject.raw.project = {
+        ...(currentProject.raw.project || {}),
+        ...currentProject.project,
+        name: targetProjectName
+      };
     }
 
     await documentLoader.saveYaml(buildProjectFilePath(targetRoot), {
       ...currentProject.raw,
       project: currentProject.project
     });
+
+    await clearModuleDocumentFiles(targetRoot);
 
     const occupied = new Set();
     const pathMap = new Map();
@@ -514,12 +538,12 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    const result = await saveProjectToRoot(currentProject.rootPath, openDocuments);
+    const result = await saveProjectToRoot(currentProject.rootPath, openDocuments, { renameProjectFromRoot: false });
     return result;
   }
 
   async function saveProjectAs(newProjectRoot, openDocuments = []) {
-    const result = await saveProjectToRoot(newProjectRoot, openDocuments);
+    const result = await saveProjectToRoot(newProjectRoot, openDocuments, { renameProjectFromRoot: true });
     logger.info('project', 'Проект сохранен как', { to: newProjectRoot });
     return result;
   }
