@@ -55,6 +55,24 @@ function getDocumentName(documentRecord) {
   );
 }
 
+function getDocumentIdentityKey(documentRecord) {
+  if (!documentRecord?.document) {
+    return '';
+  }
+
+  const moduleId = String(documentRecord.moduleId || '');
+  const kind = String(documentRecord.document.kind || '');
+
+  const componentId = String(documentRecord.document?.component?.id || '').trim();
+  const scenarioId = String(documentRecord.document?.scenario?.id || '').trim();
+  const screenId = String(documentRecord.document?.screen?.id || '').trim();
+
+  const name = getDocumentName(documentRecord);
+  const entityId = componentId || scenarioId || screenId || name;
+
+  return `${moduleId}::${kind}::${entityId}`;
+}
+
 function setDocumentName(documentRecord, nextName) {
   const value = normalizeDocumentName(nextName);
 
@@ -463,15 +481,33 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       throw new Error('Project is not opened');
     }
 
-    const recordsByPath = new Map(getAllDocuments().map((record) => [record.path, record]));
+    const recordsByIdentity = new Map();
 
-    for (const record of openDocuments) {
-      if (record?.path && record?.document) {
-        recordsByPath.set(record.path, record);
+    for (const record of getAllDocuments()) {
+      const identityKey = getDocumentIdentityKey(record);
+
+      if (!identityKey) {
+        continue;
       }
+
+      recordsByIdentity.set(identityKey, record);
     }
 
-    const docs = Array.from(recordsByPath.values());
+    for (const record of openDocuments) {
+      if (!record?.document) {
+        continue;
+      }
+
+      const identityKey = getDocumentIdentityKey(record);
+
+      if (!identityKey) {
+        continue;
+      }
+
+      recordsByIdentity.set(identityKey, record);
+    }
+
+    const docs = Array.from(recordsByIdentity.values());
 
     await ensureProjectDirectories(targetRoot);
 
@@ -500,8 +536,17 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const pathMap = new Map();
 
     for (const record of docs) {
+      if (!record?.document) {
+        continue;
+      }
+
       const module = moduleRegistry.getModule(record.moduleId);
       const moduleFolder = getModuleFolder(record.moduleId);
+
+      if (!module || !moduleFolder) {
+        continue;
+      }
+
       let fileName = module.getFileName(record.document);
       const ext = getFileExtension(fileName) || '.yaml';
       const base = stripFileExtension(fileName);
