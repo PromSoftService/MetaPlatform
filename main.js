@@ -42,6 +42,19 @@ function createWindow() {
   });
 
   createAppMenu(win);
+
+  win.webContents.on('before-input-event', (_event, input) => {
+    if (input.type !== 'keyDown') {
+      return;
+    }
+
+    const isCtrlShiftI = input.control && input.shift && String(input.key).toLowerCase() === 'i';
+
+    if (isCtrlShiftI) {
+      win.webContents.openDevTools({ mode: 'detach' });
+    }
+  });
+
   win.loadURL(APP_CONFIG.platform.window.devServerUrl);
 }
 

@@ -44,6 +44,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const projectTitle = document.querySelector('#project-title');
   const tabs = createWorkbenchTabs({
     logger,
+    projectManager: {
+      renameDocument: async (...args) => projectManager?.renameDocument(...args)
+    },
     openEditor: async ({ documentRecord, mountElement }) => {
       const module = moduleRegistry.findModuleByDocumentKind(documentRecord.document?.kind);
 
@@ -114,11 +117,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         return false;
       }
 
-      await projectManager.saveProjectAs(targetRoot, openDocuments);
+      const result = await projectManager.saveProjectAs(targetRoot, openDocuments);
+      tabs.updateTabPaths(result?.pathMap);
       return true;
     }
 
-    await projectManager.saveProject(openDocuments);
+    const result = await projectManager.saveProject(openDocuments);
+    tabs.updateTabPaths(result?.pathMap);
     return true;
   }
 

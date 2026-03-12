@@ -164,7 +164,7 @@ PROJECT_FILES = [
   'preload.cjs',
   'project-examples/demo-feedmill/metagen/conveyors.yaml',
   'project-examples/demo-feedmill/metagen/pumps.yaml',
-  'project-examples/demo-feedmill/metagen/valves.yaml',
+  'project-examples/demo-feedmill/metagen/новый_компонент.yaml',
   'project-examples/demo-feedmill/metalab/startup_scenario.yaml',
   'project-examples/demo-feedmill/metaview/main_screen.yaml',
   'project-examples/demo-feedmill/project.yaml',
@@ -266,11 +266,12 @@ PROJECT_FILES = [
   'create_project_structure.py',
   'export_project_to_txt.py',
   'main.js',
+  'metaplatform_project_dump.txt',
   'package.json',
   'preload.cjs',
   'project-examples/demo-feedmill/metagen/conveyors.yaml',
   'project-examples/demo-feedmill/metagen/pumps.yaml',
-  'project-examples/demo-feedmill/metagen/valves.yaml',
+  'project-examples/demo-feedmill/metagen/новый_компонент.yaml',
   'project-examples/demo-feedmill/metalab/startup_scenario.yaml',
   'project-examples/demo-feedmill/metaview/main_screen.yaml',
   'project-examples/demo-feedmill/project.yaml',
@@ -400,6 +401,19 @@ function createWindow() {
   });
 
   createAppMenu(win);
+
+  win.webContents.on('before-input-event', (_event, input) => {
+    if (input.type !== 'keyDown') {
+      return;
+    }
+
+    const isCtrlShiftI = input.control && input.shift && String(input.key).toLowerCase() === 'i';
+
+    if (isCtrlShiftI) {
+      win.webContents.openDevTools({ mode: 'detach' });
+    }
+  });
+
   win.loadURL(APP_CONFIG.platform.window.devServerUrl);
 }
 
@@ -518,6 +532,12 @@ app.on('window-all-closed', () => {
   }
 });
 
+
+==================================================
+FILE: metaplatform_project_dump.txt
+==================================================
+
+[FILE NOT FOUND]
 
 ==================================================
 FILE: package.json
@@ -660,10 +680,44 @@ generation:
     fileName: pumps.st
 
 ==================================================
-FILE: project-examples/demo-feedmill/metagen/valves.yaml
+FILE: project-examples/demo-feedmill/metagen/новый_компонент.yaml
 ==================================================
 
-[FILE NOT FOUND]
+kind: metagen.component
+version: 1
+component:
+  id: новый_компонент
+  name: Новый компонент
+  type: template
+  module: MetaGen
+  description: ""
+params:
+  format: header-plus-rows
+  header: []
+  rows: []
+data:
+  format: table
+  columns: []
+  rows: []
+instances:
+  format: list
+  rows: []
+code:
+  format: template-text
+  language: st-template
+  text: ""
+generation:
+  engine: python
+  entrypoint: gen_v2.py
+  mode: external
+  output:
+    language: st
+    fileName: новый_компонент.st
+meta:
+  author: ""
+  importedFrom: ""
+  importedSheet: ""
+
 
 ==================================================
 FILE: project-examples/demo-feedmill/metalab/startup_scenario.yaml
@@ -752,6 +806,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const projectTitle = document.querySelector('#project-title');
   const tabs = createWorkbenchTabs({
     logger,
+    projectManager: {
+      renameDocument: async (...args) => projectManager?.renameDocument(...args)
+    },
     openEditor: async ({ documentRecord, mountElement }) => {
       const module = moduleRegistry.findModuleByDocumentKind(documentRecord.document?.kind);
 
@@ -822,11 +879,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         return false;
       }
 
-      await projectManager.saveProjectAs(targetRoot, openDocuments);
+      const result = await projectManager.saveProjectAs(targetRoot, openDocuments);
+      tabs.updateTabPaths(result?.pathMap);
       return true;
     }
 
-    await projectManager.saveProject(openDocuments);
+    const result = await projectManager.saveProject(openDocuments);
+    tabs.updateTabPaths(result?.pathMap);
     return true;
   }
 
@@ -1186,6 +1245,43 @@ function getModuleFolder(moduleId) {
   return folderMap[moduleId] || null;
 }
 
+function normalizeDocumentName(name) {
+  return String(name ?? '').trim();
+}
+
+function getDocumentName(documentRecord) {
+  return normalizeDocumentName(
+    documentRecord?.document?.component?.name
+    || documentRecord?.document?.scenario?.name
+    || documentRecord?.document?.screen?.name
+    || documentRecord?.document?.name
+    || ''
+  );
+}
+
+function setDocumentName(documentRecord, nextName) {
+  const value = normalizeDocumentName(nextName);
+
+  if (documentRecord?.document?.component) {
+    documentRecord.document.component.name = value;
+    return;
+  }
+
+  if (documentRecord?.document?.scenario) {
+    documentRecord.document.scenario.name = value;
+    return;
+  }
+
+  if (documentRecord?.document?.screen) {
+    documentRecord.document.screen.name = value;
+    return;
+  }
+
+  if (documentRecord?.document) {
+    documentRecord.document.name = value;
+  }
+}
+
 function createDefaultProjectRaw() {
   return {
     kind: APP_CONFIG.project.projectKinds.root,
@@ -1378,7 +1474,41 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return getAllDocuments().find((entry) => entry.path === targetPath) || null;
   }
 
-  async function createDocument(moduleId, name) {
+  function isMetaGenNameTaken(name, excludePath = null) {
+    if (!currentProject) {
+      return false;
+    }
+
+    const normalizedTarget = normalizeDocumentName(name);
+
+    if (!normalizedTarget) {
+      return false;
+    }
+
+    return currentProject.documents.metagen.some((record) => {
+      if (excludePath && record.path === excludePath) {
+        return false;
+      }
+
+      return getDocumentName(record) === normalizedTarget;
+    });
+  }
+
+  function getNextMetaGenDefaultName() {
+    let index = 1;
+
+    while (true) {
+      const candidate = `Новый компонент ${index}`;
+
+      if (!isMetaGenNameTaken(candidate)) {
+        return candidate;
+      }
+
+      index += 1;
+    }
+  }
+
+  async function createDocument(moduleId, name = null) {
     if (!currentProject) {
       throw new Error('Project is not opened');
     }
@@ -1389,7 +1519,16 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       throw new Error(`Module not found: ${moduleId}`);
     }
 
-    const document = module.createDefaultDocument({ name });
+    const resolvedName = moduleId === 'metagen'
+      ? normalizeDocumentName(name || getNextMetaGenDefaultName())
+      : normalizeDocumentName(name);
+
+    if (moduleId === 'metagen' && (!resolvedName || isMetaGenNameTaken(resolvedName))) {
+      logger.warn('project', 'Имя компонента уже занято', { name: resolvedName });
+      return null;
+    }
+
+    const document = module.createDefaultDocument({ name: resolvedName || name });
     const virtualPath = currentProject.rootPath
       ? joinPaths(currentProject.rootPath, getModuleFolder(moduleId), module.getFileName(document))
       : `unsaved://${moduleId}/${++unsavedCounter}.yaml`;
@@ -1405,6 +1544,53 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     setDirty(true);
     logger.info('project', 'Создан документ', { moduleId, path: virtualPath, name });
     return record;
+  }
+
+  async function renameDocument(targetPath, nextName) {
+    if (!currentProject) {
+      return null;
+    }
+
+    const record = getDocumentByPath(targetPath);
+
+    if (!record) {
+      return null;
+    }
+
+    const resolvedName = normalizeDocumentName(nextName);
+
+    if (!resolvedName) {
+      return null;
+    }
+
+    if (record.moduleId === 'metagen' && isMetaGenNameTaken(resolvedName, targetPath)) {
+      logger.warn('project', 'Имя компонента уже занято', { name: resolvedName });
+      return null;
+    }
+
+    const previousPath = record.path;
+    setDocumentName(record, resolvedName);
+
+    if (currentProject.rootPath && !String(record.path).startsWith('unsaved://')) {
+      const module = moduleRegistry.getModule(record.moduleId);
+      const moduleFolder = getModuleFolder(record.moduleId);
+      const nextFileName = module.getFileName(record.document);
+      const nextPath = joinPaths(currentProject.rootPath, moduleFolder, nextFileName);
+
+      if (nextPath !== record.path) {
+        await fileSystem.rename(record.path, nextPath);
+        record.path = nextPath;
+      }
+    }
+
+    currentProject.documents[record.moduleId].sort((a, b) => getDocumentName(a).localeCompare(getDocumentName(b)));
+    setDirty(true);
+
+    return {
+      record,
+      previousPath,
+      nextPath: record.path
+    };
   }
 
   function markDocumentDirty() {
@@ -1470,6 +1656,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     });
 
     const occupied = new Set();
+    const pathMap = new Map();
 
     for (const record of docs) {
       const module = moduleRegistry.getModule(record.moduleId);
@@ -1487,6 +1674,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       occupied.add(`${moduleFolder}/${fileName}`);
 
       const nextPath = joinPaths(targetRoot, moduleFolder, fileName);
+      pathMap.set(record.path, nextPath);
       record.path = nextPath;
       await documentLoader.saveYaml(nextPath, record.document);
     }
@@ -1501,7 +1689,10 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     currentProject.documents.metaview = docs.filter((entry) => entry.moduleId === 'metaview');
 
     emitChange();
-    return currentProject;
+    return {
+      project: currentProject,
+      pathMap
+    };
   }
 
   async function saveProject(openDocuments = []) {
@@ -1513,14 +1704,14 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    await saveProjectToRoot(currentProject.rootPath, openDocuments);
-    return currentProject;
+    const result = await saveProjectToRoot(currentProject.rootPath, openDocuments);
+    return result;
   }
 
   async function saveProjectAs(newProjectRoot, openDocuments = []) {
-    await saveProjectToRoot(newProjectRoot, openDocuments);
+    const result = await saveProjectToRoot(newProjectRoot, openDocuments);
     logger.info('project', 'Проект сохранен как', { to: newProjectRoot });
-    return currentProject;
+    return result;
   }
 
   return {
@@ -1535,6 +1726,9 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     getDocumentsByModule,
     getDocumentByPath,
     createDocument,
+    renameDocument,
+    getNextMetaGenDefaultName,
+    isMetaGenNameTaken,
     saveDocument,
     saveProject,
     saveProjectAs,
@@ -3516,6 +3710,9 @@ body {
 
 .tree-item {
   margin-bottom: 6px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
 .tree-item-label {
@@ -3526,6 +3723,27 @@ body {
   color: var(--color-text);
   padding: 8px 10px;
   border-radius: 0;
+  cursor: pointer;
+}
+
+
+.workbench-inline-rename-input,
+.tree-inline-rename-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-app);
+  color: var(--color-text);
+  padding: 4px 8px;
+  font: inherit;
+}
+
+.tree-item-delete {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-app);
+  color: var(--color-text-muted);
+  width: 32px;
+  height: 32px;
   cursor: pointer;
 }
 
@@ -3818,12 +4036,15 @@ import { APP_CONFIG } from '../../config/app-config.js';
 import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
 import { METALAB_CONFIG } from '../modules/metalab/metalabConfig.js';
 import { METAVIEW_CONFIG } from '../modules/metaview/metaviewConfig.js';
-import { showTextInputDialog } from './dialogs.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
   classNames.forEach((className) => node.classList.add(className));
   return node;
+}
+
+function normalizeName(name) {
+  return String(name ?? '').trim();
 }
 
 function getDocumentLabel(documentRecord) {
@@ -3846,23 +4067,70 @@ export function createProjectTree({
   const moduleSections = [
     {
       moduleId: METAGEN_CONFIG.moduleId,
-      moduleName: METAGEN_CONFIG.moduleName,
-      createPromptTitle: METAGEN_CONFIG.ui.createPromptTitle,
-      defaultName: METAGEN_CONFIG.defaults.newDocumentName
+      moduleName: METAGEN_CONFIG.moduleName
     },
     {
       moduleId: METALAB_CONFIG.moduleId,
       moduleName: METALAB_CONFIG.moduleName,
-      createPromptTitle: 'Имя сценария MetaLab',
       defaultName: 'Новый сценарий'
     },
     {
       moduleId: METAVIEW_CONFIG.moduleId,
       moduleName: METAVIEW_CONFIG.moduleName,
-      createPromptTitle: 'Имя экрана MetaView',
       defaultName: 'Новый экран'
     }
   ];
+
+  async function startTreeInlineRename({ record, labelNode }) {
+    const previousName = getDocumentLabel(record);
+    const input = createElement('input', ['tree-inline-rename-input']);
+    input.type = 'text';
+    input.value = previousName;
+
+    labelNode.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let finalized = false;
+
+    const finalize = async (commit) => {
+      if (finalized) {
+        return;
+      }
+
+      finalized = true;
+
+      if (commit) {
+        const nextName = normalizeName(input.value);
+        if (!nextName) {
+          logger.warn('project-tree', 'Пустое имя отклонено');
+        } else {
+          const renamed = await projectManager.renameDocument(record.path, nextName);
+          if (!renamed) {
+            logger.warn('project-tree', 'Переименование отклонено', { name: nextName });
+          }
+        }
+      }
+
+      await render();
+    };
+
+    input.addEventListener('keydown', async (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        await finalize(true);
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        await finalize(false);
+      }
+    });
+
+    input.addEventListener('blur', async () => {
+      await finalize(true);
+    });
+  }
 
   async function render() {
     const project = projectManager.getCurrentProject();
@@ -3887,17 +4155,17 @@ export function createProjectTree({
       addButton.type = 'button';
       addButton.textContent = '+';
       addButton.addEventListener('click', async () => {
-        const nextName = await showTextInputDialog({
-          title: sectionConfig.createPromptTitle,
-          initialValue: sectionConfig.defaultName,
-          confirmText: 'Создать'
-        });
+        if (sectionConfig.moduleId === METAGEN_CONFIG.moduleId) {
+          const created = await projectManager.createDocument(sectionConfig.moduleId);
 
-        if (!nextName) {
+          if (created) {
+            await tabs.openDocument(created, { startRenameMode: true });
+          }
+
           return;
         }
 
-        const created = await projectManager.createDocument(sectionConfig.moduleId, nextName);
+        const created = await projectManager.createDocument(sectionConfig.moduleId, sectionConfig.defaultName);
 
         if (created) {
           await tabs.openDocument(created);
@@ -3915,8 +4183,29 @@ export function createProjectTree({
         label.type = 'button';
         label.textContent = getDocumentLabel(documentRecord);
 
-        label.addEventListener('click', async () => {
+        let firstClickAt = 0;
+        let lastDoubleClickInterval = 0;
+
+        label.addEventListener('dblclick', async (event) => {
+          event.preventDefault();
+
+          if (lastDoubleClickInterval > 350) {
+            await startTreeInlineRename({ record: documentRecord, labelNode: label });
+            return;
+          }
+
           await tabs.openDocument(documentRecord);
+        });
+
+        label.addEventListener('click', (event) => {
+          if (event.detail === 1) {
+            firstClickAt = Date.now();
+            return;
+          }
+
+          if (event.detail === 2) {
+            lastDoubleClickInterval = Date.now() - firstClickAt;
+          }
         });
 
         const deleteButton = createElement('button', ['tree-item-delete']);
@@ -3965,6 +4254,10 @@ function createElement(tagName, classNames = []) {
   return node;
 }
 
+function normalizeName(name) {
+  return String(name ?? '').trim();
+}
+
 function getDocumentLabel(documentRecord) {
   return (
     documentRecord.document?.component?.name ||
@@ -3973,6 +4266,27 @@ function getDocumentLabel(documentRecord) {
     documentRecord.document?.name ||
     APP_CONFIG.ui.text.untitled
   );
+}
+
+function setDocumentLabel(documentRecord, title) {
+  if (documentRecord?.document?.component) {
+    documentRecord.document.component.name = title;
+    return;
+  }
+
+  if (documentRecord?.document?.scenario) {
+    documentRecord.document.scenario.name = title;
+    return;
+  }
+
+  if (documentRecord?.document?.screen) {
+    documentRecord.document.screen.name = title;
+    return;
+  }
+
+  if (documentRecord?.document) {
+    documentRecord.document.name = title;
+  }
 }
 
 function buildTabTitleNode(title) {
@@ -3990,7 +4304,7 @@ function buildCloseButtonNode(label) {
   return closeButtonNode;
 }
 
-export function createWorkbenchTabs({ logger, openEditor }) {
+export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   const tabsList = document.getElementById(APP_CONFIG.ui.dom.tabsListId);
   const editorHost = document.getElementById(APP_CONFIG.ui.dom.editorHostId);
   const tabs = new Map();
@@ -4001,6 +4315,13 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     for (const entry of tabs.values()) {
       entry.tabNode.classList.toggle(APP_CONFIG.ui.classNames.tabActive, entry.tabId === tabId);
       entry.pageNode.classList.toggle(APP_CONFIG.ui.classNames.pageActive, entry.tabId === tabId);
+    }
+  }
+
+  function updateTabTitle(entry) {
+    const titleNode = entry.tabNode.querySelector(`.${APP_CONFIG.ui.classNames.tabTitle}`);
+    if (titleNode) {
+      titleNode.textContent = getDocumentLabel(entry.documentRecord);
     }
   }
 
@@ -4044,11 +4365,114 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     return tabs.get(activeTabId).documentRecord;
   }
 
-  async function openDocument(documentRecord) {
+  async function startRename(tabId) {
+    const entry = tabs.get(tabId);
+
+    if (!entry) {
+      return false;
+    }
+
+    const titleNode = entry.tabNode.querySelector(`.${APP_CONFIG.ui.classNames.tabTitle}`);
+
+    if (!titleNode || titleNode.dataset.renaming === '1') {
+      return false;
+    }
+
+    titleNode.dataset.renaming = '1';
+
+    const previousName = getDocumentLabel(entry.documentRecord);
+    const input = createElement('input', ['workbench-inline-rename-input']);
+    input.type = 'text';
+    input.value = previousName;
+
+    titleNode.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let finalized = false;
+
+    const finalize = async (commit) => {
+      if (finalized) {
+        return false;
+      }
+
+      finalized = true;
+      const nextName = normalizeName(input.value);
+      let updatedTabId = tabId;
+
+      if (commit) {
+        if (!nextName) {
+          logger.warn('tabs', 'Пустое имя отклонено');
+        } else {
+          const renamed = await projectManager.renameDocument(tabId, nextName);
+
+          if (!renamed) {
+            logger.warn('tabs', 'Переименование отклонено', { name: nextName });
+          } else {
+            setDocumentLabel(entry.documentRecord, nextName);
+
+            if (renamed.nextPath !== renamed.previousPath) {
+              tabs.delete(renamed.previousPath);
+              entry.tabId = renamed.nextPath;
+              entry.documentRecord.path = renamed.nextPath;
+              tabs.set(renamed.nextPath, entry);
+
+              if (activeTabId === renamed.previousPath) {
+                activeTabId = renamed.nextPath;
+              }
+
+              entry.pageNode.dataset.tabId = renamed.nextPath;
+              updatedTabId = renamed.nextPath;
+            }
+
+            updateTabTitle(entry);
+          }
+        }
+      }
+
+      const restoredTitle = buildTabTitleNode(getDocumentLabel(entry.documentRecord));
+      restoredTitle.dataset.renaming = '0';
+      input.replaceWith(restoredTitle);
+
+      return updatedTabId;
+    };
+
+    input.addEventListener('keydown', async (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        const updatedTabId = await finalize(true);
+        if (updatedTabId) {
+          activateTab(updatedTabId);
+        }
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        const updatedTabId = await finalize(false);
+        if (updatedTabId) {
+          activateTab(updatedTabId);
+        }
+      }
+    });
+
+    input.addEventListener('blur', async () => {
+      const updatedTabId = await finalize(true);
+      if (updatedTabId) {
+        activateTab(updatedTabId);
+      }
+    });
+
+    return true;
+  }
+
+  async function openDocument(documentRecord, { startRenameMode = false } = {}) {
     const tabId = documentRecord.path;
 
     if (tabs.has(tabId)) {
       activateTab(tabId);
+      if (startRenameMode) {
+        await startRename(tabId);
+      }
       return tabs.get(tabId);
     }
 
@@ -4067,6 +4491,7 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     tabNode.appendChild(closeButton);
 
     const pageNode = createElement('div', [APP_CONFIG.ui.classNames.page]);
+    pageNode.dataset.tabId = tabId;
     editorHost.appendChild(pageNode);
 
     const runtime = await openEditor({
@@ -4077,14 +4502,23 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     const entry = { tabId, tabNode, pageNode, runtime, documentRecord };
     tabs.set(tabId, entry);
 
-    tabNode.addEventListener('click', () => activateTab(tabId));
+    tabNode.addEventListener('click', () => activateTab(entry.tabId));
+    tabNode.addEventListener('dblclick', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await startRename(entry.tabId);
+    });
+
     tabsList.appendChild(tabNode);
     activateTab(tabId);
+
+    if (startRenameMode) {
+      await startRename(entry.tabId);
+    }
 
     logger.info('tabs', 'Открыта вкладка', { tabId });
     return entry;
   }
-
 
   async function collectOpenDocumentRecords() {
     const output = [];
@@ -4101,13 +4535,38 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     return output;
   }
 
+  function updateTabPaths(pathMap) {
+    if (!pathMap || typeof pathMap.entries !== 'function') {
+      return;
+    }
+
+    for (const [previousPath, nextPath] of pathMap.entries()) {
+      if (!tabs.has(previousPath)) {
+        continue;
+      }
+
+      const entry = tabs.get(previousPath);
+      tabs.delete(previousPath);
+      entry.tabId = nextPath;
+      entry.documentRecord.path = nextPath;
+      entry.pageNode.dataset.tabId = nextPath;
+      tabs.set(nextPath, entry);
+
+      if (activeTabId === previousPath) {
+        activeTabId = nextPath;
+      }
+    }
+  }
+
   return {
     openDocument,
     activateTab,
     closeTab,
     closeAllTabs,
     getActiveDocumentRecord,
-    collectOpenDocumentRecords
+    collectOpenDocumentRecords,
+    startRename,
+    updateTabPaths
   };
 }
 

@@ -2,12 +2,15 @@ import { APP_CONFIG } from '../../config/app-config.js';
 import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
 import { METALAB_CONFIG } from '../modules/metalab/metalabConfig.js';
 import { METAVIEW_CONFIG } from '../modules/metaview/metaviewConfig.js';
-import { showTextInputDialog } from './dialogs.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
   classNames.forEach((className) => node.classList.add(className));
   return node;
+}
+
+function normalizeName(name) {
+  return String(name ?? '').trim();
 }
 
 function getDocumentLabel(documentRecord) {
@@ -30,23 +33,70 @@ export function createProjectTree({
   const moduleSections = [
     {
       moduleId: METAGEN_CONFIG.moduleId,
-      moduleName: METAGEN_CONFIG.moduleName,
-      createPromptTitle: METAGEN_CONFIG.ui.createPromptTitle,
-      defaultName: METAGEN_CONFIG.defaults.newDocumentName
+      moduleName: METAGEN_CONFIG.moduleName
     },
     {
       moduleId: METALAB_CONFIG.moduleId,
       moduleName: METALAB_CONFIG.moduleName,
-      createPromptTitle: 'Имя сценария MetaLab',
       defaultName: 'Новый сценарий'
     },
     {
       moduleId: METAVIEW_CONFIG.moduleId,
       moduleName: METAVIEW_CONFIG.moduleName,
-      createPromptTitle: 'Имя экрана MetaView',
       defaultName: 'Новый экран'
     }
   ];
+
+  async function startTreeInlineRename({ record, labelNode }) {
+    const previousName = getDocumentLabel(record);
+    const input = createElement('input', ['tree-inline-rename-input']);
+    input.type = 'text';
+    input.value = previousName;
+
+    labelNode.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let finalized = false;
+
+    const finalize = async (commit) => {
+      if (finalized) {
+        return;
+      }
+
+      finalized = true;
+
+      if (commit) {
+        const nextName = normalizeName(input.value);
+        if (!nextName) {
+          logger.warn('project-tree', 'Пустое имя отклонено');
+        } else {
+          const renamed = await projectManager.renameDocument(record.path, nextName);
+          if (!renamed) {
+            logger.warn('project-tree', 'Переименование отклонено', { name: nextName });
+          }
+        }
+      }
+
+      await render();
+    };
+
+    input.addEventListener('keydown', async (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        await finalize(true);
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        await finalize(false);
+      }
+    });
+
+    input.addEventListener('blur', async () => {
+      await finalize(true);
+    });
+  }
 
   async function render() {
     const project = projectManager.getCurrentProject();
@@ -71,17 +121,17 @@ export function createProjectTree({
       addButton.type = 'button';
       addButton.textContent = '+';
       addButton.addEventListener('click', async () => {
-        const nextName = await showTextInputDialog({
-          title: sectionConfig.createPromptTitle,
-          initialValue: sectionConfig.defaultName,
-          confirmText: 'Создать'
-        });
+        if (sectionConfig.moduleId === METAGEN_CONFIG.moduleId) {
+          const created = await projectManager.createDocument(sectionConfig.moduleId);
 
-        if (!nextName) {
+          if (created) {
+            await tabs.openDocument(created, { startRenameMode: true });
+          }
+
           return;
         }
 
-        const created = await projectManager.createDocument(sectionConfig.moduleId, nextName);
+        const created = await projectManager.createDocument(sectionConfig.moduleId, sectionConfig.defaultName);
 
         if (created) {
           await tabs.openDocument(created);
@@ -99,8 +149,29 @@ export function createProjectTree({
         label.type = 'button';
         label.textContent = getDocumentLabel(documentRecord);
 
-        label.addEventListener('click', async () => {
+        let firstClickAt = 0;
+        let lastDoubleClickInterval = 0;
+
+        label.addEventListener('dblclick', async (event) => {
+          event.preventDefault();
+
+          if (lastDoubleClickInterval > 350) {
+            await startTreeInlineRename({ record: documentRecord, labelNode: label });
+            return;
+          }
+
           await tabs.openDocument(documentRecord);
+        });
+
+        label.addEventListener('click', (event) => {
+          if (event.detail === 1) {
+            firstClickAt = Date.now();
+            return;
+          }
+
+          if (event.detail === 2) {
+            lastDoubleClickInterval = Date.now() - firstClickAt;
+          }
         });
 
         const deleteButton = createElement('button', ['tree-item-delete']);

@@ -6,6 +6,10 @@ function createElement(tagName, classNames = []) {
   return node;
 }
 
+function normalizeName(name) {
+  return String(name ?? '').trim();
+}
+
 function getDocumentLabel(documentRecord) {
   return (
     documentRecord.document?.component?.name ||
@@ -14,6 +18,27 @@ function getDocumentLabel(documentRecord) {
     documentRecord.document?.name ||
     APP_CONFIG.ui.text.untitled
   );
+}
+
+function setDocumentLabel(documentRecord, title) {
+  if (documentRecord?.document?.component) {
+    documentRecord.document.component.name = title;
+    return;
+  }
+
+  if (documentRecord?.document?.scenario) {
+    documentRecord.document.scenario.name = title;
+    return;
+  }
+
+  if (documentRecord?.document?.screen) {
+    documentRecord.document.screen.name = title;
+    return;
+  }
+
+  if (documentRecord?.document) {
+    documentRecord.document.name = title;
+  }
 }
 
 function buildTabTitleNode(title) {
@@ -31,7 +56,7 @@ function buildCloseButtonNode(label) {
   return closeButtonNode;
 }
 
-export function createWorkbenchTabs({ logger, openEditor }) {
+export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   const tabsList = document.getElementById(APP_CONFIG.ui.dom.tabsListId);
   const editorHost = document.getElementById(APP_CONFIG.ui.dom.editorHostId);
   const tabs = new Map();
@@ -42,6 +67,13 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     for (const entry of tabs.values()) {
       entry.tabNode.classList.toggle(APP_CONFIG.ui.classNames.tabActive, entry.tabId === tabId);
       entry.pageNode.classList.toggle(APP_CONFIG.ui.classNames.pageActive, entry.tabId === tabId);
+    }
+  }
+
+  function updateTabTitle(entry) {
+    const titleNode = entry.tabNode.querySelector(`.${APP_CONFIG.ui.classNames.tabTitle}`);
+    if (titleNode) {
+      titleNode.textContent = getDocumentLabel(entry.documentRecord);
     }
   }
 
@@ -85,11 +117,114 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     return tabs.get(activeTabId).documentRecord;
   }
 
-  async function openDocument(documentRecord) {
+  async function startRename(tabId) {
+    const entry = tabs.get(tabId);
+
+    if (!entry) {
+      return false;
+    }
+
+    const titleNode = entry.tabNode.querySelector(`.${APP_CONFIG.ui.classNames.tabTitle}`);
+
+    if (!titleNode || titleNode.dataset.renaming === '1') {
+      return false;
+    }
+
+    titleNode.dataset.renaming = '1';
+
+    const previousName = getDocumentLabel(entry.documentRecord);
+    const input = createElement('input', ['workbench-inline-rename-input']);
+    input.type = 'text';
+    input.value = previousName;
+
+    titleNode.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let finalized = false;
+
+    const finalize = async (commit) => {
+      if (finalized) {
+        return false;
+      }
+
+      finalized = true;
+      const nextName = normalizeName(input.value);
+      let updatedTabId = tabId;
+
+      if (commit) {
+        if (!nextName) {
+          logger.warn('tabs', 'Пустое имя отклонено');
+        } else {
+          const renamed = await projectManager.renameDocument(tabId, nextName);
+
+          if (!renamed) {
+            logger.warn('tabs', 'Переименование отклонено', { name: nextName });
+          } else {
+            setDocumentLabel(entry.documentRecord, nextName);
+
+            if (renamed.nextPath !== renamed.previousPath) {
+              tabs.delete(renamed.previousPath);
+              entry.tabId = renamed.nextPath;
+              entry.documentRecord.path = renamed.nextPath;
+              tabs.set(renamed.nextPath, entry);
+
+              if (activeTabId === renamed.previousPath) {
+                activeTabId = renamed.nextPath;
+              }
+
+              entry.pageNode.dataset.tabId = renamed.nextPath;
+              updatedTabId = renamed.nextPath;
+            }
+
+            updateTabTitle(entry);
+          }
+        }
+      }
+
+      const restoredTitle = buildTabTitleNode(getDocumentLabel(entry.documentRecord));
+      restoredTitle.dataset.renaming = '0';
+      input.replaceWith(restoredTitle);
+
+      return updatedTabId;
+    };
+
+    input.addEventListener('keydown', async (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        const updatedTabId = await finalize(true);
+        if (updatedTabId) {
+          activateTab(updatedTabId);
+        }
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        const updatedTabId = await finalize(false);
+        if (updatedTabId) {
+          activateTab(updatedTabId);
+        }
+      }
+    });
+
+    input.addEventListener('blur', async () => {
+      const updatedTabId = await finalize(true);
+      if (updatedTabId) {
+        activateTab(updatedTabId);
+      }
+    });
+
+    return true;
+  }
+
+  async function openDocument(documentRecord, { startRenameMode = false } = {}) {
     const tabId = documentRecord.path;
 
     if (tabs.has(tabId)) {
       activateTab(tabId);
+      if (startRenameMode) {
+        await startRename(tabId);
+      }
       return tabs.get(tabId);
     }
 
@@ -108,6 +243,7 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     tabNode.appendChild(closeButton);
 
     const pageNode = createElement('div', [APP_CONFIG.ui.classNames.page]);
+    pageNode.dataset.tabId = tabId;
     editorHost.appendChild(pageNode);
 
     const runtime = await openEditor({
@@ -118,14 +254,23 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     const entry = { tabId, tabNode, pageNode, runtime, documentRecord };
     tabs.set(tabId, entry);
 
-    tabNode.addEventListener('click', () => activateTab(tabId));
+    tabNode.addEventListener('click', () => activateTab(entry.tabId));
+    tabNode.addEventListener('dblclick', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await startRename(entry.tabId);
+    });
+
     tabsList.appendChild(tabNode);
     activateTab(tabId);
+
+    if (startRenameMode) {
+      await startRename(entry.tabId);
+    }
 
     logger.info('tabs', 'Открыта вкладка', { tabId });
     return entry;
   }
-
 
   async function collectOpenDocumentRecords() {
     const output = [];
@@ -142,12 +287,37 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     return output;
   }
 
+  function updateTabPaths(pathMap) {
+    if (!pathMap || typeof pathMap.entries !== 'function') {
+      return;
+    }
+
+    for (const [previousPath, nextPath] of pathMap.entries()) {
+      if (!tabs.has(previousPath)) {
+        continue;
+      }
+
+      const entry = tabs.get(previousPath);
+      tabs.delete(previousPath);
+      entry.tabId = nextPath;
+      entry.documentRecord.path = nextPath;
+      entry.pageNode.dataset.tabId = nextPath;
+      tabs.set(nextPath, entry);
+
+      if (activeTabId === previousPath) {
+        activeTabId = nextPath;
+      }
+    }
+  }
+
   return {
     openDocument,
     activateTab,
     closeTab,
     closeAllTabs,
     getActiveDocumentRecord,
-    collectOpenDocumentRecords
+    collectOpenDocumentRecords,
+    startRename,
+    updateTabPaths
   };
 }

@@ -24,6 +24,43 @@ function getModuleFolder(moduleId) {
   return folderMap[moduleId] || null;
 }
 
+function normalizeDocumentName(name) {
+  return String(name ?? '').trim();
+}
+
+function getDocumentName(documentRecord) {
+  return normalizeDocumentName(
+    documentRecord?.document?.component?.name
+    || documentRecord?.document?.scenario?.name
+    || documentRecord?.document?.screen?.name
+    || documentRecord?.document?.name
+    || ''
+  );
+}
+
+function setDocumentName(documentRecord, nextName) {
+  const value = normalizeDocumentName(nextName);
+
+  if (documentRecord?.document?.component) {
+    documentRecord.document.component.name = value;
+    return;
+  }
+
+  if (documentRecord?.document?.scenario) {
+    documentRecord.document.scenario.name = value;
+    return;
+  }
+
+  if (documentRecord?.document?.screen) {
+    documentRecord.document.screen.name = value;
+    return;
+  }
+
+  if (documentRecord?.document) {
+    documentRecord.document.name = value;
+  }
+}
+
 function createDefaultProjectRaw() {
   return {
     kind: APP_CONFIG.project.projectKinds.root,
@@ -216,7 +253,41 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return getAllDocuments().find((entry) => entry.path === targetPath) || null;
   }
 
-  async function createDocument(moduleId, name) {
+  function isMetaGenNameTaken(name, excludePath = null) {
+    if (!currentProject) {
+      return false;
+    }
+
+    const normalizedTarget = normalizeDocumentName(name);
+
+    if (!normalizedTarget) {
+      return false;
+    }
+
+    return currentProject.documents.metagen.some((record) => {
+      if (excludePath && record.path === excludePath) {
+        return false;
+      }
+
+      return getDocumentName(record) === normalizedTarget;
+    });
+  }
+
+  function getNextMetaGenDefaultName() {
+    let index = 1;
+
+    while (true) {
+      const candidate = `Новый компонент ${index}`;
+
+      if (!isMetaGenNameTaken(candidate)) {
+        return candidate;
+      }
+
+      index += 1;
+    }
+  }
+
+  async function createDocument(moduleId, name = null) {
     if (!currentProject) {
       throw new Error('Project is not opened');
     }
@@ -227,7 +298,16 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       throw new Error(`Module not found: ${moduleId}`);
     }
 
-    const document = module.createDefaultDocument({ name });
+    const resolvedName = moduleId === 'metagen'
+      ? normalizeDocumentName(name || getNextMetaGenDefaultName())
+      : normalizeDocumentName(name);
+
+    if (moduleId === 'metagen' && (!resolvedName || isMetaGenNameTaken(resolvedName))) {
+      logger.warn('project', 'Имя компонента уже занято', { name: resolvedName });
+      return null;
+    }
+
+    const document = module.createDefaultDocument({ name: resolvedName || name });
     const virtualPath = currentProject.rootPath
       ? joinPaths(currentProject.rootPath, getModuleFolder(moduleId), module.getFileName(document))
       : `unsaved://${moduleId}/${++unsavedCounter}.yaml`;
@@ -243,6 +323,53 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     setDirty(true);
     logger.info('project', 'Создан документ', { moduleId, path: virtualPath, name });
     return record;
+  }
+
+  async function renameDocument(targetPath, nextName) {
+    if (!currentProject) {
+      return null;
+    }
+
+    const record = getDocumentByPath(targetPath);
+
+    if (!record) {
+      return null;
+    }
+
+    const resolvedName = normalizeDocumentName(nextName);
+
+    if (!resolvedName) {
+      return null;
+    }
+
+    if (record.moduleId === 'metagen' && isMetaGenNameTaken(resolvedName, targetPath)) {
+      logger.warn('project', 'Имя компонента уже занято', { name: resolvedName });
+      return null;
+    }
+
+    const previousPath = record.path;
+    setDocumentName(record, resolvedName);
+
+    if (currentProject.rootPath && !String(record.path).startsWith('unsaved://')) {
+      const module = moduleRegistry.getModule(record.moduleId);
+      const moduleFolder = getModuleFolder(record.moduleId);
+      const nextFileName = module.getFileName(record.document);
+      const nextPath = joinPaths(currentProject.rootPath, moduleFolder, nextFileName);
+
+      if (nextPath !== record.path) {
+        await fileSystem.rename(record.path, nextPath);
+        record.path = nextPath;
+      }
+    }
+
+    currentProject.documents[record.moduleId].sort((a, b) => getDocumentName(a).localeCompare(getDocumentName(b)));
+    setDirty(true);
+
+    return {
+      record,
+      previousPath,
+      nextPath: record.path
+    };
   }
 
   function markDocumentDirty() {
@@ -308,6 +435,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     });
 
     const occupied = new Set();
+    const pathMap = new Map();
 
     for (const record of docs) {
       const module = moduleRegistry.getModule(record.moduleId);
@@ -325,6 +453,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       occupied.add(`${moduleFolder}/${fileName}`);
 
       const nextPath = joinPaths(targetRoot, moduleFolder, fileName);
+      pathMap.set(record.path, nextPath);
       record.path = nextPath;
       await documentLoader.saveYaml(nextPath, record.document);
     }
@@ -339,7 +468,10 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     currentProject.documents.metaview = docs.filter((entry) => entry.moduleId === 'metaview');
 
     emitChange();
-    return currentProject;
+    return {
+      project: currentProject,
+      pathMap
+    };
   }
 
   async function saveProject(openDocuments = []) {
@@ -351,14 +483,14 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    await saveProjectToRoot(currentProject.rootPath, openDocuments);
-    return currentProject;
+    const result = await saveProjectToRoot(currentProject.rootPath, openDocuments);
+    return result;
   }
 
   async function saveProjectAs(newProjectRoot, openDocuments = []) {
-    await saveProjectToRoot(newProjectRoot, openDocuments);
+    const result = await saveProjectToRoot(newProjectRoot, openDocuments);
     logger.info('project', 'Проект сохранен как', { to: newProjectRoot });
-    return currentProject;
+    return result;
   }
 
   return {
@@ -373,6 +505,9 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     getDocumentsByModule,
     getDocumentByPath,
     createDocument,
+    renameDocument,
+    getNextMetaGenDefaultName,
+    isMetaGenNameTaken,
     saveDocument,
     saveProject,
     saveProjectAs,
