@@ -33,17 +33,18 @@ export function createProjectTree({
   const moduleSections = [
     {
       moduleId: METAGEN_CONFIG.moduleId,
-      moduleName: METAGEN_CONFIG.moduleName
+      moduleName: METAGEN_CONFIG.moduleName,
+      getDefaultName: () => projectManager.getNextMetaGenDefaultName()
     },
     {
       moduleId: METALAB_CONFIG.moduleId,
       moduleName: METALAB_CONFIG.moduleName,
-      defaultName: 'Новый сценарий'
+      getDefaultName: () => 'Новый сценарий'
     },
     {
       moduleId: METAVIEW_CONFIG.moduleId,
       moduleName: METAVIEW_CONFIG.moduleName,
-      defaultName: 'Новый экран'
+      getDefaultName: () => 'Новый экран'
     }
   ];
 
@@ -98,15 +99,67 @@ export function createProjectTree({
     });
   }
 
+  function createTreeLabelClickHandler(documentRecord, labelNode) {
+    const openWindowMs = 320;
+    const renameMinGapMs = 500;
+    let lastClickAt = 0;
+    let pendingOpenTimer = null;
+
+    return async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const now = Date.now();
+
+      if (!lastClickAt) {
+        lastClickAt = now;
+        return;
+      }
+
+      const delta = now - lastClickAt;
+
+      if (pendingOpenTimer) {
+        clearTimeout(pendingOpenTimer);
+        pendingOpenTimer = null;
+      }
+
+      if (delta <= openWindowMs) {
+        lastClickAt = 0;
+        await tabs.openDocument(documentRecord);
+        return;
+      }
+
+      if (delta >= renameMinGapMs) {
+        lastClickAt = 0;
+        await startTreeInlineRename({ record: documentRecord, labelNode });
+        return;
+      }
+
+      lastClickAt = now;
+      pendingOpenTimer = setTimeout(() => {
+        pendingOpenTimer = null;
+      }, renameMinGapMs + 10);
+    };
+  }
+
+  async function startDocumentCreation(sectionConfig) {
+    await tabs.startTemporaryDocumentCreation({
+      moduleId: sectionConfig.moduleId,
+      defaultName: sectionConfig.getDefaultName(),
+      onCommit: async ({ moduleId, confirmedName }) => {
+        return projectManager.createDocument(moduleId, confirmedName);
+      }
+    });
+  }
+
   async function render() {
     const project = projectManager.getCurrentProject();
 
+    treeRoot.innerHTML = '';
+
     if (!project) {
-      treeRoot.innerHTML = '';
       return;
     }
-
-    treeRoot.innerHTML = '';
 
     const projectNode = createElement('div', [APP_CONFIG.ui.classNames.projectNode]);
     projectNode.textContent = project.project.name;
@@ -121,21 +174,7 @@ export function createProjectTree({
       addButton.type = 'button';
       addButton.textContent = '+';
       addButton.addEventListener('click', async () => {
-        if (sectionConfig.moduleId === METAGEN_CONFIG.moduleId) {
-          const created = await projectManager.createDocument(sectionConfig.moduleId);
-
-          if (created) {
-            await tabs.openDocument(created, { startRenameMode: true });
-          }
-
-          return;
-        }
-
-        const created = await projectManager.createDocument(sectionConfig.moduleId, sectionConfig.defaultName);
-
-        if (created) {
-          await tabs.openDocument(created);
-        }
+        await startDocumentCreation(sectionConfig);
       });
 
       header.appendChild(addButton);
@@ -149,30 +188,8 @@ export function createProjectTree({
         label.type = 'button';
         label.textContent = getDocumentLabel(documentRecord);
 
-        let firstClickAt = 0;
-        let lastDoubleClickInterval = 0;
-
-        label.addEventListener('dblclick', async (event) => {
-          event.preventDefault();
-
-          if (lastDoubleClickInterval > 350) {
-            await startTreeInlineRename({ record: documentRecord, labelNode: label });
-            return;
-          }
-
-          await tabs.openDocument(documentRecord);
-        });
-
-        label.addEventListener('click', (event) => {
-          if (event.detail === 1) {
-            firstClickAt = Date.now();
-            return;
-          }
-
-          if (event.detail === 2) {
-            lastDoubleClickInterval = Date.now() - firstClickAt;
-          }
-        });
+        const onLabelClick = createTreeLabelClickHandler(documentRecord, label);
+        label.addEventListener('click', onLabelClick);
 
         const deleteButton = createElement('button', ['tree-item-delete']);
         deleteButton.type = 'button';

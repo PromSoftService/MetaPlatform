@@ -15,12 +15,10 @@ PROJECT_FILES = [
   'create_project_structure.py',
   'export_project_to_txt.py',
   'main.js',
-  'metaplatform_project_dump.txt',
   'package.json',
   'preload.cjs',
   'project-examples/demo-feedmill/metagen/conveyors.yaml',
   'project-examples/demo-feedmill/metagen/pumps.yaml',
-  'project-examples/demo-feedmill/metagen/новый_компонент.yaml',
   'project-examples/demo-feedmill/metalab/startup_scenario.yaml',
   'project-examples/demo-feedmill/metaview/main_screen.yaml',
   'project-examples/demo-feedmill/project.yaml',
@@ -65,7 +63,6 @@ PROJECT_FILES = [
   'renderer/ui/workbenchShell.js',
   'vite.config.js',
 ]
-
 def export_files() -> None:
   lines: list[str] = []
   lines.append('=' * 50)

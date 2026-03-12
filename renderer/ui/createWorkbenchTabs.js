@@ -61,6 +61,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   const editorHost = document.getElementById(APP_CONFIG.ui.dom.editorHostId);
   const tabs = new Map();
   let activeTabId = null;
+  let temporaryCounter = 0;
 
   function activateTab(tabId) {
     activeTabId = tabId;
@@ -101,6 +102,125 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     if (fallback && tabs.has(fallback.tabId)) {
       activateTab(fallback.tabId);
     }
+  }
+
+  function createTemporaryTabEntry({ tabId, initialTitle }) {
+    const tabNode = createElement('button', [APP_CONFIG.ui.classNames.tab]);
+    tabNode.type = 'button';
+
+    const titleNode = buildTabTitleNode(initialTitle || APP_CONFIG.ui.text.untitled);
+    tabNode.appendChild(titleNode);
+
+    const closeButton = buildCloseButtonNode(initialTitle || APP_CONFIG.ui.text.untitled);
+    closeButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeTab(tabId);
+    });
+    tabNode.appendChild(closeButton);
+
+    const pageNode = createElement('div', [APP_CONFIG.ui.classNames.page]);
+    pageNode.dataset.tabId = tabId;
+    editorHost.appendChild(pageNode);
+
+    const entry = {
+      tabId,
+      tabNode,
+      pageNode,
+      runtime: null,
+      documentRecord: {
+        moduleId: 'temporary',
+        path: tabId,
+        document: { name: initialTitle || APP_CONFIG.ui.text.untitled }
+      },
+      isTemporary: true
+    };
+
+    tabNode.addEventListener('click', () => activateTab(entry.tabId));
+    tabsList.appendChild(tabNode);
+    tabs.set(tabId, entry);
+    activateTab(tabId);
+
+    return entry;
+  }
+
+  async function startTemporaryDocumentCreation({ moduleId, defaultName = '', onCommit }) {
+    const tabId = `temporary://${moduleId}/${++temporaryCounter}`;
+    const entry = createTemporaryTabEntry({ tabId, initialTitle: defaultName || APP_CONFIG.ui.text.untitled });
+
+    const titleNode = entry.tabNode.querySelector(`.${APP_CONFIG.ui.classNames.tabTitle}`);
+
+    if (!titleNode) {
+      return null;
+    }
+
+    const input = createElement('input', ['workbench-inline-rename-input']);
+    input.type = 'text';
+    input.value = defaultName;
+    titleNode.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let finalized = false;
+
+    const cancel = () => {
+      if (finalized) {
+        return null;
+      }
+
+      finalized = true;
+      closeTab(tabId);
+      return null;
+    };
+
+    const commit = async () => {
+      if (finalized) {
+        return null;
+      }
+
+      const nextName = normalizeName(input.value);
+
+      if (!nextName) {
+        return cancel();
+      }
+
+      const created = await onCommit?.({ moduleId, confirmedName: nextName });
+
+      if (!created) {
+        logger.warn('tabs', 'Создание документа отклонено', { moduleId, name: nextName });
+        input.focus();
+        input.select();
+        return null;
+      }
+
+      finalized = true;
+      closeTab(tabId);
+      await openDocument(created);
+      return created;
+    };
+
+    input.addEventListener('keydown', async (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        await commit();
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        cancel();
+      }
+    });
+
+    input.addEventListener('blur', async () => {
+      if (!normalizeName(input.value)) {
+        cancel();
+        return;
+      }
+
+      await commit();
+    });
+
+    return entry;
   }
 
   function closeAllTabs() {
@@ -318,6 +438,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     getActiveDocumentRecord,
     collectOpenDocumentRecords,
     startRename,
-    updateTabPaths
+    updateTabPaths,
+    startTemporaryDocumentCreation
   };
 }

@@ -194,7 +194,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return currentProject;
   }
 
-  async function openProject(projectRoot) {
+  async function hydrateProjectRuntimeFromDisk(projectRoot) {
     const projectFilePath = buildProjectFilePath(projectRoot);
     const exists = await fileSystem.exists(projectFilePath);
 
@@ -204,7 +204,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     const projectFile = await documentLoader.loadYaml(projectFilePath);
 
-    currentProject = createProjectRuntime({
+    return createProjectRuntime({
       rootPath: projectRoot,
       raw: projectFile.data,
       documents: {
@@ -215,6 +215,10 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       isUnsaved: false,
       isDirty: false
     });
+  }
+
+  async function openProject(projectRoot) {
+    currentProject = await hydrateProjectRuntimeFromDisk(projectRoot);
 
     onProjectLoaded?.({ projectRuntime: currentProject });
     emitChange();
@@ -233,9 +237,10 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return currentProject;
     }
 
-    currentProject.documents.metagen = await scanModuleDocuments(currentProject.rootPath, APP_CONFIG.project.folders.metagen, 'metagen');
-    currentProject.documents.metalab = await scanModuleDocuments(currentProject.rootPath, APP_CONFIG.project.folders.metalab, 'metalab');
-    currentProject.documents.metaview = await scanModuleDocuments(currentProject.rootPath, APP_CONFIG.project.folders.metaview, 'metaview');
+    const hydrated = await hydrateProjectRuntimeFromDisk(currentProject.rootPath);
+    currentProject.documents = hydrated.documents;
+    currentProject.raw = hydrated.raw;
+    currentProject.project = hydrated.project;
 
     emitChange();
     return currentProject;
@@ -253,7 +258,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return getAllDocuments().find((entry) => entry.path === targetPath) || null;
   }
 
-  function isMetaGenNameTaken(name, excludePath = null) {
+  function isDocumentNameTaken(moduleId, name, excludePath = null) {
     if (!currentProject) {
       return false;
     }
@@ -264,13 +269,17 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return false;
     }
 
-    return currentProject.documents.metagen.some((record) => {
+    return getDocumentsByModule(moduleId).some((record) => {
       if (excludePath && record.path === excludePath) {
         return false;
       }
 
       return getDocumentName(record) === normalizedTarget;
     });
+  }
+
+  function isMetaGenNameTaken(name, excludePath = null) {
+    return isDocumentNameTaken('metagen', name, excludePath);
   }
 
   function getNextMetaGenDefaultName() {
@@ -298,30 +307,32 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       throw new Error(`Module not found: ${moduleId}`);
     }
 
-    const resolvedName = moduleId === 'metagen'
-      ? normalizeDocumentName(name || getNextMetaGenDefaultName())
-      : normalizeDocumentName(name);
+    const fallbackName = moduleId === 'metagen'
+      ? getNextMetaGenDefaultName()
+      : APP_CONFIG.ui.text.untitled;
+    const resolvedName = normalizeDocumentName(name || fallbackName);
 
-    if (moduleId === 'metagen' && (!resolvedName || isMetaGenNameTaken(resolvedName))) {
-      logger.warn('project', 'Имя компонента уже занято', { name: resolvedName });
+    if (!resolvedName) {
+      logger.warn('project', 'Пустое имя документа отклонено', { moduleId });
       return null;
     }
 
-    const document = module.createDefaultDocument({ name: resolvedName || name });
+    if (isDocumentNameTaken(moduleId, resolvedName)) {
+      logger.warn('project', 'Имя документа уже занято', { moduleId, name: resolvedName });
+      return null;
+    }
+
+    const document = module.createDefaultDocument({ name: resolvedName });
     const virtualPath = currentProject.rootPath
       ? joinPaths(currentProject.rootPath, getModuleFolder(moduleId), module.getFileName(document))
       : `unsaved://${moduleId}/${++unsavedCounter}.yaml`;
 
     const record = { moduleId, path: virtualPath, document };
     currentProject.documents[moduleId].push(record);
-    currentProject.documents[moduleId].sort((a, b) =>
-      String(a.document?.component?.name || a.document?.name || '').localeCompare(
-        String(b.document?.component?.name || b.document?.name || '')
-      )
-    );
+    currentProject.documents[moduleId].sort((a, b) => getDocumentName(a).localeCompare(getDocumentName(b)));
 
     setDirty(true);
-    logger.info('project', 'Создан документ', { moduleId, path: virtualPath, name });
+    logger.info('project', 'Создан документ', { moduleId, path: virtualPath, name: resolvedName });
     return record;
   }
 
@@ -342,8 +353,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    if (record.moduleId === 'metagen' && isMetaGenNameTaken(resolvedName, targetPath)) {
-      logger.warn('project', 'Имя компонента уже занято', { name: resolvedName });
+    if (isDocumentNameTaken(record.moduleId, resolvedName, targetPath)) {
+      logger.warn('project', 'Имя документа уже занято', { moduleId: record.moduleId, name: resolvedName });
       return null;
     }
 
@@ -454,18 +465,15 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
       const nextPath = joinPaths(targetRoot, moduleFolder, fileName);
       pathMap.set(record.path, nextPath);
-      record.path = nextPath;
       await documentLoader.saveYaml(nextPath, record.document);
     }
 
-    currentProject.rootPath = targetRoot;
-    currentProject.projectFilePath = buildProjectFilePath(targetRoot);
-    currentProject.isUnsaved = false;
-    currentProject.isDirty = false;
-
-    currentProject.documents.metagen = docs.filter((entry) => entry.moduleId === 'metagen');
-    currentProject.documents.metalab = docs.filter((entry) => entry.moduleId === 'metalab');
-    currentProject.documents.metaview = docs.filter((entry) => entry.moduleId === 'metaview');
+    const hydrated = await hydrateProjectRuntimeFromDisk(targetRoot);
+    currentProject = {
+      ...hydrated,
+      isUnsaved: false,
+      isDirty: false
+    };
 
     emitChange();
     return {

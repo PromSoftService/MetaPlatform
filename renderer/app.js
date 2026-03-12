@@ -63,20 +63,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   function updateProjectTitle() {
-    const project = projectManager?.getCurrentProject();
-
     if (!projectTitle) {
       return;
     }
 
-    if (!project) {
-      projectTitle.textContent = '';
-      return;
-    }
-
-    const suffix = project.isDirty ? ' *' : '';
-    const prefix = project.isUnsaved ? '[не сохранён] ' : '';
-    projectTitle.textContent = `• ${prefix}${project.project.name}${suffix}`;
+    projectTitle.textContent = '';
   }
 
   projectManager = createProjectManager({
