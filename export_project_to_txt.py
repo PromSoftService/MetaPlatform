@@ -19,6 +19,7 @@ PROJECT_FILES = [
   'preload.cjs',
   'project-examples/demo-feedmill/metagen/conveyors.yaml',
   'project-examples/demo-feedmill/metagen/pumps.yaml',
+  'project-examples/demo-feedmill/metagen/новый_компонент.yaml',
   'project-examples/demo-feedmill/metalab/startup_scenario.yaml',
   'project-examples/demo-feedmill/metaview/main_screen.yaml',
   'project-examples/demo-feedmill/project.yaml',

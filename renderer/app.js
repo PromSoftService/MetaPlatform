@@ -110,11 +110,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const result = await projectManager.saveProjectAs(targetRoot, openDocuments);
       tabs.updateTabPaths(result?.pathMap);
+      await tree.render();
+      updateProjectTitle();
       return true;
     }
 
     const result = await projectManager.saveProject(openDocuments);
     tabs.updateTabPaths(result?.pathMap);
+    await tree.render();
+    updateProjectTitle();
     return true;
   }
 

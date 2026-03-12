@@ -29,6 +29,7 @@ export function createProjectTree({
   tabs
 }) {
   const treeRoot = document.getElementById(APP_CONFIG.ui.dom.projectTreeId);
+  const projectPanelTitleNode = document.querySelector(APP_CONFIG.ui.dom.projectPanelTitleSelector);
 
   const moduleSections = [
     {
@@ -47,6 +48,11 @@ export function createProjectTree({
       getDefaultName: () => 'Новый экран'
     }
   ];
+
+  const clickGestureState = {
+    path: null,
+    at: 0
+  };
 
   async function startTreeInlineRename({ record, labelNode }) {
     const previousName = getDocumentLabel(record);
@@ -100,45 +106,35 @@ export function createProjectTree({
   }
 
   function createTreeLabelClickHandler(documentRecord, labelNode) {
-    const openWindowMs = 320;
-    const renameMinGapMs = 500;
-    let lastClickAt = 0;
-    let pendingOpenTimer = null;
+    const quickDoubleClickMs = 300;
+    const renameMinDelayMs = 450;
+    const renameMaxDelayMs = 900;
 
     return async (event) => {
       event.preventDefault();
       event.stopPropagation();
 
       const now = Date.now();
+      const isSameTarget = clickGestureState.path === documentRecord.path;
+      const delta = isSameTarget ? now - clickGestureState.at : Number.POSITIVE_INFINITY;
 
-      if (!lastClickAt) {
-        lastClickAt = now;
+      if (!isSameTarget || delta > renameMaxDelayMs) {
+        clickGestureState.path = documentRecord.path;
+        clickGestureState.at = now;
         return;
       }
 
-      const delta = now - lastClickAt;
+      clickGestureState.path = null;
+      clickGestureState.at = 0;
 
-      if (pendingOpenTimer) {
-        clearTimeout(pendingOpenTimer);
-        pendingOpenTimer = null;
-      }
-
-      if (delta <= openWindowMs) {
-        lastClickAt = 0;
+      if (delta <= quickDoubleClickMs) {
         await tabs.openDocument(documentRecord);
         return;
       }
 
-      if (delta >= renameMinGapMs) {
-        lastClickAt = 0;
+      if (delta >= renameMinDelayMs) {
         await startTreeInlineRename({ record: documentRecord, labelNode });
-        return;
       }
-
-      lastClickAt = now;
-      pendingOpenTimer = setTimeout(() => {
-        pendingOpenTimer = null;
-      }, renameMinGapMs + 10);
     };
   }
 
@@ -156,6 +152,10 @@ export function createProjectTree({
     const project = projectManager.getCurrentProject();
 
     treeRoot.innerHTML = '';
+
+    if (projectPanelTitleNode) {
+      projectPanelTitleNode.textContent = '';
+    }
 
     if (!project) {
       return;

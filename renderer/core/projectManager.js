@@ -28,6 +28,12 @@ function normalizeDocumentName(name) {
   return String(name ?? '').trim();
 }
 
+function getProjectNameFromRoot(targetRoot) {
+  const normalized = String(targetRoot || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  const lastSegment = normalized.split('/').pop();
+  return normalizeDocumentName(lastSegment || '');
+}
+
 function getDocumentName(documentRecord) {
   return normalizeDocumentName(
     documentRecord?.document?.component?.name
@@ -440,6 +446,16 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const docs = Array.from(recordsByPath.values());
 
     await ensureProjectDirectories(targetRoot);
+
+    const targetProjectName = getProjectNameFromRoot(targetRoot);
+    const shouldReplaceDefaultName = currentProject.isUnsaved
+      && normalizeDocumentName(currentProject.project?.name) === 'Новый проект';
+
+    if (shouldReplaceDefaultName && targetProjectName) {
+      currentProject.project.name = targetProjectName;
+      currentProject.raw.project = currentProject.project;
+    }
+
     await documentLoader.saveYaml(buildProjectFilePath(targetRoot), {
       ...currentProject.raw,
       project: currentProject.project
@@ -469,11 +485,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     const hydrated = await hydrateProjectRuntimeFromDisk(targetRoot);
-    currentProject = {
-      ...hydrated,
-      isUnsaved: false,
-      isDirty: false
-    };
+    currentProject = hydrated;
 
     emitChange();
     return {
