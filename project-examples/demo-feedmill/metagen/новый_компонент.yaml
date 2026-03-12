@@ -1,37 +1,34 @@
 kind: metagen.component
 version: 1
-
 component:
-  id: valves
-  name: Valves
+  id: новый_компонент
+  name: Новый компонент
   type: template
   module: MetaGen
-  description: Demo Valves document
-
+  description: ""
 params:
   format: header-plus-rows
   header: []
   rows: []
-
 data:
   format: table
   columns: []
   rows: []
-
 instances:
   format: list
   rows: []
-
 code:
   format: template-text
   language: st-template
-  text: |
-    // Demo Valves template
-
+  text: ""
 generation:
   engine: python
   entrypoint: gen_v2.py
   mode: external
   output:
     language: st
-    fileName: valves.st
+    fileName: новый_компонент.st
+meta:
+  author: ""
+  importedFrom: ""
+  importedSheet: ""

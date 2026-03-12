@@ -2,6 +2,7 @@ import { APP_CONFIG } from '../../config/app-config.js';
 import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
 import { METALAB_CONFIG } from '../modules/metalab/metalabConfig.js';
 import { METAVIEW_CONFIG } from '../modules/metaview/metaviewConfig.js';
+import { showTextInputDialog } from './dialogs.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -70,7 +71,11 @@ export function createProjectTree({
       addButton.type = 'button';
       addButton.textContent = '+';
       addButton.addEventListener('click', async () => {
-        const nextName = window.prompt(sectionConfig.createPromptTitle, sectionConfig.defaultName);
+        const nextName = await showTextInputDialog({
+          title: sectionConfig.createPromptTitle,
+          initialValue: sectionConfig.defaultName,
+          confirmText: 'Создать'
+        });
 
         if (!nextName) {
           return;
@@ -98,7 +103,19 @@ export function createProjectTree({
           await tabs.openDocument(documentRecord);
         });
 
+        const deleteButton = createElement('button', ['tree-item-delete']);
+        deleteButton.type = 'button';
+        deleteButton.textContent = '🗑';
+        deleteButton.title = 'Удалить документ';
+        deleteButton.addEventListener('click', async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          tabs.closeTab(documentRecord.path);
+          await projectManager.deleteDocument(documentRecord.path);
+        });
+
         item.appendChild(label);
+        item.appendChild(deleteButton);
         section.appendChild(item);
       }
 

@@ -14,6 +14,7 @@ PROJECT_FILES = [
   'create_project_structure.py',
   'export_project_to_txt.py',
   'main.js',
+  'metaplatform_project_dump.txt',
   'package.json',
   'preload.cjs',
   'project-examples/demo-feedmill/metagen/conveyors.yaml',
@@ -63,7 +64,6 @@ PROJECT_FILES = [
   'renderer/ui/workbenchShell.js',
   'vite.config.js',
 ]
-
 
 def ensure_project_structure() -> tuple[int, int]:
   created_dirs = 0

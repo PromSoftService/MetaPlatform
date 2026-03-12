@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { APP_CONFIG } from './config/app-config.js';
@@ -9,6 +9,30 @@ function resolveProjectRoot(projectPath) {
   }
 
   return path.resolve(projectPath);
+}
+
+function createAppMenu(mainWindow) {
+  const sendAction = (action) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('menu:action', action);
+    }
+  };
+
+  const template = [
+    {
+      label: 'Файл',
+      submenu: [
+        { label: 'Открыть проект', click: () => sendAction('open-project') },
+        { label: 'Закрыть проект', click: () => sendAction('close-project') },
+        { type: 'separator' },
+        { label: 'Сохранить', click: () => sendAction('save') },
+        { label: 'Сохранить как', click: () => sendAction('save-as') }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
 }
 
 function createWindow() {
@@ -22,12 +46,40 @@ function createWindow() {
     }
   });
 
+  createAppMenu(win);
   win.loadURL(APP_CONFIG.platform.window.devServerUrl);
 }
 
 app.whenReady().then(() => {
   ipcMain.handle('fs:get-default-project-root', async () => {
     return resolveProjectRoot();
+  });
+
+  ipcMain.handle('dialog:open-project', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Открыть проект',
+      properties: ['openDirectory']
+    });
+
+    if (result.canceled || !result.filePaths[0]) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle('dialog:save-project-as', async (_event, defaultPath) => {
+    const result = await dialog.showSaveDialog({
+      title: 'Сохранить проект как',
+      defaultPath,
+      buttonLabel: 'Сохранить'
+    });
+
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+
+    return result.filePath;
   });
 
   ipcMain.handle('fs:ensure-dir', async (_event, targetPath) => {

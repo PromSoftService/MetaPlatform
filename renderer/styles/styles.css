@@ -395,3 +395,69 @@ body {
   cursor: row-resize;
   height: var(--gutter-size) !important;
 }
+
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tree-item-delete {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-app);
+  cursor: pointer;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+}
+
+.meta-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.meta-dialog {
+  width: 360px;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  padding: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.meta-dialog-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.meta-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  padding: 8px;
+}
+
+.meta-dialog-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.meta-dialog-button {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-app);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.meta-dialog-button-primary {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}

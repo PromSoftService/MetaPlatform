@@ -159,6 +159,7 @@ PROJECT_FILES = [
   'create_project_structure.py',
   'export_project_to_txt.py',
   'main.js',
+  'metaplatform_project_dump.txt',
   'package.json',
   'preload.cjs',
   'project-examples/demo-feedmill/metagen/conveyors.yaml',
@@ -208,7 +209,6 @@ PROJECT_FILES = [
   'renderer/ui/workbenchShell.js',
   'vite.config.js',
 ]
-
 
 def ensure_project_structure() -> tuple[int, int]:
   created_dirs = 0
@@ -244,6 +244,7 @@ def main() -> None:
 if __name__ == '__main__':
   main()
 
+
 ==================================================
 FILE: export_project_to_txt.py
 ==================================================
@@ -265,6 +266,7 @@ PROJECT_FILES = [
   'create_project_structure.py',
   'export_project_to_txt.py',
   'main.js',
+  'metaplatform_project_dump.txt',
   'package.json',
   'preload.cjs',
   'project-examples/demo-feedmill/metagen/conveyors.yaml',
@@ -314,7 +316,6 @@ PROJECT_FILES = [
   'renderer/ui/workbenchShell.js',
   'vite.config.js',
 ]
-
 
 def export_files() -> None:
   lines: list[str] = []
@@ -351,11 +352,12 @@ def export_files() -> None:
 if __name__ == '__main__':
   export_files()
 
+
 ==================================================
 FILE: main.js
 ==================================================
 
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { APP_CONFIG } from './config/app-config.js';
@@ -366,6 +368,30 @@ function resolveProjectRoot(projectPath) {
   }
 
   return path.resolve(projectPath);
+}
+
+function createAppMenu(mainWindow) {
+  const sendAction = (action) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('menu:action', action);
+    }
+  };
+
+  const template = [
+    {
+      label: 'Файл',
+      submenu: [
+        { label: 'Открыть проект', click: () => sendAction('open-project') },
+        { label: 'Закрыть проект', click: () => sendAction('close-project') },
+        { type: 'separator' },
+        { label: 'Сохранить', click: () => sendAction('save') },
+        { label: 'Сохранить как', click: () => sendAction('save-as') }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
 }
 
 function createWindow() {
@@ -379,12 +405,40 @@ function createWindow() {
     }
   });
 
+  createAppMenu(win);
   win.loadURL(APP_CONFIG.platform.window.devServerUrl);
 }
 
 app.whenReady().then(() => {
   ipcMain.handle('fs:get-default-project-root', async () => {
     return resolveProjectRoot();
+  });
+
+  ipcMain.handle('dialog:open-project', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Открыть проект',
+      properties: ['openDirectory']
+    });
+
+    if (result.canceled || !result.filePaths[0]) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle('dialog:save-project-as', async (_event, defaultPath) => {
+    const result = await dialog.showSaveDialog({
+      title: 'Сохранить проект как',
+      defaultPath,
+      buttonLabel: 'Сохранить'
+    });
+
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+
+    return result.filePath;
   });
 
   ipcMain.handle('fs:ensure-dir', async (_event, targetPath) => {
@@ -468,6 +522,13 @@ app.on('window-all-closed', () => {
   }
 });
 
+
+==================================================
+FILE: metaplatform_project_dump.txt
+==================================================
+
+[FILE NOT FOUND]
+
 ==================================================
 FILE: package.json
 ==================================================
@@ -507,14 +568,22 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('MetaPlatformFS', {
   getDefaultProjectRoot: () => ipcRenderer.invoke('fs:get-default-project-root'),
+  openProjectDialog: () => ipcRenderer.invoke('dialog:open-project'),
+  saveProjectAsDialog: (defaultPath) => ipcRenderer.invoke('dialog:save-project-as', defaultPath),
   ensureDir: (targetPath) => ipcRenderer.invoke('fs:ensure-dir', targetPath),
   exists: (targetPath) => ipcRenderer.invoke('fs:exists', targetPath),
   readText: (targetPath) => ipcRenderer.invoke('fs:read-text', targetPath),
   writeText: (targetPath, text) => ipcRenderer.invoke('fs:write-text', targetPath, text),
   rename: (fromPath, toPath) => ipcRenderer.invoke('fs:rename', fromPath, toPath),
   deleteFile: (targetPath) => ipcRenderer.invoke('fs:delete-file', targetPath),
-  listFiles: (targetDir, extensions) => ipcRenderer.invoke('fs:list-files', targetDir, extensions)
+  listFiles: (targetDir, extensions) => ipcRenderer.invoke('fs:list-files', targetDir, extensions),
+  onMenuAction: (listener) => {
+    const wrapped = (_event, action) => listener(action);
+    ipcRenderer.on('menu:action', wrapped);
+    return () => ipcRenderer.off('menu:action', wrapped);
+  }
 });
+
 
 ==================================================
 FILE: project-examples/demo-feedmill/metagen/conveyors.yaml
@@ -604,43 +673,7 @@ generation:
 FILE: project-examples/demo-feedmill/metagen/valves.yaml
 ==================================================
 
-kind: metagen.component
-version: 1
-
-component:
-  id: valves
-  name: Valves
-  type: template
-  module: MetaGen
-  description: Demo Valves document
-
-params:
-  format: header-plus-rows
-  header: []
-  rows: []
-
-data:
-  format: table
-  columns: []
-  rows: []
-
-instances:
-  format: list
-  rows: []
-
-code:
-  format: template-text
-  language: st-template
-  text: |
-    // Demo Valves template
-
-generation:
-  engine: python
-  entrypoint: gen_v2.py
-  mode: external
-  output:
-    language: st
-    fileName: valves.st
+[FILE NOT FOUND]
 
 ==================================================
 FILE: project-examples/demo-feedmill/metalab/startup_scenario.yaml
@@ -698,6 +731,12 @@ import { createMetaGenModule } from './modules/metagen/metagenModule.js';
 import { createMetaLabModule } from './modules/metalab/metalabModule.js';
 import { createMetaViewModule } from './modules/metaview/metaviewModule.js';
 
+function dirnameOf(targetPath) {
+  const normalized = String(targetPath || '').replace(/\\/g, '/');
+  const index = normalized.lastIndexOf('/');
+  return index > 0 ? normalized.slice(0, index) : normalized;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   applyStaticText();
 
@@ -706,6 +745,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const moduleRegistry = createModuleRegistry({ logger });
   const fileSystem = createFileSystemBridge();
   const workbenchLayout = initWorkbenchLayout();
+
+  window.MetaPlatformRuntime = window.MetaPlatformRuntime || {};
 
   let projectManager = null;
   const getProjectManager = () => projectManager;
@@ -718,6 +759,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   moduleRegistry.registerModule(metaLabModule);
   moduleRegistry.registerModule(metaViewModule);
 
+  const projectTitle = document.querySelector(APP_CONFIG.ui.dom.projectTitleSelector);
   const tabs = createWorkbenchTabs({
     logger,
     openEditor: async ({ documentRecord, mountElement }) => {
@@ -736,22 +778,103 @@ document.addEventListener('DOMContentLoaded', async () => {
     fileSystem,
     moduleRegistry,
     onProjectLoaded: ({ projectRuntime }) => {
-      const projectTitle = document.querySelector(APP_CONFIG.ui.dom.projectTitleSelector);
       if (projectTitle) {
         projectTitle.textContent = `• ${projectRuntime.project.name}`;
       }
+
+      window.MetaPlatformRuntime.activeProject = projectRuntime;
+    },
+    onProjectClosed: () => {
+      if (projectTitle) {
+        projectTitle.textContent = '';
+      }
+
+      window.MetaPlatformRuntime.activeProject = null;
     }
   });
 
-  createProjectTree({
+  const tree = createProjectTree({
     logger,
     projectManager,
     tabs
   });
 
+  async function openProjectFlow() {
+    const selectedPath = await fileSystem.openProjectDialog();
+
+    if (!selectedPath) {
+      return;
+    }
+
+    tabs.closeAllTabs();
+    await projectManager.openProject(selectedPath);
+  }
+
+  async function closeProjectFlow() {
+    tabs.closeAllTabs();
+    await projectManager.closeProject();
+    logger.clear();
+  }
+
+  async function saveFlow() {
+    const activeDocument = tabs.getActiveDocumentRecord();
+
+    if (!activeDocument) {
+      logger.warn('project', 'Нет активного документа для сохранения');
+      return;
+    }
+
+    await projectManager.saveDocument(activeDocument);
+  }
+
+  async function saveAsFlow() {
+    const project = projectManager.getCurrentProject();
+
+    if (!project) {
+      logger.warn('project', 'Нет открытого проекта для сохранения как');
+      return;
+    }
+
+    const suggestedPath = `${dirnameOf(project.rootPath)}/${project.project.name || 'project'}-copy`;
+    const targetRoot = await fileSystem.saveProjectAsDialog(suggestedPath);
+
+    if (!targetRoot) {
+      return;
+    }
+
+    tabs.closeAllTabs();
+    await projectManager.saveProjectAs(targetRoot);
+  }
+
+  fileSystem.onMenuAction(async (action) => {
+    try {
+      if (action === 'open-project') {
+        await openProjectFlow();
+      }
+
+      if (action === 'close-project') {
+        await closeProjectFlow();
+      }
+
+      if (action === 'save') {
+        await saveFlow();
+      }
+
+      if (action === 'save-as') {
+        await saveAsFlow();
+      }
+    } catch (error) {
+      logger.error('menu', 'Ошибка выполнения команды меню', {
+        action,
+        message: error?.message || String(error)
+      });
+    }
+  });
+
   logger.info(APP_CONFIG.platform.logging.defaultSource, 'Инициализация MetaPlatform...');
   const defaultProjectRoot = await fileSystem.getDefaultProjectRoot();
   await projectManager.openProject(defaultProjectRoot);
+  await tree.render();
   logger.info(APP_CONFIG.platform.logging.defaultSource, 'Проект открыт');
 
   window.MetaPlatformRuntime = {
@@ -761,9 +884,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     projectManager,
     fileSystem,
     workbenchLayout,
-    tabs
+    tabs,
+    activeProject: projectManager.getCurrentProject()
   };
 });
+
 
 ==================================================
 FILE: renderer/core/commandBus.js
@@ -903,11 +1028,18 @@ export function createLogger() {
     output?.scrollTo({ top: output.scrollHeight });
   }
 
+  function clear() {
+    if (output) {
+      output.innerHTML = '';
+    }
+  }
+
   return {
     debug: (source, message, details = null) => write('debug', source, message, details),
     info: (source, message, details = null) => write('info', source, message, details),
     warn: (source, message, details = null) => write('warn', source, message, details),
-    error: (source, message, details = null) => write('error', source, message, details)
+    error: (source, message, details = null) => write('error', source, message, details),
+    clear
   };
 }
 
@@ -979,6 +1111,7 @@ export const PLATFORM_COMMANDS = {
 FILE: renderer/core/projectManager.js
 ==================================================
 
+import path from 'node:path';
 import { APP_CONFIG } from '../../config/app-config.js';
 import { createDocumentLoader } from '../runtime/documentLoader.js';
 
@@ -1012,7 +1145,8 @@ export function createProjectManager({
   logger,
   fileSystem,
   moduleRegistry,
-  onProjectLoaded
+  onProjectLoaded,
+  onProjectClosed
 }) {
   const documentLoader = createDocumentLoader({ fileSystem });
   let currentProject = null;
@@ -1134,6 +1268,15 @@ export function createProjectManager({
     return currentProject;
   }
 
+  async function closeProject() {
+    currentProject = null;
+    emitChange();
+
+    if (typeof onProjectClosed === 'function') {
+      onProjectClosed();
+    }
+  }
+
   async function refresh() {
     if (!currentProject) {
       return null;
@@ -1186,7 +1329,6 @@ export function createProjectManager({
 
     const document = module.createDefaultDocument({ name });
     const fileName = module.getFileName(document);
-
     const moduleFolder = getModuleFolder(moduleId);
 
     if (!moduleFolder) {
@@ -1227,8 +1369,43 @@ export function createProjectManager({
     return true;
   }
 
+  async function deleteDocument(targetPath) {
+    const record = getDocumentByPath(targetPath);
+
+    if (!record) {
+      return false;
+    }
+
+    await fileSystem.deleteFile(record.path);
+    logger.info('project', 'Документ удалён', { path: record.path });
+    await refresh();
+    return true;
+  }
+
+  async function saveProjectAs(newProjectRoot) {
+    if (!currentProject) {
+      throw new Error('Project is not opened');
+    }
+
+    const sourceRoot = currentProject.rootPath;
+    await ensureProjectStructure(newProjectRoot);
+    const sourceFiles = await fileSystem.listFiles(sourceRoot);
+
+    for (const sourcePath of sourceFiles) {
+      const relativePath = path.relative(sourceRoot, sourcePath);
+      const targetPath = joinPaths(newProjectRoot, relativePath);
+      const content = await fileSystem.readText(sourcePath);
+      await fileSystem.writeText(targetPath, content);
+    }
+
+    await openProject(newProjectRoot);
+    logger.info('project', 'Проект сохранен как', { from: sourceRoot, to: newProjectRoot });
+    return currentProject;
+  }
+
   return {
     openProject,
+    closeProject,
     refresh,
     subscribe,
     scanProjectDocuments,
@@ -1237,7 +1414,9 @@ export function createProjectManager({
     getDocumentsByModule,
     getDocumentByPath,
     createDocument,
-    saveDocument
+    saveDocument,
+    saveProjectAs,
+    deleteDocument
   };
 }
 
@@ -2978,15 +3157,19 @@ export function createFileSystemBridge() {
 
   return {
     getDefaultProjectRoot: () => api.getDefaultProjectRoot(),
+    openProjectDialog: () => api.openProjectDialog(),
+    saveProjectAsDialog: (defaultPath) => api.saveProjectAsDialog(defaultPath),
     ensureDir: (targetPath) => api.ensureDir(targetPath),
     exists: (targetPath) => api.exists(targetPath),
     readText: (targetPath) => api.readText(targetPath),
     writeText: (targetPath, text) => api.writeText(targetPath, text),
     rename: (fromPath, toPath) => api.rename(fromPath, toPath),
     deleteFile: (targetPath) => api.deleteFile(targetPath),
-    listFiles: (targetDir, extensions = []) => api.listFiles(targetDir, extensions)
+    listFiles: (targetDir, extensions = []) => api.listFiles(targetDir, extensions),
+    onMenuAction: (listener) => api.onMenuAction(listener)
   };
 }
+
 
 ==================================================
 FILE: renderer/runtime/naming.js
@@ -3403,6 +3586,72 @@ body {
 }
 
 
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tree-item-delete {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-app);
+  cursor: pointer;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+}
+
+.meta-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.meta-dialog {
+  width: 360px;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  padding: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.meta-dialog-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.meta-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  padding: 8px;
+}
+
+.meta-dialog-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.meta-dialog-button {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-app);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.meta-dialog-button-primary {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
+
+
 ==================================================
 FILE: renderer/ui/applyStaticText.js
 ==================================================
@@ -3440,6 +3689,7 @@ import { APP_CONFIG } from '../../config/app-config.js';
 import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
 import { METALAB_CONFIG } from '../modules/metalab/metalabConfig.js';
 import { METAVIEW_CONFIG } from '../modules/metaview/metaviewConfig.js';
+import { showTextInputDialog } from './dialogs.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -3508,7 +3758,11 @@ export function createProjectTree({
       addButton.type = 'button';
       addButton.textContent = '+';
       addButton.addEventListener('click', async () => {
-        const nextName = window.prompt(sectionConfig.createPromptTitle, sectionConfig.defaultName);
+        const nextName = await showTextInputDialog({
+          title: sectionConfig.createPromptTitle,
+          initialValue: sectionConfig.defaultName,
+          confirmText: 'Создать'
+        });
 
         if (!nextName) {
           return;
@@ -3536,7 +3790,19 @@ export function createProjectTree({
           await tabs.openDocument(documentRecord);
         });
 
+        const deleteButton = createElement('button', ['tree-item-delete']);
+        deleteButton.type = 'button';
+        deleteButton.textContent = '🗑';
+        deleteButton.title = 'Удалить документ';
+        deleteButton.addEventListener('click', async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          tabs.closeTab(documentRecord.path);
+          await projectManager.deleteDocument(documentRecord.path);
+        });
+
         item.appendChild(label);
+        item.appendChild(deleteButton);
         section.appendChild(item);
       }
 
@@ -3570,6 +3836,16 @@ function createElement(tagName, classNames = []) {
   return node;
 }
 
+function getDocumentLabel(documentRecord) {
+  return (
+    documentRecord.document?.component?.name ||
+    documentRecord.document?.scenario?.name ||
+    documentRecord.document?.screen?.name ||
+    documentRecord.document?.name ||
+    APP_CONFIG.ui.text.untitled
+  );
+}
+
 function buildTabTitleNode(title) {
   const titleNode = createElement('span', [APP_CONFIG.ui.classNames.tabTitle]);
   titleNode.textContent = title;
@@ -3589,8 +3865,10 @@ export function createWorkbenchTabs({ logger, openEditor }) {
   const tabsList = document.getElementById(APP_CONFIG.ui.dom.tabsListId);
   const editorHost = document.getElementById(APP_CONFIG.ui.dom.editorHostId);
   const tabs = new Map();
+  let activeTabId = null;
 
   function activateTab(tabId) {
+    activeTabId = tabId;
     for (const entry of tabs.values()) {
       entry.tabNode.classList.toggle(APP_CONFIG.ui.classNames.tabActive, entry.tabId === tabId);
       entry.pageNode.classList.toggle(APP_CONFIG.ui.classNames.pageActive, entry.tabId === tabId);
@@ -3612,11 +3890,29 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     entry.tabNode.remove();
     tabs.delete(tabId);
 
+    if (activeTabId === tabId) {
+      activeTabId = null;
+    }
+
     const fallback = orderedEntries[index + 1] || orderedEntries[index - 1];
 
     if (fallback && tabs.has(fallback.tabId)) {
       activateTab(fallback.tabId);
     }
+  }
+
+  function closeAllTabs() {
+    for (const tabId of Array.from(tabs.keys())) {
+      closeTab(tabId);
+    }
+  }
+
+  function getActiveDocumentRecord() {
+    if (!activeTabId || !tabs.has(activeTabId)) {
+      return null;
+    }
+
+    return tabs.get(activeTabId).documentRecord;
   }
 
   async function openDocument(documentRecord) {
@@ -3630,7 +3926,7 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     const tabNode = createElement('button', [APP_CONFIG.ui.classNames.tab]);
     tabNode.type = 'button';
 
-    const tabTitle = documentRecord.document?.component?.name || APP_CONFIG.ui.text.untitled;
+    const tabTitle = getDocumentLabel(documentRecord);
     tabNode.appendChild(buildTabTitleNode(tabTitle));
 
     const closeButton = buildCloseButtonNode(tabTitle);
@@ -3663,7 +3959,9 @@ export function createWorkbenchTabs({ logger, openEditor }) {
   return {
     openDocument,
     activateTab,
-    closeTab
+    closeTab,
+    closeAllTabs,
+    getActiveDocumentRecord
   };
 }
 
@@ -3672,13 +3970,73 @@ export function createWorkbenchTabs({ logger, openEditor }) {
 FILE: renderer/ui/dialogs.js
 ==================================================
 
-export function showPrompt(message, defaultValue = '') {
-  return window.prompt(message, defaultValue);
+function createElement(tagName, className = '') {
+  const node = document.createElement(tagName);
+
+  if (className) {
+    node.className = className;
+  }
+
+  return node;
 }
 
-export function showAlert(message) {
-  window.alert(message);
+export function showTextInputDialog({ title, initialValue = '', confirmText = 'Создать', cancelText = 'Отмена' }) {
+  return new Promise((resolve) => {
+    const overlay = createElement('div', 'meta-dialog-overlay');
+    const modal = createElement('div', 'meta-dialog');
+    const titleNode = createElement('div', 'meta-dialog-title');
+    titleNode.textContent = title;
+
+    const input = createElement('input', 'meta-dialog-input');
+    input.type = 'text';
+    input.value = initialValue;
+
+    const actions = createElement('div', 'meta-dialog-actions');
+    const cancelButton = createElement('button', 'meta-dialog-button');
+    cancelButton.type = 'button';
+    cancelButton.textContent = cancelText;
+
+    const confirmButton = createElement('button', 'meta-dialog-button meta-dialog-button-primary');
+    confirmButton.type = 'button';
+    confirmButton.textContent = confirmText;
+
+    const close = (value) => {
+      overlay.remove();
+      resolve(value);
+    };
+
+    cancelButton.addEventListener('click', () => close(null));
+    confirmButton.addEventListener('click', () => {
+      const value = input.value.trim();
+      close(value || null);
+    });
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        confirmButton.click();
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        cancelButton.click();
+      }
+    });
+
+    actions.appendChild(cancelButton);
+    actions.appendChild(confirmButton);
+
+    modal.appendChild(titleNode);
+    modal.appendChild(input);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    input.focus();
+    input.select();
+  });
 }
+
 
 ==================================================
 FILE: renderer/ui/workbenchShell.js

@@ -1,7 +1,66 @@
-export function showPrompt(message, defaultValue = '') {
-  return window.prompt(message, defaultValue);
+function createElement(tagName, className = '') {
+  const node = document.createElement(tagName);
+
+  if (className) {
+    node.className = className;
+  }
+
+  return node;
 }
 
-export function showAlert(message) {
-  window.alert(message);
+export function showTextInputDialog({ title, initialValue = '', confirmText = 'Создать', cancelText = 'Отмена' }) {
+  return new Promise((resolve) => {
+    const overlay = createElement('div', 'meta-dialog-overlay');
+    const modal = createElement('div', 'meta-dialog');
+    const titleNode = createElement('div', 'meta-dialog-title');
+    titleNode.textContent = title;
+
+    const input = createElement('input', 'meta-dialog-input');
+    input.type = 'text';
+    input.value = initialValue;
+
+    const actions = createElement('div', 'meta-dialog-actions');
+    const cancelButton = createElement('button', 'meta-dialog-button');
+    cancelButton.type = 'button';
+    cancelButton.textContent = cancelText;
+
+    const confirmButton = createElement('button', 'meta-dialog-button meta-dialog-button-primary');
+    confirmButton.type = 'button';
+    confirmButton.textContent = confirmText;
+
+    const close = (value) => {
+      overlay.remove();
+      resolve(value);
+    };
+
+    cancelButton.addEventListener('click', () => close(null));
+    confirmButton.addEventListener('click', () => {
+      const value = input.value.trim();
+      close(value || null);
+    });
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        confirmButton.click();
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        cancelButton.click();
+      }
+    });
+
+    actions.appendChild(cancelButton);
+    actions.appendChild(confirmButton);
+
+    modal.appendChild(titleNode);
+    modal.appendChild(input);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    input.focus();
+    input.select();
+  });
 }

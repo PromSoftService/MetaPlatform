@@ -13,6 +13,12 @@ import { createMetaGenModule } from './modules/metagen/metagenModule.js';
 import { createMetaLabModule } from './modules/metalab/metalabModule.js';
 import { createMetaViewModule } from './modules/metaview/metaviewModule.js';
 
+function dirnameOf(targetPath) {
+  const normalized = String(targetPath || '').replace(/\\/g, '/');
+  const index = normalized.lastIndexOf('/');
+  return index > 0 ? normalized.slice(0, index) : normalized;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   applyStaticText();
 
@@ -21,6 +27,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const moduleRegistry = createModuleRegistry({ logger });
   const fileSystem = createFileSystemBridge();
   const workbenchLayout = initWorkbenchLayout();
+
+  window.MetaPlatformRuntime = window.MetaPlatformRuntime || {};
 
   let projectManager = null;
   const getProjectManager = () => projectManager;
@@ -33,6 +41,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   moduleRegistry.registerModule(metaLabModule);
   moduleRegistry.registerModule(metaViewModule);
 
+  const projectTitle = document.querySelector(APP_CONFIG.ui.dom.projectTitleSelector);
   const tabs = createWorkbenchTabs({
     logger,
     openEditor: async ({ documentRecord, mountElement }) => {
@@ -51,22 +60,103 @@ document.addEventListener('DOMContentLoaded', async () => {
     fileSystem,
     moduleRegistry,
     onProjectLoaded: ({ projectRuntime }) => {
-      const projectTitle = document.querySelector(APP_CONFIG.ui.dom.projectTitleSelector);
       if (projectTitle) {
         projectTitle.textContent = `• ${projectRuntime.project.name}`;
       }
+
+      window.MetaPlatformRuntime.activeProject = projectRuntime;
+    },
+    onProjectClosed: () => {
+      if (projectTitle) {
+        projectTitle.textContent = '';
+      }
+
+      window.MetaPlatformRuntime.activeProject = null;
     }
   });
 
-  createProjectTree({
+  const tree = createProjectTree({
     logger,
     projectManager,
     tabs
   });
 
+  async function openProjectFlow() {
+    const selectedPath = await fileSystem.openProjectDialog();
+
+    if (!selectedPath) {
+      return;
+    }
+
+    tabs.closeAllTabs();
+    await projectManager.openProject(selectedPath);
+  }
+
+  async function closeProjectFlow() {
+    tabs.closeAllTabs();
+    await projectManager.closeProject();
+    logger.clear();
+  }
+
+  async function saveFlow() {
+    const activeDocument = tabs.getActiveDocumentRecord();
+
+    if (!activeDocument) {
+      logger.warn('project', 'Нет активного документа для сохранения');
+      return;
+    }
+
+    await projectManager.saveDocument(activeDocument);
+  }
+
+  async function saveAsFlow() {
+    const project = projectManager.getCurrentProject();
+
+    if (!project) {
+      logger.warn('project', 'Нет открытого проекта для сохранения как');
+      return;
+    }
+
+    const suggestedPath = `${dirnameOf(project.rootPath)}/${project.project.name || 'project'}-copy`;
+    const targetRoot = await fileSystem.saveProjectAsDialog(suggestedPath);
+
+    if (!targetRoot) {
+      return;
+    }
+
+    tabs.closeAllTabs();
+    await projectManager.saveProjectAs(targetRoot);
+  }
+
+  fileSystem.onMenuAction(async (action) => {
+    try {
+      if (action === 'open-project') {
+        await openProjectFlow();
+      }
+
+      if (action === 'close-project') {
+        await closeProjectFlow();
+      }
+
+      if (action === 'save') {
+        await saveFlow();
+      }
+
+      if (action === 'save-as') {
+        await saveAsFlow();
+      }
+    } catch (error) {
+      logger.error('menu', 'Ошибка выполнения команды меню', {
+        action,
+        message: error?.message || String(error)
+      });
+    }
+  });
+
   logger.info(APP_CONFIG.platform.logging.defaultSource, 'Инициализация MetaPlatform...');
   const defaultProjectRoot = await fileSystem.getDefaultProjectRoot();
   await projectManager.openProject(defaultProjectRoot);
+  await tree.render();
   logger.info(APP_CONFIG.platform.logging.defaultSource, 'Проект открыт');
 
   window.MetaPlatformRuntime = {
@@ -76,6 +166,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     projectManager,
     fileSystem,
     workbenchLayout,
-    tabs
+    tabs,
+    activeProject: projectManager.getCurrentProject()
   };
 });

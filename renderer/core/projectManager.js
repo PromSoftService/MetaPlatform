@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { APP_CONFIG } from '../../config/app-config.js';
 import { createDocumentLoader } from '../runtime/documentLoader.js';
 
@@ -31,7 +32,8 @@ export function createProjectManager({
   logger,
   fileSystem,
   moduleRegistry,
-  onProjectLoaded
+  onProjectLoaded,
+  onProjectClosed
 }) {
   const documentLoader = createDocumentLoader({ fileSystem });
   let currentProject = null;
@@ -153,6 +155,15 @@ export function createProjectManager({
     return currentProject;
   }
 
+  async function closeProject() {
+    currentProject = null;
+    emitChange();
+
+    if (typeof onProjectClosed === 'function') {
+      onProjectClosed();
+    }
+  }
+
   async function refresh() {
     if (!currentProject) {
       return null;
@@ -205,7 +216,6 @@ export function createProjectManager({
 
     const document = module.createDefaultDocument({ name });
     const fileName = module.getFileName(document);
-
     const moduleFolder = getModuleFolder(moduleId);
 
     if (!moduleFolder) {
@@ -246,8 +256,43 @@ export function createProjectManager({
     return true;
   }
 
+  async function deleteDocument(targetPath) {
+    const record = getDocumentByPath(targetPath);
+
+    if (!record) {
+      return false;
+    }
+
+    await fileSystem.deleteFile(record.path);
+    logger.info('project', 'Документ удалён', { path: record.path });
+    await refresh();
+    return true;
+  }
+
+  async function saveProjectAs(newProjectRoot) {
+    if (!currentProject) {
+      throw new Error('Project is not opened');
+    }
+
+    const sourceRoot = currentProject.rootPath;
+    await ensureProjectStructure(newProjectRoot);
+    const sourceFiles = await fileSystem.listFiles(sourceRoot);
+
+    for (const sourcePath of sourceFiles) {
+      const relativePath = path.relative(sourceRoot, sourcePath);
+      const targetPath = joinPaths(newProjectRoot, relativePath);
+      const content = await fileSystem.readText(sourcePath);
+      await fileSystem.writeText(targetPath, content);
+    }
+
+    await openProject(newProjectRoot);
+    logger.info('project', 'Проект сохранен как', { from: sourceRoot, to: newProjectRoot });
+    return currentProject;
+  }
+
   return {
     openProject,
+    closeProject,
     refresh,
     subscribe,
     scanProjectDocuments,
@@ -256,6 +301,8 @@ export function createProjectManager({
     getDocumentsByModule,
     getDocumentByPath,
     createDocument,
-    saveDocument
+    saveDocument,
+    saveProjectAs,
+    deleteDocument
   };
 }

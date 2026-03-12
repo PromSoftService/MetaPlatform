@@ -42,10 +42,17 @@ export function createLogger() {
     output?.scrollTo({ top: output.scrollHeight });
   }
 
+  function clear() {
+    if (output) {
+      output.innerHTML = '';
+    }
+  }
+
   return {
     debug: (source, message, details = null) => write('debug', source, message, details),
     info: (source, message, details = null) => write('info', source, message, details),
     warn: (source, message, details = null) => write('warn', source, message, details),
-    error: (source, message, details = null) => write('error', source, message, details)
+    error: (source, message, details = null) => write('error', source, message, details),
+    clear
   };
 }

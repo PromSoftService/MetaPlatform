@@ -6,6 +6,16 @@ function createElement(tagName, classNames = []) {
   return node;
 }
 
+function getDocumentLabel(documentRecord) {
+  return (
+    documentRecord.document?.component?.name ||
+    documentRecord.document?.scenario?.name ||
+    documentRecord.document?.screen?.name ||
+    documentRecord.document?.name ||
+    APP_CONFIG.ui.text.untitled
+  );
+}
+
 function buildTabTitleNode(title) {
   const titleNode = createElement('span', [APP_CONFIG.ui.classNames.tabTitle]);
   titleNode.textContent = title;
@@ -25,8 +35,10 @@ export function createWorkbenchTabs({ logger, openEditor }) {
   const tabsList = document.getElementById(APP_CONFIG.ui.dom.tabsListId);
   const editorHost = document.getElementById(APP_CONFIG.ui.dom.editorHostId);
   const tabs = new Map();
+  let activeTabId = null;
 
   function activateTab(tabId) {
+    activeTabId = tabId;
     for (const entry of tabs.values()) {
       entry.tabNode.classList.toggle(APP_CONFIG.ui.classNames.tabActive, entry.tabId === tabId);
       entry.pageNode.classList.toggle(APP_CONFIG.ui.classNames.pageActive, entry.tabId === tabId);
@@ -48,11 +60,29 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     entry.tabNode.remove();
     tabs.delete(tabId);
 
+    if (activeTabId === tabId) {
+      activeTabId = null;
+    }
+
     const fallback = orderedEntries[index + 1] || orderedEntries[index - 1];
 
     if (fallback && tabs.has(fallback.tabId)) {
       activateTab(fallback.tabId);
     }
+  }
+
+  function closeAllTabs() {
+    for (const tabId of Array.from(tabs.keys())) {
+      closeTab(tabId);
+    }
+  }
+
+  function getActiveDocumentRecord() {
+    if (!activeTabId || !tabs.has(activeTabId)) {
+      return null;
+    }
+
+    return tabs.get(activeTabId).documentRecord;
   }
 
   async function openDocument(documentRecord) {
@@ -66,7 +96,7 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     const tabNode = createElement('button', [APP_CONFIG.ui.classNames.tab]);
     tabNode.type = 'button';
 
-    const tabTitle = documentRecord.document?.component?.name || APP_CONFIG.ui.text.untitled;
+    const tabTitle = getDocumentLabel(documentRecord);
     tabNode.appendChild(buildTabTitleNode(tabTitle));
 
     const closeButton = buildCloseButtonNode(tabTitle);
@@ -99,6 +129,8 @@ export function createWorkbenchTabs({ logger, openEditor }) {
   return {
     openDocument,
     activateTab,
-    closeTab
+    closeTab,
+    closeAllTabs,
+    getActiveDocumentRecord
   };
 }
