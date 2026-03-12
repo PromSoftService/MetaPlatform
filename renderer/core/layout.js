@@ -12,7 +12,7 @@ function getSplitSharedOptions() {
 }
 
 export function initWorkbenchLayout() {
-  const horizontalSplit = Split(['#project-tree-column', '#document-column'], {
+  const horizontalSplit = Split(['#project-tree-column', '#workbench-right-column'], {
     direction: 'horizontal',
     sizes: [18, 82],
     minSize: [240, 420],

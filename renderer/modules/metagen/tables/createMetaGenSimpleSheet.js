@@ -29,6 +29,9 @@ export function createMetaGenSimpleSheet({
           toolbar: true,
           contextMenu: true,
           footer: false,
+          sheets: {
+            protectedRangeShadow: false
+          },
           ...(menu ? { menu } : {})
         }),
         ...extraPresets
