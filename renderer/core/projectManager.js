@@ -14,10 +14,6 @@ function buildProjectFilePath(projectRoot) {
   return joinPaths(projectRoot, APP_CONFIG.project.projectFileName);
 }
 
-function buildModuleDir(projectRoot, moduleFolder) {
-  return joinPaths(projectRoot, moduleFolder);
-}
-
 function getModuleFolder(moduleId) {
   const folderMap = {
     metagen: APP_CONFIG.project.folders.metagen,
@@ -28,16 +24,30 @@ function getModuleFolder(moduleId) {
   return folderMap[moduleId] || null;
 }
 
-export function createProjectManager({
-  logger,
-  fileSystem,
-  moduleRegistry,
-  onProjectLoaded,
-  onProjectClosed
-}) {
+function createDefaultProjectRaw() {
+  return {
+    kind: APP_CONFIG.project.projectKinds.root,
+    version: 1,
+    project: {
+      id: `project_${Date.now()}`,
+      name: 'Новый проект',
+      description: ''
+    },
+    modules: ['MetaGen', 'MetaLab', 'MetaView'],
+    paths: {
+      metagen: APP_CONFIG.project.folders.metagen,
+      metalab: APP_CONFIG.project.folders.metalab,
+      metaview: APP_CONFIG.project.folders.metaview,
+      generated: APP_CONFIG.project.folders.generated
+    }
+  };
+}
+
+export function createProjectManager({ logger, fileSystem, moduleRegistry, onProjectLoaded, onProjectClosed }) {
   const documentLoader = createDocumentLoader({ fileSystem });
   let currentProject = null;
   const listeners = new Set();
+  let unsavedCounter = 0;
 
   function emitChange() {
     for (const listener of listeners) {
@@ -50,38 +60,33 @@ export function createProjectManager({
     return () => listeners.delete(listener);
   }
 
-  async function ensureProjectStructure(projectRoot) {
-    await fileSystem.ensureDir(projectRoot);
-    await fileSystem.ensureDir(buildModuleDir(projectRoot, APP_CONFIG.project.folders.metagen));
-    await fileSystem.ensureDir(buildModuleDir(projectRoot, APP_CONFIG.project.folders.metalab));
-    await fileSystem.ensureDir(buildModuleDir(projectRoot, APP_CONFIG.project.folders.metaview));
-    await fileSystem.ensureDir(buildModuleDir(projectRoot, APP_CONFIG.project.folders.generated));
-
-    const projectFilePath = buildProjectFilePath(projectRoot);
-    const exists = await fileSystem.exists(projectFilePath);
-
-    if (!exists) {
-      await documentLoader.saveYaml(projectFilePath, {
-        kind: APP_CONFIG.project.projectKinds.root,
-        version: 1,
-        project: {
-          id: 'demo_feedmill',
-          name: 'Demo Feedmill',
-          description: 'Demo project for MetaPlatform'
-        },
-        modules: ['MetaGen', 'MetaLab', 'MetaView'],
-        paths: {
-          metagen: APP_CONFIG.project.folders.metagen,
-          metalab: APP_CONFIG.project.folders.metalab,
-          metaview: APP_CONFIG.project.folders.metaview,
-          generated: APP_CONFIG.project.folders.generated
-        }
-      });
+  function setDirty(value = true) {
+    if (!currentProject) {
+      return;
     }
+
+    currentProject.isDirty = Boolean(value);
+    emitChange();
+  }
+
+  function clearDirty() {
+    setDirty(false);
+  }
+
+  function getAllDocuments() {
+    if (!currentProject) {
+      return [];
+    }
+
+    return [
+      ...currentProject.documents.metagen,
+      ...currentProject.documents.metalab,
+      ...currentProject.documents.metaview
+    ];
   }
 
   async function scanModuleDocuments(projectRoot, moduleFolder, moduleId) {
-    const dir = buildModuleDir(projectRoot, moduleFolder);
+    const dir = joinPaths(projectRoot, moduleFolder);
     const paths = await fileSystem.listFiles(dir, APP_CONFIG.project.fileExtensions.yaml);
     const output = [];
 
@@ -90,29 +95,16 @@ export function createProjectManager({
         const loaded = await documentLoader.loadYaml(filePath);
 
         if (!loaded.data || typeof loaded.data !== 'object') {
-          logger.warn('project', 'Пропущен пустой документ', { path: filePath });
           continue;
         }
 
         const module = moduleRegistry.findModuleByDocumentKind(loaded.data.kind);
 
-        if (!module) {
-          logger.warn('project', 'Пропущен документ с неизвестным kind', {
-            path: filePath,
-            kind: loaded.data.kind
-          });
+        if (!module || module.id !== moduleId) {
           continue;
         }
 
-        if (module.id !== moduleId) {
-          continue;
-        }
-
-        output.push({
-          moduleId,
-          path: filePath,
-          document: loaded.data
-        });
+        output.push({ moduleId, path: filePath, document: loaded.data });
       } catch (error) {
         logger.warn('project', 'Ошибка чтения документа, файл пропущен', {
           path: filePath,
@@ -122,35 +114,72 @@ export function createProjectManager({
     }
 
     output.sort((a, b) =>
-      String(a.document?.component?.name || a.document?.name || '')
-        .localeCompare(String(b.document?.component?.name || b.document?.name || ''))
+      String(a.document?.component?.name || a.document?.name || '').localeCompare(
+        String(b.document?.component?.name || b.document?.name || '')
+      )
     );
 
     return output;
   }
 
-  async function openProject(projectRoot) {
-    await ensureProjectStructure(projectRoot);
+  async function ensureProjectDirectories(projectRoot) {
+    await fileSystem.ensureDir(projectRoot);
+    await fileSystem.ensureDir(joinPaths(projectRoot, APP_CONFIG.project.folders.metagen));
+    await fileSystem.ensureDir(joinPaths(projectRoot, APP_CONFIG.project.folders.metalab));
+    await fileSystem.ensureDir(joinPaths(projectRoot, APP_CONFIG.project.folders.metaview));
+    await fileSystem.ensureDir(joinPaths(projectRoot, APP_CONFIG.project.folders.generated));
+  }
 
+  function createProjectRuntime({ rootPath, raw, documents, isUnsaved = false, isDirty = false }) {
+    return {
+      rootPath,
+      projectFilePath: rootPath ? buildProjectFilePath(rootPath) : null,
+      raw,
+      project: raw.project,
+      documents,
+      isUnsaved,
+      isDirty
+    };
+  }
+
+  async function createNewProject() {
+    const raw = createDefaultProjectRaw();
+    currentProject = createProjectRuntime({
+      rootPath: null,
+      raw,
+      documents: { metagen: [], metalab: [], metaview: [] },
+      isUnsaved: true,
+      isDirty: false
+    });
+
+    onProjectLoaded?.({ projectRuntime: currentProject });
+    emitChange();
+    return currentProject;
+  }
+
+  async function openProject(projectRoot) {
     const projectFilePath = buildProjectFilePath(projectRoot);
+    const exists = await fileSystem.exists(projectFilePath);
+
+    if (!exists) {
+      throw new Error(`project.yaml не найден: ${projectRoot}`);
+    }
+
     const projectFile = await documentLoader.loadYaml(projectFilePath);
 
-    currentProject = {
+    currentProject = createProjectRuntime({
       rootPath: projectRoot,
-      projectFilePath,
-      project: projectFile.data.project,
       raw: projectFile.data,
       documents: {
         metagen: await scanModuleDocuments(projectRoot, APP_CONFIG.project.folders.metagen, 'metagen'),
         metalab: await scanModuleDocuments(projectRoot, APP_CONFIG.project.folders.metalab, 'metalab'),
         metaview: await scanModuleDocuments(projectRoot, APP_CONFIG.project.folders.metaview, 'metaview')
-      }
-    };
+      },
+      isUnsaved: false,
+      isDirty: false
+    });
 
-    if (typeof onProjectLoaded === 'function') {
-      onProjectLoaded({ projectRuntime: currentProject });
-    }
-
+    onProjectLoaded?.({ projectRuntime: currentProject });
     emitChange();
     return currentProject;
   }
@@ -158,41 +187,21 @@ export function createProjectManager({
   async function closeProject() {
     currentProject = null;
     emitChange();
-
-    if (typeof onProjectClosed === 'function') {
-      onProjectClosed();
-    }
+    onProjectClosed?.();
   }
 
   async function refresh() {
-    if (!currentProject) {
-      return null;
+    if (!currentProject || currentProject.isUnsaved || !currentProject.rootPath) {
+      emitChange();
+      return currentProject;
     }
 
-    currentProject.documents.metagen = await scanModuleDocuments(
-      currentProject.rootPath,
-      APP_CONFIG.project.folders.metagen,
-      'metagen'
-    );
-
-    currentProject.documents.metalab = await scanModuleDocuments(
-      currentProject.rootPath,
-      APP_CONFIG.project.folders.metalab,
-      'metalab'
-    );
-
-    currentProject.documents.metaview = await scanModuleDocuments(
-      currentProject.rootPath,
-      APP_CONFIG.project.folders.metaview,
-      'metaview'
-    );
+    currentProject.documents.metagen = await scanModuleDocuments(currentProject.rootPath, APP_CONFIG.project.folders.metagen, 'metagen');
+    currentProject.documents.metalab = await scanModuleDocuments(currentProject.rootPath, APP_CONFIG.project.folders.metalab, 'metalab');
+    currentProject.documents.metaview = await scanModuleDocuments(currentProject.rootPath, APP_CONFIG.project.folders.metaview, 'metaview');
 
     emitChange();
     return currentProject;
-  }
-
-  async function scanProjectDocuments() {
-    return refresh();
   }
 
   function getDocumentsByModule(moduleId) {
@@ -201,6 +210,10 @@ export function createProjectManager({
     }
 
     return currentProject.documents[moduleId] || [];
+  }
+
+  function getDocumentByPath(targetPath) {
+    return getAllDocuments().find((entry) => entry.path === targetPath) || null;
   }
 
   async function createDocument(moduleId, name) {
@@ -215,34 +228,25 @@ export function createProjectManager({
     }
 
     const document = module.createDefaultDocument({ name });
-    const fileName = module.getFileName(document);
-    const moduleFolder = getModuleFolder(moduleId);
+    const virtualPath = currentProject.rootPath
+      ? joinPaths(currentProject.rootPath, getModuleFolder(moduleId), module.getFileName(document))
+      : `unsaved://${moduleId}/${++unsavedCounter}.yaml`;
 
-    if (!moduleFolder) {
-      throw new Error(`Unsupported module id: ${moduleId}`);
-    }
+    const record = { moduleId, path: virtualPath, document };
+    currentProject.documents[moduleId].push(record);
+    currentProject.documents[moduleId].sort((a, b) =>
+      String(a.document?.component?.name || a.document?.name || '').localeCompare(
+        String(b.document?.component?.name || b.document?.name || '')
+      )
+    );
 
-    const fullPath = joinPaths(currentProject.rootPath, moduleFolder, fileName);
-
-    await documentLoader.saveYaml(fullPath, document);
-    logger.info('project', 'Создан документ', { moduleId, path: fullPath, name });
-
-    await refresh();
-    return getDocumentByPath(fullPath);
+    setDirty(true);
+    logger.info('project', 'Создан документ', { moduleId, path: virtualPath, name });
+    return record;
   }
 
-  function getDocumentByPath(targetPath) {
-    if (!currentProject) {
-      return null;
-    }
-
-    const allDocuments = [
-      ...currentProject.documents.metagen,
-      ...currentProject.documents.metalab,
-      ...currentProject.documents.metaview
-    ];
-
-    return allDocuments.find((entry) => entry.path === targetPath) || null;
+  function markDocumentDirty() {
+    setDirty(true);
   }
 
   async function saveDocument(documentRecord) {
@@ -250,59 +254,131 @@ export function createProjectManager({
       throw new Error('Invalid document record');
     }
 
+    if (!currentProject?.rootPath) {
+      setDirty(true);
+      return true;
+    }
+
     await documentLoader.saveYaml(documentRecord.path, documentRecord.document);
-    logger.info('project', 'Документ сохранён', { path: documentRecord.path });
-    await refresh();
+    setDirty(true);
     return true;
   }
 
   async function deleteDocument(targetPath) {
+    if (!currentProject) {
+      return false;
+    }
+
     const record = getDocumentByPath(targetPath);
 
     if (!record) {
       return false;
     }
 
-    await fileSystem.deleteFile(record.path);
-    logger.info('project', 'Документ удалён', { path: record.path });
-    await refresh();
+    currentProject.documents[record.moduleId] = currentProject.documents[record.moduleId].filter((entry) => entry.path !== targetPath);
+
+    if (currentProject.rootPath && !String(targetPath).startsWith('unsaved://')) {
+      await fileSystem.deleteFile(targetPath);
+    }
+
+    setDirty(true);
+    logger.info('project', 'Документ удалён', { path: targetPath });
     return true;
   }
 
-  async function saveProjectAs(newProjectRoot) {
+  async function saveProjectToRoot(targetRoot, openDocuments = []) {
     if (!currentProject) {
       throw new Error('Project is not opened');
     }
 
-    const sourceRoot = currentProject.rootPath;
-    await ensureProjectStructure(newProjectRoot);
-    const sourceFiles = await fileSystem.listFiles(sourceRoot);
+    const recordsByPath = new Map(getAllDocuments().map((record) => [record.path, record]));
 
-    for (const sourcePath of sourceFiles) {
-      const relativePath = path.relative(sourceRoot, sourcePath);
-      const targetPath = joinPaths(newProjectRoot, relativePath);
-      const content = await fileSystem.readText(sourcePath);
-      await fileSystem.writeText(targetPath, content);
+    for (const record of openDocuments) {
+      if (record?.path && record?.document) {
+        recordsByPath.set(record.path, record);
+      }
     }
 
-    await openProject(newProjectRoot);
-    logger.info('project', 'Проект сохранен как', { from: sourceRoot, to: newProjectRoot });
+    const docs = Array.from(recordsByPath.values());
+
+    await ensureProjectDirectories(targetRoot);
+    await documentLoader.saveYaml(buildProjectFilePath(targetRoot), {
+      ...currentProject.raw,
+      project: currentProject.project
+    });
+
+    const occupied = new Set();
+
+    for (const record of docs) {
+      const module = moduleRegistry.getModule(record.moduleId);
+      const moduleFolder = getModuleFolder(record.moduleId);
+      let fileName = module.getFileName(record.document);
+      const ext = path.extname(fileName) || '.yaml';
+      const base = ext ? fileName.slice(0, -ext.length) : fileName;
+      let index = 1;
+
+      while (occupied.has(`${moduleFolder}/${fileName}`)) {
+        fileName = `${base}-${index}${ext}`;
+        index += 1;
+      }
+
+      occupied.add(`${moduleFolder}/${fileName}`);
+
+      const nextPath = joinPaths(targetRoot, moduleFolder, fileName);
+      record.path = nextPath;
+      await documentLoader.saveYaml(nextPath, record.document);
+    }
+
+    currentProject.rootPath = targetRoot;
+    currentProject.projectFilePath = buildProjectFilePath(targetRoot);
+    currentProject.isUnsaved = false;
+    currentProject.isDirty = false;
+
+    currentProject.documents.metagen = docs.filter((entry) => entry.moduleId === 'metagen');
+    currentProject.documents.metalab = docs.filter((entry) => entry.moduleId === 'metalab');
+    currentProject.documents.metaview = docs.filter((entry) => entry.moduleId === 'metaview');
+
+    emitChange();
+    return currentProject;
+  }
+
+  async function saveProject(openDocuments = []) {
+    if (!currentProject) {
+      throw new Error('Project is not opened');
+    }
+
+    if (!currentProject.rootPath) {
+      return null;
+    }
+
+    await saveProjectToRoot(currentProject.rootPath, openDocuments);
+    return currentProject;
+  }
+
+  async function saveProjectAs(newProjectRoot, openDocuments = []) {
+    await saveProjectToRoot(newProjectRoot, openDocuments);
+    logger.info('project', 'Проект сохранен как', { to: newProjectRoot });
     return currentProject;
   }
 
   return {
+    createNewProject,
     openProject,
     closeProject,
     refresh,
     subscribe,
-    scanProjectDocuments,
+    scanProjectDocuments: refresh,
     getCurrentProject: () => currentProject,
     getMetaGenDocuments: () => currentProject?.documents?.metagen || [],
     getDocumentsByModule,
     getDocumentByPath,
     createDocument,
     saveDocument,
+    saveProject,
     saveProjectAs,
-    deleteDocument
+    deleteDocument,
+    markDocumentDirty,
+    hasDirtyProject: () => Boolean(currentProject?.isDirty),
+    clearDirty
   };
 }

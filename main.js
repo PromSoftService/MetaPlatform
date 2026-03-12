@@ -3,14 +3,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { APP_CONFIG } from './config/app-config.js';
 
-function resolveProjectRoot(projectPath) {
-  if (!projectPath) {
-    return path.join(process.cwd(), APP_CONFIG.project.defaultProjectRelativePath);
-  }
-
-  return path.resolve(projectPath);
-}
-
 function createAppMenu(mainWindow) {
   const sendAction = (action) => {
     if (!mainWindow.isDestroyed()) {
@@ -22,11 +14,14 @@ function createAppMenu(mainWindow) {
     {
       label: 'Файл',
       submenu: [
+        { label: 'Создать проект', click: () => sendAction('new-project') },
         { label: 'Открыть проект', click: () => sendAction('open-project') },
         { label: 'Закрыть проект', click: () => sendAction('close-project') },
         { type: 'separator' },
         { label: 'Сохранить', click: () => sendAction('save') },
-        { label: 'Сохранить как', click: () => sendAction('save-as') }
+        { label: 'Сохранить как', click: () => sendAction('save-as') },
+        { type: 'separator' },
+        { label: 'Выход', click: () => sendAction('exit') }
       ]
     }
   ];
@@ -51,10 +46,6 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle('fs:get-default-project-root', async () => {
-    return resolveProjectRoot();
-  });
-
   ipcMain.handle('dialog:open-project', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Открыть проект',
@@ -69,17 +60,23 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('dialog:save-project-as', async (_event, defaultPath) => {
-    const result = await dialog.showSaveDialog({
+    const result = await dialog.showOpenDialog({
       title: 'Сохранить проект как',
       defaultPath,
-      buttonLabel: 'Сохранить'
+      buttonLabel: 'Выбрать',
+      properties: ['openDirectory', 'createDirectory']
     });
 
-    if (result.canceled || !result.filePath) {
+    if (result.canceled || !result.filePaths[0]) {
       return null;
     }
 
-    return result.filePath;
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle('app:quit', async () => {
+    app.quit();
+    return true;
   });
 
   ipcMain.handle('fs:ensure-dir', async (_event, targetPath) => {

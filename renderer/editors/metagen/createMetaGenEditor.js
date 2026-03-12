@@ -107,7 +107,7 @@ function bindSaveShortcut(textarea, trySave) {
   });
 }
 
-export async function createMetaGenEditor({ documentRecord, mountElement, logger, onSave }) {
+export async function createMetaGenEditor({ documentRecord, mountElement, logger, onSave, onDirty }) {
   clearMountElement(mountElement);
 
   const locale = buildLocale();
@@ -194,22 +194,36 @@ export async function createMetaGenEditor({ documentRecord, mountElement, logger
     return documentRecord;
   }
 
+  let runtimeDirty = false;
+
+  function markDirty() {
+    runtimeDirty = true;
+    onDirty?.();
+  }
+
   async function trySave() {
     try {
       const nextRecord = await extractValue();
       await onSave(nextRecord);
+      runtimeDirty = false;
     } catch (error) {
       window.alert(`Ошибка сохранения: ${error?.message || String(error)}`);
     }
   }
 
   bindSaveShortcut(codeTextarea, trySave);
+  codeTextarea.addEventListener('input', markDirty);
 
   logger?.info(loggerSource, 'MetaGen табличный редактор инициализирован');
 
   return {
     paramsTable,
     dataTable,
+    isDirty: () => runtimeDirty,
+    async collectDocumentRecord() {
+      await extractValue();
+      return documentRecord;
+    },
     dispose() {
       paramsTable?.dispose?.();
       dataTable?.dispose?.();

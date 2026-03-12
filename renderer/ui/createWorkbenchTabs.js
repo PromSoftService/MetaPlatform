@@ -126,11 +126,28 @@ export function createWorkbenchTabs({ logger, openEditor }) {
     return entry;
   }
 
+
+  async function collectOpenDocumentRecords() {
+    const output = [];
+
+    for (const entry of tabs.values()) {
+      if (typeof entry.runtime?.collectDocumentRecord === 'function') {
+        const nextRecord = await entry.runtime.collectDocumentRecord();
+        entry.documentRecord = nextRecord;
+      }
+
+      output.push(entry.documentRecord);
+    }
+
+    return output;
+  }
+
   return {
     openDocument,
     activateTab,
     closeTab,
     closeAllTabs,
-    getActiveDocumentRecord
+    getActiveDocumentRecord,
+    collectOpenDocumentRecords
   };
 }

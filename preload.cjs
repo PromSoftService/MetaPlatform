@@ -1,9 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('MetaPlatformFS', {
-  getDefaultProjectRoot: () => ipcRenderer.invoke('fs:get-default-project-root'),
   openProjectDialog: () => ipcRenderer.invoke('dialog:open-project'),
   saveProjectAsDialog: (defaultPath) => ipcRenderer.invoke('dialog:save-project-as', defaultPath),
+  requestAppQuit: () => ipcRenderer.invoke('app:quit'),
   ensureDir: (targetPath) => ipcRenderer.invoke('fs:ensure-dir', targetPath),
   exists: (targetPath) => ipcRenderer.invoke('fs:exists', targetPath),
   readText: (targetPath) => ipcRenderer.invoke('fs:read-text', targetPath),

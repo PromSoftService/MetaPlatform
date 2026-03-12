@@ -4,7 +4,7 @@ import { createMetaGenEditor } from '../../editors/metagen/createMetaGenEditor.j
 import { slugifyDocumentName } from '../../runtime/naming.js';
 import { METAGEN_CONFIG } from './metagenConfig.js';
 
-export function createMetaGenModule({ logger, getProjectManager }) {
+export function createMetaGenModule({ logger }) {
   return {
     id: METAGEN_CONFIG.moduleId,
     name: METAGEN_CONFIG.moduleName,
@@ -22,11 +22,12 @@ export function createMetaGenModule({ logger, getProjectManager }) {
       return validateMetaGenDocument(document);
     },
 
-    async openDocument({ documentRecord, mountElement }) {
+    async openDocument({ documentRecord, mountElement, onDirty }) {
       return createMetaGenEditor({
         documentRecord,
         mountElement,
         logger,
+        onDirty,
         onSave: async (nextRecord) => {
           const validation = validateMetaGenDocument(nextRecord.document);
 
@@ -34,18 +35,6 @@ export function createMetaGenModule({ logger, getProjectManager }) {
             logger.warn(METAGEN_CONFIG.moduleId, 'Документ MetaGen не прошёл валидацию', validation.errors);
             throw new Error(validation.errors.join('; '));
           }
-
-          const projectManager = getProjectManager();
-
-          if (!projectManager) {
-            throw new Error('ProjectManager is not available');
-          }
-
-          await projectManager.saveDocument(nextRecord);
-
-          logger.info(METAGEN_CONFIG.moduleId, 'Документ MetaGen сохранён', {
-            path: nextRecord.path
-          });
 
           return true;
         }

@@ -1,4 +1,3 @@
-import { APP_CONFIG } from '../config/app-config.js';
 import { applyStaticText } from './ui/applyStaticText.js';
 import { createLogger } from './core/logger.js';
 import { createCommandBus } from './core/commandBus.js';
@@ -8,6 +7,7 @@ import { createFileSystemBridge } from './runtime/fileSystemBridge.js';
 import { initWorkbenchLayout } from './core/layout.js';
 import { createWorkbenchTabs } from './ui/createWorkbenchTabs.js';
 import { createProjectTree } from './ui/createProjectTree.js';
+import { showSaveChangesDialog } from './ui/dialogs.js';
 
 import { createMetaGenModule } from './modules/metagen/metagenModule.js';
 import { createMetaLabModule } from './modules/metalab/metalabModule.js';
@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   moduleRegistry.registerModule(metaLabModule);
   moduleRegistry.registerModule(metaViewModule);
 
-  const projectTitle = document.querySelector(APP_CONFIG.ui.dom.projectTitleSelector);
+  const projectTitle = document.querySelector('#project-title');
   const tabs = createWorkbenchTabs({
     logger,
     openEditor: async ({ documentRecord, mountElement }) => {
@@ -51,37 +51,117 @@ document.addEventListener('DOMContentLoaded', async () => {
         throw new Error(`Не найден модуль для kind=${documentRecord.document?.kind}`);
       }
 
-      return module.openDocument({ documentRecord, mountElement });
+      return module.openDocument({
+        documentRecord,
+        mountElement,
+        onDirty: () => projectManager?.markDocumentDirty(documentRecord.path)
+      });
     }
   });
+
+  function updateProjectTitle() {
+    const project = projectManager?.getCurrentProject();
+
+    if (!projectTitle) {
+      return;
+    }
+
+    if (!project) {
+      projectTitle.textContent = '';
+      return;
+    }
+
+    const suffix = project.isDirty ? ' *' : '';
+    const prefix = project.isUnsaved ? '[не сохранён] ' : '';
+    projectTitle.textContent = `• ${prefix}${project.project.name}${suffix}`;
+  }
 
   projectManager = createProjectManager({
     logger,
     fileSystem,
     moduleRegistry,
     onProjectLoaded: ({ projectRuntime }) => {
-      if (projectTitle) {
-        projectTitle.textContent = `• ${projectRuntime.project.name}`;
-      }
-
       window.MetaPlatformRuntime.activeProject = projectRuntime;
+      updateProjectTitle();
     },
     onProjectClosed: () => {
-      if (projectTitle) {
-        projectTitle.textContent = '';
-      }
-
       window.MetaPlatformRuntime.activeProject = null;
+      updateProjectTitle();
     }
   });
 
-  const tree = createProjectTree({
-    logger,
-    projectManager,
-    tabs
+  projectManager.subscribe(() => {
+    updateProjectTitle();
   });
 
+  const tree = createProjectTree({ logger, projectManager, tabs });
+
+  async function saveProjectFlow({ forceSaveAs = false } = {}) {
+    const project = projectManager.getCurrentProject();
+
+    if (!project) {
+      logger.warn('project', 'Нет открытого проекта для сохранения');
+      return false;
+    }
+
+    const openDocuments = await tabs.collectOpenDocumentRecords();
+
+    if (project.isUnsaved || forceSaveAs) {
+      const suggestedPath = `${dirnameOf(project.rootPath || '.')}/${project.project.name || 'project'}`;
+      const targetRoot = await fileSystem.saveProjectAsDialog(suggestedPath);
+
+      if (!targetRoot) {
+        return false;
+      }
+
+      await projectManager.saveProjectAs(targetRoot, openDocuments);
+      return true;
+    }
+
+    await projectManager.saveProject(openDocuments);
+    return true;
+  }
+
+  async function confirmSaveIfDirty() {
+    if (!projectManager.hasDirtyProject()) {
+      return 'continue';
+    }
+
+    const decision = await showSaveChangesDialog({
+      title: 'Сохранить изменения в текущем проекте?'
+    });
+
+    if (decision === 'cancel') {
+      return 'cancel';
+    }
+
+    if (decision === 'discard') {
+      return 'continue';
+    }
+
+    const saved = await saveProjectFlow();
+    return saved ? 'continue' : 'cancel';
+  }
+
+  async function newProjectFlow() {
+    const canContinue = await confirmSaveIfDirty();
+
+    if (canContinue === 'cancel') {
+      return;
+    }
+
+    tabs.closeAllTabs();
+    logger.clear();
+    await projectManager.createNewProject();
+  }
+
   async function openProjectFlow() {
+    const canContinue = await confirmSaveIfDirty();
+
+    if (canContinue === 'cancel') {
+      return;
+    }
+
     const selectedPath = await fileSystem.openProjectDialog();
 
     if (!selectedPath) {
@@ -89,62 +169,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     tabs.closeAllTabs();
+    logger.clear();
     await projectManager.openProject(selectedPath);
   }
 
   async function closeProjectFlow() {
+    if (!projectManager.getCurrentProject()) {
+      return;
+    }
+
+    const canContinue = await confirmSaveIfDirty();
+
+    if (canContinue === 'cancel') {
+      return;
+    }
+
     tabs.closeAllTabs();
-    await projectManager.closeProject();
     logger.clear();
+    await projectManager.closeProject();
   }
 
-  async function saveFlow() {
-    const activeDocument = tabs.getActiveDocumentRecord();
+  async function exitFlow() {
+    const canContinue = await confirmSaveIfDirty();
 
-    if (!activeDocument) {
-      logger.warn('project', 'Нет активного документа для сохранения');
+    if (canContinue === 'cancel') {
       return;
     }
 
-    await projectManager.saveDocument(activeDocument);
-  }
-
-  async function saveAsFlow() {
-    const project = projectManager.getCurrentProject();
-
-    if (!project) {
-      logger.warn('project', 'Нет открытого проекта для сохранения как');
-      return;
-    }
-
-    const suggestedPath = `${dirnameOf(project.rootPath)}/${project.project.name || 'project'}-copy`;
-    const targetRoot = await fileSystem.saveProjectAsDialog(suggestedPath);
-
-    if (!targetRoot) {
-      return;
-    }
-
-    tabs.closeAllTabs();
-    await projectManager.saveProjectAs(targetRoot);
+    await fileSystem.requestAppQuit();
   }
 
   fileSystem.onMenuAction(async (action) => {
     try {
-      if (action === 'open-project') {
-        await openProjectFlow();
-      }
-
-      if (action === 'close-project') {
-        await closeProjectFlow();
-      }
-
-      if (action === 'save') {
-        await saveFlow();
-      }
-
-      if (action === 'save-as') {
-        await saveAsFlow();
-      }
+      if (action === 'new-project') await newProjectFlow();
+      if (action === 'open-project') await openProjectFlow();
+      if (action === 'close-project') await closeProjectFlow();
+      if (action === 'save') await saveProjectFlow();
+      if (action === 'save-as') await saveProjectFlow({ forceSaveAs: true });
+      if (action === 'exit') await exitFlow();
     } catch (error) {
       logger.error('menu', 'Ошибка выполнения команды меню', {
         action,
@@ -153,11 +215,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  logger.info(APP_CONFIG.platform.logging.defaultSource, 'Инициализация MetaPlatform...');
-  const defaultProjectRoot = await fileSystem.getDefaultProjectRoot();
-  await projectManager.openProject(defaultProjectRoot);
+  logger.info('platform', 'Инициализация MetaPlatform...');
   await tree.render();
-  logger.info(APP_CONFIG.platform.logging.defaultSource, 'Проект открыт');
 
   window.MetaPlatformRuntime = {
     logger,

@@ -6,8 +6,8 @@ export function createFileSystemBridge() {
   }
 
   return {
-    getDefaultProjectRoot: () => api.getDefaultProjectRoot(),
     openProjectDialog: () => api.openProjectDialog(),
+    requestAppQuit: () => api.requestAppQuit(),
     saveProjectAsDialog: (defaultPath) => api.saveProjectAsDialog(defaultPath),
     ensureDir: (targetPath) => api.ensureDir(targetPath),
     exists: (targetPath) => api.exists(targetPath),
