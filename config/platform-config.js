@@ -17,6 +17,9 @@ export const PLATFORM_CONFIG = {
   },
 
   logging: {
-    defaultSource: 'app'
+    defaultSource: 'app',
+    level: 'info',
+    mirrorToConsole: false,
+    captureGlobalErrors: true
   }
 };

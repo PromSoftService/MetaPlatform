@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { APP_CONFIG } from '../../config/app-config.js';
 import { createDocumentLoader } from '../runtime/documentLoader.js';
 
@@ -12,6 +11,18 @@ function joinPaths(...parts) {
 
 function buildProjectFilePath(projectRoot) {
   return joinPaths(projectRoot, APP_CONFIG.project.projectFileName);
+}
+
+function getFileExtension(fileName) {
+  const normalized = String(fileName || '');
+  const lastDotIndex = normalized.lastIndexOf('.');
+  return lastDotIndex > 0 ? normalized.slice(lastDotIndex) : '';
+}
+
+function stripFileExtension(fileName) {
+  const normalized = String(fileName || '');
+  const lastDotIndex = normalized.lastIndexOf('.');
+  return lastDotIndex > 0 ? normalized.slice(0, lastDotIndex) : normalized;
 }
 
 function getModuleFolder(moduleId) {
@@ -468,8 +479,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       const module = moduleRegistry.getModule(record.moduleId);
       const moduleFolder = getModuleFolder(record.moduleId);
       let fileName = module.getFileName(record.document);
-      const ext = path.extname(fileName) || '.yaml';
-      const base = ext ? fileName.slice(0, -ext.length) : fileName;
+      const ext = getFileExtension(fileName) || '.yaml';
+      const base = stripFileExtension(fileName);
       let index = 1;
 
       while (occupied.has(`${moduleFolder}/${fileName}`)) {
