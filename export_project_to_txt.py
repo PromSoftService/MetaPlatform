@@ -56,6 +56,7 @@ PROJECT_FILES = [
   'renderer/modules/metaview/metaviewModule.js',
   'renderer/runtime/documentLoader.js',
   'renderer/runtime/fileSystemBridge.js',
+  'renderer/runtime/idFactory.js',
   'renderer/runtime/naming.js',
   'renderer/styles/styles.css',
   'renderer/ui/applyStaticText.js',
@@ -63,6 +64,7 @@ PROJECT_FILES = [
   'renderer/ui/createWorkbenchTabs.js',
   'renderer/ui/dialogs.js',
   'renderer/ui/workbenchShell.js',
+  'tests/projectManager.save.integration.test.js',
   'vite.config.js',
 ]
 

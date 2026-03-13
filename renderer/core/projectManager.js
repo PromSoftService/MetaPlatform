@@ -159,6 +159,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return;
     }
 
+    // Dirty-state относится к runtime state проекта в целом.
+    // Только успешный full project save (saveProject/saveProjectAs) переводит проект в clean state.
     currentProject.isDirty = Boolean(value);
     emitChange();
   }
@@ -597,11 +599,12 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     setDirty(true);
   }
 
-  // ВАЖНО:
-  // Эта функция записывает YAML-файл конкретного документа на диск.
-  // Она НЕ означает, что весь state проекта синхронизирован и НЕ сбрасывает общий dirty-state проекта.
-  // Полный сброс dirty-state выполняется только через saveProject()/saveProjectAs().
-  async function writeDocumentFile(documentRecord) {
+  // INTERNAL:
+  // saveDocument() сохраняет на диск YAML одного документа.
+  // Это не пользовательская операция сохранения.
+  // Она не выполняет project-level commit и не сбрасывает общий dirty-state проекта.
+  // Clean state проекта устанавливается только после успешного saveProject()/saveProjectAs().
+  async function saveDocument(documentRecord) {
     if (!documentRecord?.path || !documentRecord?.document) {
       throw new Error('Invalid document record');
     }
@@ -614,6 +617,14 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     await documentLoader.saveYaml(documentRecord.path, documentRecord.document);
     setDirty(true);
     return true;
+  }
+
+  async function saveDocumentSnapshot(stagingPath, documentRecord) {
+    if (!stagingPath || !documentRecord?.document) {
+      throw new Error('Invalid save document snapshot payload');
+    }
+
+    await documentLoader.saveYaml(stagingPath, documentRecord.document);
   }
 
   async function deleteDocument(targetPath) {
@@ -643,7 +654,16 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       throw new Error('Project is not opened');
     }
 
-    // Сбор документов: openDocuments имеет приоритет над snapshot в currentProject.documents.
+    // Пользователь сохраняет проект целиком.
+    // Project save orchestrates document-level saves for all current documents,
+    // затем выполняет commit project state и переводит проект в clean state.
+
+    // Critical transactional path:
+    // project save stages document snapshots, commits module folders and project.yaml,
+    // rolls back already promoted entities on failure, then hydrates runtime from disk.
+    // Any changes here require save/save-as/rollback/reopen verification.
+
+    // collect documents: openDocuments имеет приоритет над snapshot в currentProject.documents.
     const recordsByIdentity = new Map();
 
     for (const record of getAllDocuments()) {
@@ -672,7 +692,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     const docs = Array.from(recordsByIdentity.values());
 
-    // Подготовка payload проекта.
+    // prepare payload
     await ensureProjectDirectories(targetRoot);
 
     const targetProjectName = getProjectNameFromRoot(targetRoot);
@@ -694,7 +714,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       project: currentProject.project
     };
 
-    // Подготовка staging.
+    // prepare staging
     const stagingRoot = buildSaveStagingRoot(targetRoot);
     const pathMap = new Map();
     const occupied = new Set();
@@ -710,7 +730,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     await fileSystem.ensureDir(buildModuleStagingDir(targetRoot, APP_CONFIG.project.folders.metalab));
     await fileSystem.ensureDir(buildModuleStagingDir(targetRoot, APP_CONFIG.project.folders.metaview));
 
-    // Запись документов в staging.
+    // stage document files
     for (const record of docs) {
       if (!record?.document) {
         continue;
@@ -738,15 +758,15 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       const finalPath = joinPaths(targetRoot, moduleFolder, fileName);
       const stagingPath = joinPaths(stagingRoot, moduleFolder, fileName);
 
-      await documentLoader.saveYaml(stagingPath, record.document);
+      await saveDocumentSnapshot(stagingPath, record);
       pathMap.set(record.path, finalPath);
     }
 
-    // Запись project.yaml в staging.
+    // stage project.yaml
     const stagingProjectFilePath = joinPaths(stagingRoot, APP_CONFIG.project.projectFileName);
     await documentLoader.saveYaml(stagingProjectFilePath, finalProjectPayload);
 
-    // Commit.
+    // commit promoted entities
     try {
       await promoteModuleDirectory(targetRoot, APP_CONFIG.project.folders.metagen);
       promotedModules.push(APP_CONFIG.project.folders.metagen);
@@ -760,10 +780,11 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       await promoteProjectFile(targetRoot);
       projectFilePromoted = true;
     } catch (error) {
+      // rollback on failure
       await performSaveRollback(targetRoot, promotedModules, projectFilePromoted, error);
     }
 
-    // Cleanup (best-effort только после полного успешного commit).
+    // cleanup (best-effort только после полного успешного commit)
     await cleanupSaveBackups(targetRoot).catch((error) => {
       logger.warn('project', 'Cleanup backup-файлов завершился с ошибкой', {
         targetRoot,
@@ -777,7 +798,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       });
     });
 
-    // Hydrate runtime.
+    // hydrate runtime
     const hydrated = await hydrateProjectRuntimeFromDisk(targetRoot);
     currentProject = hydrated;
 
@@ -822,7 +843,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     renameDocument,
     getNextMetaGenDefaultName,
     isMetaGenNameTaken,
-    writeDocumentFile,
+    saveDocument,
     saveProject,
     saveProjectAs,
     deleteDocument,

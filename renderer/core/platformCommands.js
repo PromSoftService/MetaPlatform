@@ -4,7 +4,6 @@ export const PLATFORM_COMMANDS = {
   saveProject: 'PLATFORM_SAVE_PROJECT',
   closeProject: 'PLATFORM_CLOSE_PROJECT',
   openDocument: 'PLATFORM_OPEN_DOCUMENT',
-  writeDocumentFile: 'PLATFORM_WRITE_DOCUMENT_FILE',
   renameDocument: 'PLATFORM_RENAME_DOCUMENT',
   deleteDocument: 'PLATFORM_DELETE_DOCUMENT',
   activateTab: 'PLATFORM_ACTIVATE_TAB',
