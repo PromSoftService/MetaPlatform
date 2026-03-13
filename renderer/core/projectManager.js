@@ -233,6 +233,10 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return joinPaths(targetRoot, `.backup-${moduleFolder}`);
   }
 
+  function buildProjectFileBackupPath(targetRoot) {
+    return joinPaths(targetRoot, '.backup-project.yaml');
+  }
+
   async function removeDirectoryIfExists(targetPath) {
     const exists = await fileSystem.exists(targetPath);
 
@@ -244,7 +248,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return true;
   }
 
-  async function replaceModuleDirectoryFromStaging(targetRoot, moduleFolder) {
+  async function promoteModuleDirectory(targetRoot, moduleFolder) {
     const moduleDir = joinPaths(targetRoot, moduleFolder);
     const stagingDir = buildModuleStagingDir(targetRoot, moduleFolder);
     const backupDir = buildModuleBackupDir(targetRoot, moduleFolder);
@@ -260,7 +264,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     try {
       await fileSystem.rename(stagingDir, moduleDir);
     } catch (error) {
-      if (moduleExists) {
+      if (await fileSystem.exists(backupDir)) {
         try {
           await fileSystem.rename(backupDir, moduleDir);
         } catch (rollbackError) {
@@ -270,8 +274,69 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
       throw error;
     }
+  }
 
-    await removeDirectoryIfExists(backupDir);
+  async function rollbackPromotedModuleDirectory(targetRoot, moduleFolder) {
+    const moduleDir = joinPaths(targetRoot, moduleFolder);
+    const backupDir = buildModuleBackupDir(targetRoot, moduleFolder);
+
+    if (await fileSystem.exists(moduleDir)) {
+      await fileSystem.deleteDir(moduleDir);
+    }
+
+    if (await fileSystem.exists(backupDir)) {
+      await fileSystem.rename(backupDir, moduleDir);
+    }
+  }
+
+  async function promoteProjectFile(targetRoot) {
+    const stagingProjectFilePath = joinPaths(buildSaveStagingRoot(targetRoot), APP_CONFIG.project.projectFileName);
+    const finalProjectFilePath = buildProjectFilePath(targetRoot);
+    const backupProjectFilePath = buildProjectFileBackupPath(targetRoot);
+
+    await fileSystem.deleteFile(backupProjectFilePath);
+
+    if (await fileSystem.exists(finalProjectFilePath)) {
+      await fileSystem.rename(finalProjectFilePath, backupProjectFilePath);
+    }
+
+    try {
+      await fileSystem.rename(stagingProjectFilePath, finalProjectFilePath);
+    } catch (error) {
+      if (await fileSystem.exists(backupProjectFilePath)) {
+        try {
+          await fileSystem.rename(backupProjectFilePath, finalProjectFilePath);
+        } catch (rollbackError) {
+          throw rollbackError;
+        }
+      }
+
+      throw error;
+    }
+  }
+
+  async function rollbackPromotedProjectFile(targetRoot) {
+    const finalProjectFilePath = buildProjectFilePath(targetRoot);
+    const backupProjectFilePath = buildProjectFileBackupPath(targetRoot);
+
+    if (await fileSystem.exists(finalProjectFilePath)) {
+      await fileSystem.deleteFile(finalProjectFilePath);
+    }
+
+    if (await fileSystem.exists(backupProjectFilePath)) {
+      await fileSystem.rename(backupProjectFilePath, finalProjectFilePath);
+    }
+  }
+
+  async function cleanupSaveBackups(targetRoot) {
+    await removeDirectoryIfExists(buildModuleBackupDir(targetRoot, APP_CONFIG.project.folders.metagen));
+    await removeDirectoryIfExists(buildModuleBackupDir(targetRoot, APP_CONFIG.project.folders.metalab));
+    await removeDirectoryIfExists(buildModuleBackupDir(targetRoot, APP_CONFIG.project.folders.metaview));
+    await fileSystem.deleteFile(buildProjectFileBackupPath(targetRoot));
+  }
+
+  async function cleanupSaveStaging(targetRoot) {
+    await removeDirectoryIfExists(buildSaveStagingRoot(targetRoot));
   }
 
   function createProjectRuntime({ rootPath, raw, documents, isUnsaved = false, isDirty = false }) {
@@ -542,6 +607,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       throw new Error('Project is not opened');
     }
 
+    // Сбор документов: openDocuments имеет приоритет над snapshot в currentProject.documents.
     const recordsByIdentity = new Map();
 
     for (const record of getAllDocuments()) {
@@ -570,6 +636,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     const docs = Array.from(recordsByIdentity.values());
 
+    // Подготовка целевого project payload.
     await ensureProjectDirectories(targetRoot);
 
     const targetProjectName = getProjectNameFromRoot(targetRoot);
@@ -590,9 +657,10 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       ...currentProject.raw,
       project: currentProject.project
     };
+
+    // Подготовка staging.
     const stagingRoot = buildSaveStagingRoot(targetRoot);
     const pathMap = new Map();
-    const stagingPathMap = new Map();
     const occupied = new Set();
 
     // Не удаляем текущие YAML заранее.
@@ -604,6 +672,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     await fileSystem.ensureDir(buildModuleStagingDir(targetRoot, APP_CONFIG.project.folders.metalab));
     await fileSystem.ensureDir(buildModuleStagingDir(targetRoot, APP_CONFIG.project.folders.metaview));
 
+    // Запись документов в staging.
     for (const record of docs) {
       if (!record?.document) {
         continue;
@@ -633,48 +702,57 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
       await documentLoader.saveYaml(stagingPath, record.document);
       pathMap.set(record.path, finalPath);
-      stagingPathMap.set(record.path, stagingPath);
     }
 
+    // Запись project.yaml в staging.
     const stagingProjectFilePath = joinPaths(stagingRoot, APP_CONFIG.project.projectFileName);
     await documentLoader.saveYaml(stagingProjectFilePath, finalProjectPayload);
 
-    await replaceModuleDirectoryFromStaging(targetRoot, APP_CONFIG.project.folders.metagen);
-    await replaceModuleDirectoryFromStaging(targetRoot, APP_CONFIG.project.folders.metalab);
-    await replaceModuleDirectoryFromStaging(targetRoot, APP_CONFIG.project.folders.metaview);
-
-    const finalProjectFilePath = buildProjectFilePath(targetRoot);
-    const backupProjectFilePath = joinPaths(targetRoot, '.backup-project.yaml');
-    const finalProjectExists = await fileSystem.exists(finalProjectFilePath);
-
-    await fileSystem.deleteFile(backupProjectFilePath);
-
-    if (finalProjectExists) {
-      await fileSystem.rename(finalProjectFilePath, backupProjectFilePath);
-    }
+    // Commit выполняется как единая операция на уровне всего проекта.
+    // Сначала полностью готовим staging, затем продвигаем модули и project.yaml.
+    // При любой ошибке откатываем уже продвинутые сущности в обратном порядке.
+    const promotedModules = [];
+    let projectFilePromoted = false;
 
     try {
-      await fileSystem.rename(stagingProjectFilePath, finalProjectFilePath);
-    } catch (error) {
-      logger.error('project', 'Не удалось заменить project.yaml из staging', {
-        targetRoot,
-        message: error?.message || String(error)
-      });
+      await promoteModuleDirectory(targetRoot, APP_CONFIG.project.folders.metagen);
+      promotedModules.push(APP_CONFIG.project.folders.metagen);
 
-      if (finalProjectExists) {
-        try {
-          await fileSystem.rename(backupProjectFilePath, finalProjectFilePath);
-        } catch (rollbackError) {
-          throw rollbackError;
-        }
+      await promoteModuleDirectory(targetRoot, APP_CONFIG.project.folders.metalab);
+      promotedModules.push(APP_CONFIG.project.folders.metalab);
+
+      await promoteModuleDirectory(targetRoot, APP_CONFIG.project.folders.metaview);
+      promotedModules.push(APP_CONFIG.project.folders.metaview);
+
+      await promoteProjectFile(targetRoot);
+      projectFilePromoted = true;
+    } catch (error) {
+      if (projectFilePromoted) {
+        await rollbackPromotedProjectFile(targetRoot);
+      }
+
+      for (const moduleFolder of [...promotedModules].reverse()) {
+        await rollbackPromotedModuleDirectory(targetRoot, moduleFolder);
       }
 
       throw error;
     }
 
-    await fileSystem.deleteFile(backupProjectFilePath);
-    await removeDirectoryIfExists(stagingRoot);
+    // Cleanup (best-effort только после полного успешного commit).
+    await cleanupSaveBackups(targetRoot).catch((error) => {
+      logger.warn('project', 'Cleanup backup-файлов завершился с ошибкой', {
+        targetRoot,
+        message: error?.message || String(error)
+      });
+    });
+    await cleanupSaveStaging(targetRoot).catch((error) => {
+      logger.warn('project', 'Cleanup staging завершился с ошибкой', {
+        targetRoot,
+        message: error?.message || String(error)
+      });
+    });
 
+    // Hydrate runtime.
     const hydrated = await hydrateProjectRuntimeFromDisk(targetRoot);
     currentProject = hydrated;
 
