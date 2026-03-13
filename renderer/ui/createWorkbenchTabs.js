@@ -78,7 +78,32 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     }
   }
 
-  function closeTab(tabId) {
+
+  async function syncEntryDocumentRecordToProject(entry) {
+    if (!entry) {
+      return null;
+    }
+
+    let nextRecord = entry.documentRecord;
+
+    if (typeof entry.runtime?.collectDocumentRecord === 'function') {
+      nextRecord = await entry.runtime.collectDocumentRecord();
+
+      if (nextRecord?.moduleId && nextRecord?.path && nextRecord?.document) {
+        entry.documentRecord = nextRecord;
+      } else {
+        nextRecord = entry.documentRecord;
+      }
+    }
+
+    if (nextRecord?.moduleId && nextRecord?.path && nextRecord?.document) {
+      await projectManager?.replaceDocumentRecord?.(nextRecord);
+    }
+
+    return nextRecord;
+  }
+
+  async function closeTab(tabId) {
     const entry = tabs.get(tabId);
 
     if (!entry) {
@@ -87,6 +112,15 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
 
     const orderedEntries = Array.from(tabs.values());
     const index = orderedEntries.findIndex((tabEntry) => tabEntry.tabId === tabId);
+
+    try {
+      await syncEntryDocumentRecordToProject(entry);
+    } catch (error) {
+      logger.error('tabs', 'Ошибка синхронизации snapshot перед закрытием вкладки', {
+        tabId,
+        message: error?.message || String(error)
+      });
+    }
 
     entry.runtime?.dispose?.();
     entry.pageNode.remove();
@@ -223,9 +257,9 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     return entry;
   }
 
-  function closeAllTabs() {
+  async function closeAllTabs() {
     for (const tabId of Array.from(tabs.keys())) {
-      closeTab(tabId);
+      await closeTab(tabId);
     }
   }
 
@@ -396,12 +430,16 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     const output = [];
 
     for (const entry of tabs.values()) {
-      if (typeof entry.runtime?.collectDocumentRecord === 'function') {
-        const nextRecord = await entry.runtime.collectDocumentRecord();
-        entry.documentRecord = nextRecord;
+      try {
+        const nextRecord = await syncEntryDocumentRecordToProject(entry);
+        output.push(nextRecord || entry.documentRecord);
+      } catch (error) {
+        logger.error('tabs', 'Ошибка синхронизации snapshot открытого документа', {
+          tabId: entry.tabId,
+          message: error?.message || String(error)
+        });
+        output.push(entry.documentRecord);
       }
-
-      output.push(entry.documentRecord);
     }
 
     return output;

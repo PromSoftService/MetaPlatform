@@ -11,6 +11,8 @@ import { createMetaGenDocument } from '../renderer/modules/metagen/metagenDocume
 import { createMetaLabDocument } from '../renderer/modules/metalab/metalabDocumentFactory.js';
 import { createMetaViewDocument } from '../renderer/modules/metaview/metaviewDocumentFactory.js';
 import { slugifyDocumentName } from '../renderer/runtime/naming.js';
+import { createWorkbenchTabs } from '../renderer/ui/createWorkbenchTabs.js';
+import { APP_CONFIG } from '../config/app-config.js';
 
 function createLogger() {
   return {
@@ -98,6 +100,111 @@ async function createFixtureProject(root, { metagenDescription = 'before-save' }
   await fs.writeFile(path.join(root, 'metagen', 'pump.yaml'), YAML.stringify(metagenDoc), 'utf-8');
   await fs.writeFile(path.join(root, 'metalab', 'startup.yaml'), YAML.stringify(metalabDoc), 'utf-8');
   await fs.writeFile(path.join(root, 'metaview', 'main.yaml'), YAML.stringify(metaviewDoc), 'utf-8');
+}
+
+
+
+function createFakeElement(tagName) {
+  const node = {
+    tagName,
+    children: [],
+    parentNode: null,
+    dataset: {},
+    textContent: '',
+    type: '',
+    tabIndex: 0,
+    attributes: new Map(),
+    listeners: new Map(),
+    classList: {
+      values: new Set(),
+      add(className) {
+        this.values.add(className);
+      },
+      toggle(className, force) {
+        if (force) {
+          this.values.add(className);
+          return;
+        }
+
+        this.values.delete(className);
+      }
+    },
+    appendChild(child) {
+      child.parentNode = this;
+      this.children.push(child);
+      return child;
+    },
+    remove() {
+      if (!this.parentNode) {
+        return;
+      }
+
+      this.parentNode.children = this.parentNode.children.filter((entry) => entry !== this);
+      this.parentNode = null;
+    },
+    querySelector(selector) {
+      if (!selector.startsWith('.')) {
+        return null;
+      }
+
+      const className = selector.slice(1);
+      const queue = [...this.children];
+
+      while (queue.length) {
+        const next = queue.shift();
+
+        if (next.classList?.values?.has(className)) {
+          return next;
+        }
+
+        queue.push(...(next.children || []));
+      }
+
+      return null;
+    },
+    addEventListener(type, handler) {
+      this.listeners.set(type, handler);
+    },
+    setAttribute(name, value) {
+      this.attributes.set(name, value);
+    },
+    replaceWith(nextNode) {
+      if (!this.parentNode) {
+        return;
+      }
+
+      const index = this.parentNode.children.indexOf(this);
+
+      if (index < 0) {
+        return;
+      }
+
+      nextNode.parentNode = this.parentNode;
+      this.parentNode.children[index] = nextNode;
+      this.parentNode = null;
+    },
+    focus() {},
+    select() {}
+  };
+
+  return node;
+}
+
+function createFakeDocument() {
+  const nodesById = new Map();
+  const tabsList = createFakeElement('div');
+  const editorHost = createFakeElement('div');
+  nodesById.set(APP_CONFIG.ui.dom.tabsListId, tabsList);
+  nodesById.set(APP_CONFIG.ui.dom.editorHostId, editorHost);
+
+  return {
+    document: {
+      createElement: (tagName) => createFakeElement(tagName),
+      getElementById: (id) => nodesById.get(id) || null
+    },
+    tabsList,
+    editorHost
+  };
 }
 
 function createManager({ failRename } = {}) {
@@ -235,4 +342,97 @@ test('openDocuments snapshot overrides currentProject documents during save', as
 
   const metagenText = await fs.readFile(path.join(root, 'metagen', 'pump.yaml'), 'utf-8');
   assert.match(metagenText, /open-document-version/);
+});
+
+
+test('close tab syncs runtime snapshot to project and reopen reads fresh record', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-close-reopen-'));
+  await createFixtureProject(root, { metagenDescription: 'before-close' });
+
+  const manager = createManager();
+  await manager.openProject(root);
+
+  const baseRecord = manager.getDocumentsByModule('metagen')[0];
+  const expectedDescription = 'after-close-runtime-sync';
+
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  let disposed = false;
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async () => null,
+        replaceDocumentRecord: async (...args) => manager.replaceDocumentRecord(...args)
+      },
+      openEditor: async ({ documentRecord }) => ({
+        collectDocumentRecord: async () => ({
+          ...documentRecord,
+          document: {
+            ...documentRecord.document,
+            component: {
+              ...documentRecord.document.component,
+              description: expectedDescription
+            }
+          }
+        }),
+        dispose: () => {
+          disposed = true;
+        }
+      })
+    });
+
+    await tabs.openDocument(baseRecord);
+    await tabs.closeTab(baseRecord.path);
+
+    assert.equal(disposed, true);
+
+    const synced = manager.getCurrentProject().documents.metagen.find((entry) => entry.path === baseRecord.path);
+    assert.equal(synced.document.component.description, expectedDescription);
+
+    const reopenedRecord = manager.getDocumentByPath(baseRecord.path);
+    assert.equal(reopenedRecord.document.component.description, expectedDescription);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
+
+test('updateTabPaths remaps active tab and document path after save as pathMap', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-tabs-remap-'));
+  await createFixtureProject(root);
+  const manager = createManager();
+  await manager.openProject(root);
+
+  const record = manager.getDocumentsByModule('metagen')[0];
+  const previousPath = record.path;
+  const nextPath = path.join(root, 'metagen', 'pump_remapped.yaml');
+
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async () => null,
+        replaceDocumentRecord: async () => null
+      },
+      openEditor: async () => ({ dispose: () => {} })
+    });
+
+    await tabs.openDocument(record);
+    tabs.updateTabPaths(new Map([[previousPath, nextPath]]));
+
+    const active = tabs.getActiveDocumentRecord();
+    assert.equal(active.path, nextPath);
+
+    await tabs.closeTab(nextPath);
+    assert.equal(tabs.getActiveDocumentRecord(), null);
+  } finally {
+    globalThis.document = previousDocument;
+  }
 });

@@ -468,6 +468,41 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return getAllDocuments().find((entry) => entry.path === targetPath) || null;
   }
 
+  function replaceDocumentRecord(nextRecord) {
+    if (!currentProject) {
+      return null;
+    }
+
+    if (!nextRecord?.moduleId || !nextRecord?.path || !nextRecord?.document) {
+      return null;
+    }
+
+    const moduleDocuments = currentProject.documents[nextRecord.moduleId];
+
+    if (!Array.isArray(moduleDocuments)) {
+      return null;
+    }
+
+    let index = moduleDocuments.findIndex((entry) => entry.path === nextRecord.path);
+
+    if (index < 0) {
+      const nextIdentityKey = getDocumentIdentityKey(nextRecord);
+
+      if (nextIdentityKey) {
+        index = moduleDocuments.findIndex((entry) => getDocumentIdentityKey(entry) === nextIdentityKey);
+      }
+    }
+
+    if (index < 0) {
+      return null;
+    }
+
+    moduleDocuments[index] = nextRecord;
+    moduleDocuments.sort((a, b) => getDocumentName(a).localeCompare(getDocumentName(b)));
+    setDirty(true);
+    return moduleDocuments.find((entry) => getDocumentIdentityKey(entry) === getDocumentIdentityKey(nextRecord) || entry.path === nextRecord.path) || null;
+  }
+
   function isDocumentNameTaken(moduleId, name, excludePath = null) {
     if (!currentProject) {
       return false;
@@ -839,6 +874,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     getMetaGenDocuments: () => currentProject?.documents?.metagen || [],
     getDocumentsByModule,
     getDocumentByPath,
+    replaceDocumentRecord,
     createDocument,
     renameDocument,
     getNextMetaGenDefaultName,

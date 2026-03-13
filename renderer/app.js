@@ -45,7 +45,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const tabs = createWorkbenchTabs({
     logger,
     projectManager: {
-      renameDocument: async (...args) => projectManager?.renameDocument(...args)
+      renameDocument: async (...args) => projectManager?.renameDocument(...args),
+      replaceDocumentRecord: async (...args) => projectManager?.replaceDocumentRecord(...args)
     },
     openEditor: async ({ documentRecord, mountElement }) => {
       const module = moduleRegistry.findModuleByDocumentKind(documentRecord.document?.kind);
@@ -114,6 +115,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const result = await projectManager.saveProjectAs(targetRoot, openDocuments);
       tabs.updateTabPaths(result?.pathMap);
       await tree.render();
+      logger.clear();
       clearLegacyProjectTitlePlaceholder();
       return true;
     }
@@ -121,6 +123,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const result = await projectManager.saveProject(openDocuments);
     tabs.updateTabPaths(result?.pathMap);
     await tree.render();
+    logger.clear();
     clearLegacyProjectTitlePlaceholder();
     return true;
   }
@@ -153,7 +156,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    tabs.closeAllTabs();
+    await tabs.closeAllTabs();
     logger.clear();
     await projectManager.createNewProject();
   }
@@ -171,7 +174,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    tabs.closeAllTabs();
+    await tabs.closeAllTabs();
     logger.clear();
     await projectManager.openProject(selectedPath);
   }
@@ -187,7 +190,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    tabs.closeAllTabs();
+    await tabs.closeAllTabs();
     logger.clear();
     await projectManager.closeProject();
   }
