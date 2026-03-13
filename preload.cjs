@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('MetaPlatformFS', {
   writeText: (targetPath, text) => ipcRenderer.invoke('fs:write-text', targetPath, text),
   rename: (fromPath, toPath) => ipcRenderer.invoke('fs:rename', fromPath, toPath),
   deleteFile: (targetPath) => ipcRenderer.invoke('fs:delete-file', targetPath),
+  deleteDir: (targetPath) => ipcRenderer.invoke('fs:delete-dir', targetPath),
   listFiles: (targetDir, extensions) => ipcRenderer.invoke('fs:list-files', targetDir, extensions),
   onMenuAction: (listener) => {
     const wrapped = (_event, action) => listener(action);

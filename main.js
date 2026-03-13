@@ -127,6 +127,11 @@ app.whenReady().then(() => {
     return true;
   });
 
+  ipcMain.handle('fs:delete-dir', async (_event, targetPath) => {
+    await fs.rm(targetPath, { recursive: true, force: true });
+    return true;
+  });
+
   ipcMain.handle('fs:list-files', async (_event, targetDir, extensions = []) => {
     const output = [];
 

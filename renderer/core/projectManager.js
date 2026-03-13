@@ -207,11 +207,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       }
     }
 
-    output.sort((a, b) =>
-      String(a.document?.component?.name || a.document?.name || '').localeCompare(
-        String(b.document?.component?.name || b.document?.name || '')
-      )
-    );
+    // Используем общий helper имени документа, чтобы MetaGen / MetaLab / MetaView сортировались согласованно.
+    output.sort((a, b) => getDocumentName(a).localeCompare(getDocumentName(b)));
 
     return output;
   }
@@ -224,21 +221,57 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     await fileSystem.ensureDir(joinPaths(projectRoot, APP_CONFIG.project.folders.generated));
   }
 
-  async function clearModuleDocumentFiles(projectRoot) {
-    const moduleFolders = [
-      APP_CONFIG.project.folders.metagen,
-      APP_CONFIG.project.folders.metalab,
-      APP_CONFIG.project.folders.metaview
-    ];
+  function buildSaveStagingRoot(targetRoot) {
+    return joinPaths(targetRoot, '.save-staging');
+  }
 
-    for (const moduleFolder of moduleFolders) {
-      const moduleDir = joinPaths(projectRoot, moduleFolder);
-      const existingFiles = await fileSystem.listFiles(moduleDir, APP_CONFIG.project.fileExtensions.yaml);
+  function buildModuleStagingDir(targetRoot, moduleFolder) {
+    return joinPaths(targetRoot, '.save-staging', moduleFolder);
+  }
 
-      for (const filePath of existingFiles) {
-        await fileSystem.deleteFile(filePath);
-      }
+  function buildModuleBackupDir(targetRoot, moduleFolder) {
+    return joinPaths(targetRoot, `.backup-${moduleFolder}`);
+  }
+
+  async function removeDirectoryIfExists(targetPath) {
+    const exists = await fileSystem.exists(targetPath);
+
+    if (!exists) {
+      return true;
     }
+
+    await fileSystem.deleteDir(targetPath);
+    return true;
+  }
+
+  async function replaceModuleDirectoryFromStaging(targetRoot, moduleFolder) {
+    const moduleDir = joinPaths(targetRoot, moduleFolder);
+    const stagingDir = buildModuleStagingDir(targetRoot, moduleFolder);
+    const backupDir = buildModuleBackupDir(targetRoot, moduleFolder);
+
+    await removeDirectoryIfExists(backupDir);
+
+    const moduleExists = await fileSystem.exists(moduleDir);
+
+    if (moduleExists) {
+      await fileSystem.rename(moduleDir, backupDir);
+    }
+
+    try {
+      await fileSystem.rename(stagingDir, moduleDir);
+    } catch (error) {
+      if (moduleExists) {
+        try {
+          await fileSystem.rename(backupDir, moduleDir);
+        } catch (rollbackError) {
+          throw rollbackError;
+        }
+      }
+
+      throw error;
+    }
+
+    await removeDirectoryIfExists(backupDir);
   }
 
   function createProjectRuntime({ rootPath, raw, documents, isUnsaved = false, isDirty = false }) {
@@ -553,15 +586,23 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       };
     }
 
-    await documentLoader.saveYaml(buildProjectFilePath(targetRoot), {
+    const finalProjectPayload = {
       ...currentProject.raw,
       project: currentProject.project
-    });
-
-    await clearModuleDocumentFiles(targetRoot);
-
-    const occupied = new Set();
+    };
+    const stagingRoot = buildSaveStagingRoot(targetRoot);
     const pathMap = new Map();
+    const stagingPathMap = new Map();
+    const occupied = new Set();
+
+    // Не удаляем текущие YAML заранее.
+    // Сначала полностью пишем новое состояние в staging, затем подменяем папки модулей.
+    // Это снижает риск частично пустого проекта при ошибке записи.
+    await removeDirectoryIfExists(stagingRoot);
+
+    await fileSystem.ensureDir(buildModuleStagingDir(targetRoot, APP_CONFIG.project.folders.metagen));
+    await fileSystem.ensureDir(buildModuleStagingDir(targetRoot, APP_CONFIG.project.folders.metalab));
+    await fileSystem.ensureDir(buildModuleStagingDir(targetRoot, APP_CONFIG.project.folders.metaview));
 
     for (const record of docs) {
       if (!record?.document) {
@@ -587,10 +628,52 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
       occupied.add(`${moduleFolder}/${fileName}`);
 
-      const nextPath = joinPaths(targetRoot, moduleFolder, fileName);
-      pathMap.set(record.path, nextPath);
-      await documentLoader.saveYaml(nextPath, record.document);
+      const finalPath = joinPaths(targetRoot, moduleFolder, fileName);
+      const stagingPath = joinPaths(stagingRoot, moduleFolder, fileName);
+
+      await documentLoader.saveYaml(stagingPath, record.document);
+      pathMap.set(record.path, finalPath);
+      stagingPathMap.set(record.path, stagingPath);
     }
+
+    const stagingProjectFilePath = joinPaths(stagingRoot, APP_CONFIG.project.projectFileName);
+    await documentLoader.saveYaml(stagingProjectFilePath, finalProjectPayload);
+
+    await replaceModuleDirectoryFromStaging(targetRoot, APP_CONFIG.project.folders.metagen);
+    await replaceModuleDirectoryFromStaging(targetRoot, APP_CONFIG.project.folders.metalab);
+    await replaceModuleDirectoryFromStaging(targetRoot, APP_CONFIG.project.folders.metaview);
+
+    const finalProjectFilePath = buildProjectFilePath(targetRoot);
+    const backupProjectFilePath = joinPaths(targetRoot, '.backup-project.yaml');
+    const finalProjectExists = await fileSystem.exists(finalProjectFilePath);
+
+    await fileSystem.deleteFile(backupProjectFilePath);
+
+    if (finalProjectExists) {
+      await fileSystem.rename(finalProjectFilePath, backupProjectFilePath);
+    }
+
+    try {
+      await fileSystem.rename(stagingProjectFilePath, finalProjectFilePath);
+    } catch (error) {
+      logger.error('project', 'Не удалось заменить project.yaml из staging', {
+        targetRoot,
+        message: error?.message || String(error)
+      });
+
+      if (finalProjectExists) {
+        try {
+          await fileSystem.rename(backupProjectFilePath, finalProjectFilePath);
+        } catch (rollbackError) {
+          throw rollbackError;
+        }
+      }
+
+      throw error;
+    }
+
+    await fileSystem.deleteFile(backupProjectFilePath);
+    await removeDirectoryIfExists(stagingRoot);
 
     const hydrated = await hydrateProjectRuntimeFromDisk(targetRoot);
     currentProject = hydrated;

@@ -15,6 +15,7 @@ export function createFileSystemBridge() {
     writeText: (targetPath, text) => api.writeText(targetPath, text),
     rename: (fromPath, toPath) => api.rename(fromPath, toPath),
     deleteFile: (targetPath) => api.deleteFile(targetPath),
+    deleteDir: (targetPath) => api.deleteDir(targetPath),
     listFiles: (targetDir, extensions = []) => api.listFiles(targetDir, extensions),
     onMenuAction: (listener) => api.onMenuAction(listener)
   };
