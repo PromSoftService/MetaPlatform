@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   moduleRegistry.registerModule(metaLabModule);
   moduleRegistry.registerModule(metaViewModule);
 
-  const projectTitle = document.querySelector('#project-title');
+  const legacyProjectTitlePlaceholder = document.querySelector('#legacy-project-title-placeholder');
   const tabs = createWorkbenchTabs({
     logger,
     projectManager: {
@@ -62,12 +62,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  function updateProjectTitle() {
-    if (!projectTitle) {
+  // Элемент оставлен в шапке как legacy-placeholder от старого двойного отображения имени проекта.
+  // Фактическое имя проекта рендерится в другом месте интерфейса.
+  // Здесь placeholder намеренно очищается, это не баг.
+  function clearLegacyProjectTitlePlaceholder() {
+    if (!legacyProjectTitlePlaceholder) {
       return;
     }
 
-    projectTitle.textContent = '';
+    legacyProjectTitlePlaceholder.textContent = '';
   }
 
   projectManager = createProjectManager({
@@ -76,16 +79,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     moduleRegistry,
     onProjectLoaded: ({ projectRuntime }) => {
       window.MetaPlatformRuntime.activeProject = projectRuntime;
-      updateProjectTitle();
+      clearLegacyProjectTitlePlaceholder();
     },
     onProjectClosed: () => {
       window.MetaPlatformRuntime.activeProject = null;
-      updateProjectTitle();
+      clearLegacyProjectTitlePlaceholder();
     }
   });
 
   projectManager.subscribe(() => {
-    updateProjectTitle();
+    clearLegacyProjectTitlePlaceholder();
   });
 
   const tree = createProjectTree({ logger, projectManager, tabs });
@@ -111,14 +114,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       const result = await projectManager.saveProjectAs(targetRoot, openDocuments);
       tabs.updateTabPaths(result?.pathMap);
       await tree.render();
-      updateProjectTitle();
+      clearLegacyProjectTitlePlaceholder();
       return true;
     }
 
     const result = await projectManager.saveProject(openDocuments);
     tabs.updateTabPaths(result?.pathMap);
     await tree.render();
-    updateProjectTitle();
+    clearLegacyProjectTitlePlaceholder();
     return true;
   }
 

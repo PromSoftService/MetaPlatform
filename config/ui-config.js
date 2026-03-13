@@ -2,7 +2,7 @@ export const UI_CONFIG = {
   dom: {
     titleSelector: 'title',
     topPanelTitleSelector: '#top-panel-title',
-    projectTitleSelector: '#project-title',
+    legacyProjectTitlePlaceholderSelector: '#legacy-project-title-placeholder',
     projectPanelTitleSelector: '#project-panel-title',
     logsPanelHeaderSelector: '#bottom-panel-header',
     tabsListId: 'tabs-list',

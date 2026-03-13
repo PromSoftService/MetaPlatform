@@ -1,5 +1,6 @@
 import { APP_CONFIG } from '../../config/app-config.js';
 import { createDocumentLoader } from '../runtime/documentLoader.js';
+import { slugifyDocumentName } from '../runtime/naming.js';
 
 function joinPaths(...parts) {
   return parts
@@ -67,33 +68,54 @@ function getDocumentIdentityKey(documentRecord) {
   const scenarioId = String(documentRecord.document?.scenario?.id || '').trim();
   const screenId = String(documentRecord.document?.screen?.id || '').trim();
 
+  // Для Save As идентичность документа определяется логическим id сущности, а не path.
+  // Для новых документов id должен быть уникальным уже на этапе factory, иначе разные документы могут схлопнуться.
   const name = getDocumentName(documentRecord);
   const entityId = componentId || scenarioId || screenId || name;
 
   return `${moduleId}::${kind}::${entityId}`;
 }
 
-function setDocumentName(documentRecord, nextName) {
+function syncDocumentIdentityFromName(documentRecord, nextName) {
   const value = normalizeDocumentName(nextName);
+  const slug = slugifyDocumentName(value);
 
   if (documentRecord?.document?.component) {
+    const nextId = slug || 'new_component';
     documentRecord.document.component.name = value;
+
+    if ('id' in documentRecord.document.component) {
+      documentRecord.document.component.id = nextId;
+    }
+
+    if (documentRecord.document?.generation?.output) {
+      documentRecord.document.generation.output.fileName = `${nextId}.st`;
+    }
+
     return;
   }
 
   if (documentRecord?.document?.scenario) {
+    const nextId = slug || 'new_scenario';
     documentRecord.document.scenario.name = value;
+    documentRecord.document.scenario.id = nextId;
     return;
   }
 
   if (documentRecord?.document?.screen) {
+    const nextId = slug || 'new_screen';
     documentRecord.document.screen.name = value;
+    documentRecord.document.screen.id = nextId;
     return;
   }
 
   if (documentRecord?.document) {
     documentRecord.document.name = value;
   }
+}
+
+function setDocumentName(documentRecord, nextName) {
+  syncDocumentIdentityFromName(documentRecord, nextName);
 }
 
 function createDefaultProjectRaw() {
@@ -410,6 +432,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
+    // При rename синхронизируем не только display name, но и внутренние id/связанные поля,
+    // чтобы документ не входил в рассинхронизированное состояние.
     const previousPath = record.path;
     setDocumentName(record, resolvedName);
 
@@ -439,7 +463,11 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     setDirty(true);
   }
 
-  async function saveDocument(documentRecord) {
+  // ВАЖНО:
+  // Эта функция записывает YAML-файл конкретного документа на диск.
+  // Она НЕ означает, что весь state проекта синхронизирован и НЕ сбрасывает общий dirty-state проекта.
+  // Полный сброс dirty-state выполняется только через saveProject()/saveProjectAs().
+  async function writeDocumentFile(documentRecord) {
     if (!documentRecord?.path || !documentRecord?.document) {
       throw new Error('Invalid document record');
     }
@@ -608,7 +636,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     renameDocument,
     getNextMetaGenDefaultName,
     isMetaGenNameTaken,
-    saveDocument,
+    writeDocumentFile,
     saveProject,
     saveProjectAs,
     deleteDocument,
