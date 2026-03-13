@@ -107,6 +107,31 @@ function bindSaveShortcut(textarea, trySave) {
   });
 }
 
+function safeSerialize(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
+function bindTableDirtyTracker(tableRuntime, extractDocumentValue, markDirty) {
+  if (typeof tableRuntime?.workbook?.onCommandExecuted !== 'function') {
+    return null;
+  }
+
+  let previousSnapshot = safeSerialize(extractDocumentValue());
+
+  return tableRuntime.workbook.onCommandExecuted(() => {
+    const nextSnapshot = safeSerialize(extractDocumentValue());
+
+    if (nextSnapshot !== previousSnapshot) {
+      previousSnapshot = nextSnapshot;
+      markDirty();
+    }
+  });
+}
+
 export async function createMetaGenEditor({ documentRecord, mountElement, logger, onSave, onDirty }) {
   clearMountElement(mountElement);
 
@@ -195,11 +220,15 @@ export async function createMetaGenEditor({ documentRecord, mountElement, logger
   }
 
   let runtimeDirty = false;
+  const tableDirtyDisposables = [];
 
   function markDirty() {
     runtimeDirty = true;
     onDirty?.();
   }
+
+  tableDirtyDisposables.push(bindTableDirtyTracker(paramsTable, () => paramsTable?.extractDocumentValue?.(), markDirty));
+  tableDirtyDisposables.push(bindTableDirtyTracker(dataTable, () => dataTable?.extractDocumentValue?.(), markDirty));
 
   async function trySave() {
     try {
@@ -225,6 +254,7 @@ export async function createMetaGenEditor({ documentRecord, mountElement, logger
       return documentRecord;
     },
     dispose() {
+      tableDirtyDisposables.forEach((disposable) => disposable?.dispose?.());
       paramsTable?.dispose?.();
       dataTable?.dispose?.();
       split?.destroy?.();

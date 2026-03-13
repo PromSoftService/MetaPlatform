@@ -339,6 +339,42 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     await removeDirectoryIfExists(buildSaveStagingRoot(targetRoot));
   }
 
+
+  async function performSaveRollback(targetRoot, promotedModules, projectFilePromoted, originalError) {
+    // При сбое commit пытаемся откатить максимум уже продвинутых сущностей.
+    // Ошибки rollback не должны скрывать исходную причину сбоя, но и не должны обрывать остальные шаги отката.
+    const rollbackErrors = [];
+
+    if (projectFilePromoted) {
+      try {
+        await rollbackPromotedProjectFile(targetRoot);
+      } catch (error) {
+        rollbackErrors.push(new Error(`project.yaml rollback failed: ${error?.message || String(error)}`));
+      }
+    }
+
+    for (const moduleFolder of [...promotedModules].reverse()) {
+      try {
+        await rollbackPromotedModuleDirectory(targetRoot, moduleFolder);
+      } catch (error) {
+        rollbackErrors.push(new Error(`${moduleFolder} rollback failed: ${error?.message || String(error)}`));
+      }
+    }
+
+    if (rollbackErrors.length === 0) {
+      throw originalError;
+    }
+
+    const rollbackSummary = rollbackErrors
+      .map((error, index) => `${index + 1}. ${error.message}`)
+      .join(' | ');
+
+    throw new Error(
+      `Commit failed: ${originalError?.message || String(originalError)}. Rollback issues: ${rollbackSummary}`,
+      { cause: originalError }
+    );
+  }
+
   function createProjectRuntime({ rootPath, raw, documents, isUnsaved = false, isDirty = false }) {
     return {
       rootPath,
@@ -636,7 +672,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     const docs = Array.from(recordsByIdentity.values());
 
-    // Подготовка целевого project payload.
+    // Подготовка payload проекта.
     await ensureProjectDirectories(targetRoot);
 
     const targetProjectName = getProjectNameFromRoot(targetRoot);
@@ -662,6 +698,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const stagingRoot = buildSaveStagingRoot(targetRoot);
     const pathMap = new Map();
     const occupied = new Set();
+    const promotedModules = [];
+    let projectFilePromoted = false;
 
     // Не удаляем текущие YAML заранее.
     // Сначала полностью пишем новое состояние в staging, затем подменяем папки модулей.
@@ -708,12 +746,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const stagingProjectFilePath = joinPaths(stagingRoot, APP_CONFIG.project.projectFileName);
     await documentLoader.saveYaml(stagingProjectFilePath, finalProjectPayload);
 
-    // Commit выполняется как единая операция на уровне всего проекта.
-    // Сначала полностью готовим staging, затем продвигаем модули и project.yaml.
-    // При любой ошибке откатываем уже продвинутые сущности в обратном порядке.
-    const promotedModules = [];
-    let projectFilePromoted = false;
-
+    // Commit.
     try {
       await promoteModuleDirectory(targetRoot, APP_CONFIG.project.folders.metagen);
       promotedModules.push(APP_CONFIG.project.folders.metagen);
@@ -727,15 +760,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       await promoteProjectFile(targetRoot);
       projectFilePromoted = true;
     } catch (error) {
-      if (projectFilePromoted) {
-        await rollbackPromotedProjectFile(targetRoot);
-      }
-
-      for (const moduleFolder of [...promotedModules].reverse()) {
-        await rollbackPromotedModuleDirectory(targetRoot, moduleFolder);
-      }
-
-      throw error;
+      await performSaveRollback(targetRoot, promotedModules, projectFilePromoted, error);
     }
 
     // Cleanup (best-effort только после полного успешного commit).
