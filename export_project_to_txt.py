@@ -45,6 +45,7 @@ PROJECT_FILES = [
   'renderer/modules/metagen/tables/createMetaGenParamsSheet.js',
   'renderer/modules/metagen/tables/createMetaGenSimpleSheet.js',
   'renderer/modules/metagen/tables/metaGenParamsTableAutoStyle.js',
+  'renderer/modules/metagen/tables/sheetSnapshot.js',
   'renderer/modules/metalab/metalabCommands.js',
   'renderer/modules/metalab/metalabConfig.js',
   'renderer/modules/metalab/metalabDocumentFactory.js',
@@ -64,6 +65,8 @@ PROJECT_FILES = [
   'renderer/ui/workbenchShell.js',
   'vite.config.js',
 ]
+
+
 def export_files() -> None:
   lines: list[str] = []
   lines.append('=' * 50)

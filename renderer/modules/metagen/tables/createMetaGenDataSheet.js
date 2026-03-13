@@ -1,4 +1,5 @@
 import { createMetaGenSimpleSheet } from './createMetaGenSimpleSheet.js';
+import { readSheetMatrix } from './sheetSnapshot.js';
 
 function buildHiddenMenuConfig(commands) {
   return Object.fromEntries(commands.map((command) => [command, { hidden: true }]));
@@ -6,28 +7,6 @@ function buildHiddenMenuConfig(commands) {
 
 function sleep(delayMs) {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
-}
-
-function normalizeCellValue(cellValue) {
-  if (cellValue == null) {
-    return '';
-  }
-
-  if (typeof cellValue === 'object' && 'v' in cellValue) {
-    return normalizeCellValue(cellValue.v);
-  }
-
-  return String(cellValue).trim();
-}
-
-function trimTrailingEmptyCells(rowValues) {
-  const normalized = rowValues.map((value) => normalizeCellValue(value));
-
-  while (normalized.length > 0 && normalized[normalized.length - 1] === '') {
-    normalized.pop();
-  }
-
-  return normalized;
 }
 
 async function applyHeaderConfig({ sheet, headers, headerConfig, retryConfig, logger, source, logMessages }) {
@@ -134,18 +113,7 @@ function writeDataDocumentToSheet(sheet, dataDocument, columnCount) {
 }
 
 function extractRows(sheet, rowCount, columnCount) {
-  const rows = [];
-
-  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-    const rowValues = sheet.getRange(rowIndex, 0, 1, columnCount).getValues()?.[0] || [];
-    const trimmed = trimTrailingEmptyCells(rowValues);
-
-    if (trimmed.length > 0) {
-      rows.push(trimmed);
-    }
-  }
-
-  return rows;
+  return readSheetMatrix(sheet, 0, rowCount, columnCount);
 }
 
 export async function createMetaGenDataSheet({

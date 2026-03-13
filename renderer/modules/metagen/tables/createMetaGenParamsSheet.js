@@ -1,27 +1,6 @@
 import { createMetaGenSimpleSheet } from './createMetaGenSimpleSheet.js';
 import { createMetaGenParamsTableAutoStyle } from './metaGenParamsTableAutoStyle.js';
-
-function normalizeCellValue(cellValue) {
-  if (cellValue == null) {
-    return '';
-  }
-
-  if (typeof cellValue === 'object' && 'v' in cellValue) {
-    return normalizeCellValue(cellValue.v);
-  }
-
-  return String(cellValue).trim();
-}
-
-function trimTrailingEmptyCells(rowValues) {
-  const normalized = rowValues.map((value) => normalizeCellValue(value));
-
-  while (normalized.length > 0 && normalized[normalized.length - 1] === '') {
-    normalized.pop();
-  }
-
-  return normalized;
-}
+import { readSheetMatrix } from './sheetSnapshot.js';
 
 function writeParamsDocumentToSheet(sheet, paramsDocument, columnCount) {
   const rows = [];
@@ -44,19 +23,16 @@ function writeParamsDocumentToSheet(sheet, paramsDocument, columnCount) {
   });
 }
 
-function collectRowsFromSheet(sheet, rowCount, columnCount) {
-  const rows = [];
+function extractHeader(sheet, columnCount) {
+  return readSheetMatrix(sheet, 0, 1, columnCount)[0] || [];
+}
 
-  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-    const rowValues = sheet.getRange(rowIndex, 0, 1, columnCount).getValues()?.[0] || [];
-    const trimmed = trimTrailingEmptyCells(rowValues);
-
-    if (trimmed.length > 0) {
-      rows.push(trimmed);
-    }
+function extractBodyRows(sheet, rowCount, columnCount) {
+  if (rowCount <= 1) {
+    return [];
   }
 
-  return rows;
+  return readSheetMatrix(sheet, 1, rowCount - 1, columnCount);
 }
 
 export function createMetaGenParamsSheet({
@@ -109,16 +85,10 @@ export function createMetaGenParamsSheet({
     ...sheetRuntime,
     ...autoStyleController,
     extractDocumentValue() {
-      const rowValues = collectRowsFromSheet(
-        sheetRuntime.sheet,
-        tableConfig.rows,
-        tableConfig.defaultColumns
-      );
-
       return {
         format: 'header-plus-rows',
-        header: rowValues[0] || [],
-        rows: rowValues.slice(1)
+        header: extractHeader(sheetRuntime.sheet, tableConfig.defaultColumns),
+        rows: extractBodyRows(sheetRuntime.sheet, tableConfig.rows, tableConfig.defaultColumns)
       };
     },
     dispose() {
