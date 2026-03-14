@@ -2,6 +2,13 @@ import { APP_CONFIG } from '../../config/app-config.js';
 import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
 import { METALAB_CONFIG } from '../modules/metalab/metalabConfig.js';
 import { METAVIEW_CONFIG } from '../modules/metaview/metaviewConfig.js';
+import {
+  TREE_NODE_TYPES,
+  buildProjectTreeNodes,
+  createTreeBehaviorConfig,
+  createTreeInteractionController,
+  getNodeActions
+} from './projectTree/treeAdapter.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -9,24 +16,12 @@ function createElement(tagName, classNames = []) {
   return node;
 }
 
-function normalizeName(name) {
-  return String(name ?? '').trim();
-}
-
-function getDocumentLabel(documentRecord) {
-  return (
-    documentRecord.document?.component?.name ||
-    documentRecord.document?.scenario?.name ||
-    documentRecord.document?.screen?.name ||
-    documentRecord.document?.name ||
-    APP_CONFIG.ui.text.untitled
-  );
-}
-
 export function createProjectTree({
   logger,
   projectManager,
-  tabs
+  tabs,
+  onCreateComponentRequest,
+  onDeleteComponentRequest
 }) {
   const treeRoot = document.getElementById(APP_CONFIG.ui.dom.projectTreeId);
   const projectPanelTitleNode = document.querySelector(APP_CONFIG.ui.dom.projectPanelTitleSelector);
@@ -49,94 +44,10 @@ export function createProjectTree({
     }
   ];
 
-  const clickGestureState = {
-    path: null,
-    at: 0
+  const behaviorConfig = createTreeBehaviorConfig();
+  const treeSelectionState = {
+    selectedNodeId: null
   };
-
-  async function startTreeInlineRename({ record, labelNode }) {
-    const previousName = getDocumentLabel(record);
-    const input = createElement('input', ['tree-inline-rename-input']);
-    input.type = 'text';
-    input.value = previousName;
-
-    labelNode.replaceWith(input);
-    input.focus();
-    input.select();
-
-    let finalized = false;
-
-    const finalize = async (commit) => {
-      if (finalized) {
-        return;
-      }
-
-      finalized = true;
-
-      if (commit) {
-        const nextName = normalizeName(input.value);
-        if (!nextName) {
-          logger.warn('project-tree', 'Пустое имя отклонено');
-        } else {
-          const renamed = await projectManager.renameDocument(record.path, nextName);
-          if (!renamed) {
-            logger.warn('project-tree', 'Переименование отклонено', { name: nextName });
-          }
-        }
-      }
-
-      await render();
-    };
-
-    input.addEventListener('keydown', async (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        await finalize(true);
-      }
-
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        await finalize(false);
-      }
-    });
-
-    input.addEventListener('blur', async () => {
-      await finalize(true);
-    });
-  }
-
-  function createTreeLabelClickHandler(documentRecord, labelNode) {
-    const quickDoubleClickMs = 300;
-    const renameMinDelayMs = 450;
-    const renameMaxDelayMs = 900;
-
-    return async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const now = Date.now();
-      const isSameTarget = clickGestureState.path === documentRecord.path;
-      const delta = isSameTarget ? now - clickGestureState.at : Number.POSITIVE_INFINITY;
-
-      if (!isSameTarget || delta > renameMaxDelayMs) {
-        clickGestureState.path = documentRecord.path;
-        clickGestureState.at = now;
-        return;
-      }
-
-      clickGestureState.path = null;
-      clickGestureState.at = 0;
-
-      if (delta <= quickDoubleClickMs) {
-        await tabs.openDocument(documentRecord);
-        return;
-      }
-
-      if (delta >= renameMinDelayMs) {
-        await startTreeInlineRename({ record: documentRecord, labelNode });
-      }
-    };
-  }
 
   async function startDocumentCreation(sectionConfig) {
     await tabs.startTemporaryDocumentCreation({
@@ -146,6 +57,83 @@ export function createProjectTree({
         return projectManager.createDocument(moduleId, confirmedName);
       }
     });
+  }
+
+  const interactionController = createTreeInteractionController({
+    tabs,
+    onCreateComponentRequest: onCreateComponentRequest || (async (moduleId, nodeData) => {
+      const sectionConfig = moduleSections.find((section) => section.moduleId === moduleId);
+
+      if (!sectionConfig) {
+        logger.warn('project-tree', 'Не найден модуль для создания компонента', {
+          moduleId,
+          nodeData
+        });
+        return;
+      }
+
+      await startDocumentCreation(sectionConfig);
+    }),
+    onDeleteComponentRequest: onDeleteComponentRequest || (async (documentRecord) => {
+      tabs.closeTab(documentRecord.path);
+      await projectManager.deleteDocument(documentRecord.path);
+    })
+  });
+
+  function renderNodeRow(nodeData, rowClassName = 'tree-node-row') {
+    const row = createElement('div', [rowClassName]);
+    row.dataset.nodeType = nodeData.nodeType;
+    row.dataset.nodeId = nodeData.id;
+
+    const label = createElement('button', ['tree-node-label']);
+    label.type = 'button';
+    label.textContent = nodeData.label;
+
+    label.addEventListener('click', async (event) => {
+      event.preventDefault();
+
+      treeSelectionState.selectedNodeId = nodeData.id;
+      await interactionController.onNodePrimaryClick(nodeData);
+      await render();
+    });
+
+    row.appendChild(label);
+
+    const actions = getNodeActions(nodeData);
+
+    if (actions.length > 0) {
+      const actionsContainer = createElement('div', ['tree-node-actions']);
+
+      for (const action of actions) {
+        if (!action.visible) {
+          continue;
+        }
+
+        const actionButton = createElement('button', ['tree-node-action-button']);
+        actionButton.type = 'button';
+        actionButton.title = action.title;
+        actionButton.setAttribute('aria-label', action.title);
+        actionButton.textContent = action.icon;
+
+        actionButton.addEventListener('click', async (event) => {
+          await interactionController.onNodeActionClick({
+            actionId: action.id,
+            nodeData,
+            event
+          });
+        });
+
+        actionsContainer.appendChild(actionButton);
+      }
+
+      row.appendChild(actionsContainer);
+    }
+
+    if (treeSelectionState.selectedNodeId === nodeData.id) {
+      row.classList.add('is-selected');
+    }
+
+    return row;
   }
 
   async function render() {
@@ -161,56 +149,41 @@ export function createProjectTree({
       return;
     }
 
-    const projectNode = createElement('div', [APP_CONFIG.ui.classNames.projectNode]);
-    projectNode.textContent = project.project.name;
-    treeRoot.appendChild(projectNode);
+    const treeNodes = buildProjectTreeNodes({
+      project,
+      moduleSections,
+      getDocumentsByModule: (moduleId) => projectManager.getDocumentsByModule(moduleId)
+    });
 
-    for (const sectionConfig of moduleSections) {
-      const section = createElement('div');
-      const header = createElement('div', ['tree-section-header']);
-      header.textContent = sectionConfig.moduleName;
-
-      const addButton = createElement('button', ['tree-add-button']);
-      addButton.type = 'button';
-      addButton.textContent = '+';
-      addButton.addEventListener('click', async () => {
-        await startDocumentCreation(sectionConfig);
-      });
-
-      header.appendChild(addButton);
-      section.appendChild(header);
-
-      const moduleDocuments = projectManager.getDocumentsByModule(sectionConfig.moduleId);
-
-      for (const documentRecord of moduleDocuments) {
-        const item = createElement('div', [APP_CONFIG.ui.classNames.treeItem]);
-        const label = createElement('button', [APP_CONFIG.ui.classNames.treeItemLabel]);
-        label.type = 'button';
-        label.textContent = getDocumentLabel(documentRecord);
-
-        const onLabelClick = createTreeLabelClickHandler(documentRecord, label);
-        label.addEventListener('click', onLabelClick);
-
-        const deleteButton = createElement('button', ['tree-item-delete']);
-        deleteButton.type = 'button';
-        deleteButton.textContent = '🗑';
-        deleteButton.title = 'Удалить документ';
-        deleteButton.addEventListener('click', async (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          tabs.closeTab(documentRecord.path);
-          await projectManager.deleteDocument(documentRecord.path);
-        });
-
-        item.appendChild(label);
-        item.appendChild(deleteButton);
-        section.appendChild(item);
+    for (const nodeData of treeNodes) {
+      if (nodeData.nodeType === TREE_NODE_TYPES.project) {
+        const projectNode = createElement('div', [APP_CONFIG.ui.classNames.projectNode]);
+        projectNode.textContent = nodeData.label;
+        treeRoot.appendChild(projectNode);
+        continue;
       }
 
-      treeRoot.appendChild(section);
+      if (nodeData.nodeType === TREE_NODE_TYPES.module) {
+        const moduleBlock = createElement('div', ['tree-module-block']);
+        moduleBlock.appendChild(renderNodeRow(nodeData, 'tree-section-header tree-node-row'));
+
+        const documentsContainer = createElement('div', ['tree-module-children']);
+
+        for (const documentNode of nodeData.children || []) {
+          const item = createElement('div', [APP_CONFIG.ui.classNames.treeItem]);
+          item.appendChild(renderNodeRow(documentNode));
+          documentsContainer.appendChild(item);
+        }
+
+        moduleBlock.appendChild(documentsContainer);
+        treeRoot.appendChild(moduleBlock);
+      }
     }
 
-    logger.info('project-tree', 'Дерево проекта обновлено');
+    logger.info('project-tree', 'Дерево проекта обновлено', {
+      inlineRenameEnabled: behaviorConfig.inlineRenameEnabled,
+      slowDoubleClickRenameEnabled: behaviorConfig.slowDoubleClickRenameEnabled
+    });
   }
 
   projectManager.subscribe(() => {

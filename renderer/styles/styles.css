@@ -179,41 +179,86 @@ body {
   margin-bottom: 12px;
 }
 
-.tree-section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 12px 0 8px;
-  font-weight: 600;
+.tree-module-block {
+  margin-top: 12px;
 }
 
-.tree-add-button {
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-app);
-  cursor: pointer;
-  border-radius: 0;
-  width: 26px;
-  height: 26px;
+.tree-section-header {
+  margin: 0 0 8px;
 }
 
 .tree-item {
   margin-bottom: 6px;
-  display: flex;
-  gap: 6px;
-  align-items: center;
 }
 
-.tree-item-label {
-  width: 100%;
+.tree-node-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background-color 120ms ease-in-out, border-color 120ms ease-in-out;
+}
+
+.tree-node-row:hover {
+  background: var(--color-tab-hover);
+  border-color: var(--color-border-soft);
+}
+
+.tree-node-row.is-selected {
+  background: var(--color-tab-bg-active);
+  border-color: var(--color-border);
+  box-shadow: inset 0 -2px 0 0 var(--color-gutter-hover);
+}
+
+.tree-node-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
   text-align: left;
+  padding: 8px 10px;
+  cursor: pointer;
+  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-node-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 6px;
+  opacity: 0;
+  transition: opacity 120ms ease-in-out;
+}
+
+.tree-node-row:hover .tree-node-actions,
+.tree-node-row.is-selected .tree-node-actions {
+  opacity: 1;
+}
+
+.tree-node-action-button {
   border: 1px solid var(--color-border);
   background: var(--color-bg-app);
-  color: var(--color-text);
-  padding: 8px 10px;
-  border-radius: 0;
+  color: var(--color-text-muted);
+  width: 24px;
+  height: 24px;
   cursor: pointer;
+  border-radius: 4px;
+  font: inherit;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
+.tree-node-action-button:hover {
+  background: var(--color-tab-hover);
+  color: var(--color-text);
+}
 
 .workbench-inline-rename-input,
 .tree-inline-rename-input {
@@ -226,14 +271,6 @@ body {
   font: inherit;
 }
 
-.tree-item-delete {
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-app);
-  color: var(--color-text-muted);
-  width: 32px;
-  height: 32px;
-  cursor: pointer;
-}
 
 .workbench-right-column {
   flex: 1;

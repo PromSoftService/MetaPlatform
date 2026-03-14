@@ -100,7 +100,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearLegacyProjectTitlePlaceholder();
   });
 
-  const tree = createProjectTree({ logger, projectManager, tabs });
+  async function handleCreateComponentRequest(moduleId) {
+    const moduleDefaultNames = {
+      metagen: () => projectManager.getNextMetaGenDefaultName(),
+      metalab: () => 'Новый сценарий',
+      metaview: () => 'Новый экран'
+    };
+
+    const getDefaultName = moduleDefaultNames[moduleId] || (() => APP_CONFIG.ui.text.untitled);
+
+    await tabs.startTemporaryDocumentCreation({
+      moduleId,
+      defaultName: getDefaultName(),
+      onCommit: async ({ moduleId: confirmedModuleId, confirmedName }) => {
+        return projectManager.createDocument(confirmedModuleId, confirmedName);
+      }
+    });
+  }
+
+  async function handleDeleteComponentRequest(documentRecord) {
+    await tabs.closeTab(documentRecord.path);
+    await projectManager.deleteDocument(documentRecord.path);
+  }
+
+  const tree = createProjectTree({
+    logger,
+    projectManager,
+    tabs,
+    onCreateComponentRequest: handleCreateComponentRequest,
+    onDeleteComponentRequest: handleDeleteComponentRequest
+  });
 
   async function saveProjectFlow({ forceSaveAs = false } = {}) {
     const project = projectManager.getCurrentProject();

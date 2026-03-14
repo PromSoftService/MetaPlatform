@@ -213,6 +213,7 @@ PROJECT_FILES = [
   'renderer/styles/styles.css',
   'renderer/ui/applyStaticText.js',
   'renderer/ui/createProjectTree.js',
+  'renderer/ui/projectTree/treeAdapter.js',
   'renderer/ui/createWorkbenchTabs.js',
   'renderer/ui/dialogs.js',
   'renderer/ui/editorContextLifecycle.js',
@@ -223,6 +224,7 @@ PROJECT_FILES = [
   'tests/finalizeActiveTableEditing.test.js',
   'tests/finalizeEditingOnContextLeave.test.js',
   'tests/editorContextLifecycle.test.js',
+  'tests/projectTreeAdapter.test.js',
   'tests/tabEditLifecycle.test.js',
   'tests/windowCloseGuard.test.js',
   'vite.config.js',
@@ -334,6 +336,7 @@ PROJECT_FILES = [
   'renderer/styles/styles.css',
   'renderer/ui/applyStaticText.js',
   'renderer/ui/createProjectTree.js',
+  'renderer/ui/projectTree/treeAdapter.js',
   'renderer/ui/createWorkbenchTabs.js',
   'renderer/ui/dialogs.js',
   'renderer/ui/editorContextLifecycle.js',
@@ -344,6 +347,7 @@ PROJECT_FILES = [
   'tests/finalizeActiveTableEditing.test.js',
   'tests/finalizeEditingOnContextLeave.test.js',
   'tests/editorContextLifecycle.test.js',
+  'tests/projectTreeAdapter.test.js',
   'tests/tabEditLifecycle.test.js',
   'tests/windowCloseGuard.test.js',
   'vite.config.js',
@@ -951,7 +955,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearLegacyProjectTitlePlaceholder();
   });
 
-  const tree = createProjectTree({ logger, projectManager, tabs });
+  async function handleCreateComponentRequest(moduleId) {
+    const moduleDefaultNames = {
+      metagen: () => projectManager.getNextMetaGenDefaultName(),
+      metalab: () => 'Новый сценарий',
+      metaview: () => 'Новый экран'
+    };
+
+    const getDefaultName = moduleDefaultNames[moduleId] || (() => APP_CONFIG.ui.text.untitled);
+
+    await tabs.startTemporaryDocumentCreation({
+      moduleId,
+      defaultName: getDefaultName(),
+      onCommit: async ({ moduleId: confirmedModuleId, confirmedName }) => {
+        return projectManager.createDocument(confirmedModuleId, confirmedName);
+      }
+    });
+  }
+
+  async function handleDeleteComponentRequest(documentRecord) {
+    await tabs.closeTab(documentRecord.path);
+    await projectManager.deleteDocument(documentRecord.path);
+  }
+
+  const tree = createProjectTree({
+    logger,
+    projectManager,
+    tabs,
+    onCreateComponentRequest: handleCreateComponentRequest,
+    onDeleteComponentRequest: handleDeleteComponentRequest
+  });
 
   async function saveProjectFlow({ forceSaveAs = false } = {}) {
     const project = projectManager.getCurrentProject();
@@ -4671,41 +4704,86 @@ body {
   margin-bottom: 12px;
 }
 
-.tree-section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 12px 0 8px;
-  font-weight: 600;
+.tree-module-block {
+  margin-top: 12px;
 }
 
-.tree-add-button {
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-app);
-  cursor: pointer;
-  border-radius: 0;
-  width: 26px;
-  height: 26px;
+.tree-section-header {
+  margin: 0 0 8px;
 }
 
 .tree-item {
   margin-bottom: 6px;
-  display: flex;
-  gap: 6px;
-  align-items: center;
 }
 
-.tree-item-label {
-  width: 100%;
+.tree-node-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background-color 120ms ease-in-out, border-color 120ms ease-in-out;
+}
+
+.tree-node-row:hover {
+  background: var(--color-tab-hover);
+  border-color: var(--color-border-soft);
+}
+
+.tree-node-row.is-selected {
+  background: var(--color-tab-bg-active);
+  border-color: var(--color-border);
+  box-shadow: inset 0 -2px 0 0 var(--color-gutter-hover);
+}
+
+.tree-node-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
   text-align: left;
+  padding: 8px 10px;
+  cursor: pointer;
+  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-node-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 6px;
+  opacity: 0;
+  transition: opacity 120ms ease-in-out;
+}
+
+.tree-node-row:hover .tree-node-actions,
+.tree-node-row.is-selected .tree-node-actions {
+  opacity: 1;
+}
+
+.tree-node-action-button {
   border: 1px solid var(--color-border);
   background: var(--color-bg-app);
-  color: var(--color-text);
-  padding: 8px 10px;
-  border-radius: 0;
+  color: var(--color-text-muted);
+  width: 24px;
+  height: 24px;
   cursor: pointer;
+  border-radius: 4px;
+  font: inherit;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
+.tree-node-action-button:hover {
+  background: var(--color-tab-hover);
+  color: var(--color-text);
+}
 
 .workbench-inline-rename-input,
 .tree-inline-rename-input {
@@ -4718,14 +4796,6 @@ body {
   font: inherit;
 }
 
-.tree-item-delete {
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-app);
-  color: var(--color-text-muted);
-  width: 32px;
-  height: 32px;
-  cursor: pointer;
-}
 
 .workbench-right-column {
   flex: 1;
@@ -5011,6 +5081,13 @@ import { APP_CONFIG } from '../../config/app-config.js';
 import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
 import { METALAB_CONFIG } from '../modules/metalab/metalabConfig.js';
 import { METAVIEW_CONFIG } from '../modules/metaview/metaviewConfig.js';
+import {
+  TREE_NODE_TYPES,
+  buildProjectTreeNodes,
+  createTreeBehaviorConfig,
+  createTreeInteractionController,
+  getNodeActions
+} from './projectTree/treeAdapter.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -5018,24 +5095,12 @@ function createElement(tagName, classNames = []) {
   return node;
 }
 
-function normalizeName(name) {
-  return String(name ?? '').trim();
-}
-
-function getDocumentLabel(documentRecord) {
-  return (
-    documentRecord.document?.component?.name ||
-    documentRecord.document?.scenario?.name ||
-    documentRecord.document?.screen?.name ||
-    documentRecord.document?.name ||
-    APP_CONFIG.ui.text.untitled
-  );
-}
-
 export function createProjectTree({
   logger,
   projectManager,
-  tabs
+  tabs,
+  onCreateComponentRequest,
+  onDeleteComponentRequest
 }) {
   const treeRoot = document.getElementById(APP_CONFIG.ui.dom.projectTreeId);
   const projectPanelTitleNode = document.querySelector(APP_CONFIG.ui.dom.projectPanelTitleSelector);
@@ -5058,94 +5123,10 @@ export function createProjectTree({
     }
   ];
 
-  const clickGestureState = {
-    path: null,
-    at: 0
+  const behaviorConfig = createTreeBehaviorConfig();
+  const treeSelectionState = {
+    selectedNodeId: null
   };
-
-  async function startTreeInlineRename({ record, labelNode }) {
-    const previousName = getDocumentLabel(record);
-    const input = createElement('input', ['tree-inline-rename-input']);
-    input.type = 'text';
-    input.value = previousName;
-
-    labelNode.replaceWith(input);
-    input.focus();
-    input.select();
-
-    let finalized = false;
-
-    const finalize = async (commit) => {
-      if (finalized) {
-        return;
-      }
-
-      finalized = true;
-
-      if (commit) {
-        const nextName = normalizeName(input.value);
-        if (!nextName) {
-          logger.warn('project-tree', 'Пустое имя отклонено');
-        } else {
-          const renamed = await projectManager.renameDocument(record.path, nextName);
-          if (!renamed) {
-            logger.warn('project-tree', 'Переименование отклонено', { name: nextName });
-          }
-        }
-      }
-
-      await render();
-    };
-
-    input.addEventListener('keydown', async (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        await finalize(true);
-      }
-
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        await finalize(false);
-      }
-    });
-
-    input.addEventListener('blur', async () => {
-      await finalize(true);
-    });
-  }
-
-  function createTreeLabelClickHandler(documentRecord, labelNode) {
-    const quickDoubleClickMs = 300;
-    const renameMinDelayMs = 450;
-    const renameMaxDelayMs = 900;
-
-    return async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const now = Date.now();
-      const isSameTarget = clickGestureState.path === documentRecord.path;
-      const delta = isSameTarget ? now - clickGestureState.at : Number.POSITIVE_INFINITY;
-
-      if (!isSameTarget || delta > renameMaxDelayMs) {
-        clickGestureState.path = documentRecord.path;
-        clickGestureState.at = now;
-        return;
-      }
-
-      clickGestureState.path = null;
-      clickGestureState.at = 0;
-
-      if (delta <= quickDoubleClickMs) {
-        await tabs.openDocument(documentRecord);
-        return;
-      }
-
-      if (delta >= renameMinDelayMs) {
-        await startTreeInlineRename({ record: documentRecord, labelNode });
-      }
-    };
-  }
 
   async function startDocumentCreation(sectionConfig) {
     await tabs.startTemporaryDocumentCreation({
@@ -5155,6 +5136,83 @@ export function createProjectTree({
         return projectManager.createDocument(moduleId, confirmedName);
       }
     });
+  }
+
+  const interactionController = createTreeInteractionController({
+    tabs,
+    onCreateComponentRequest: onCreateComponentRequest || (async (moduleId, nodeData) => {
+      const sectionConfig = moduleSections.find((section) => section.moduleId === moduleId);
+
+      if (!sectionConfig) {
+        logger.warn('project-tree', 'Не найден модуль для создания компонента', {
+          moduleId,
+          nodeData
+        });
+        return;
+      }
+
+      await startDocumentCreation(sectionConfig);
+    }),
+    onDeleteComponentRequest: onDeleteComponentRequest || (async (documentRecord) => {
+      tabs.closeTab(documentRecord.path);
+      await projectManager.deleteDocument(documentRecord.path);
+    })
+  });
+
+  function renderNodeRow(nodeData, rowClassName = 'tree-node-row') {
+    const row = createElement('div', [rowClassName]);
+    row.dataset.nodeType = nodeData.nodeType;
+    row.dataset.nodeId = nodeData.id;
+
+    const label = createElement('button', ['tree-node-label']);
+    label.type = 'button';
+    label.textContent = nodeData.label;
+
+    label.addEventListener('click', async (event) => {
+      event.preventDefault();
+
+      treeSelectionState.selectedNodeId = nodeData.id;
+      await interactionController.onNodePrimaryClick(nodeData);
+      await render();
+    });
+
+    row.appendChild(label);
+
+    const actions = getNodeActions(nodeData);
+
+    if (actions.length > 0) {
+      const actionsContainer = createElement('div', ['tree-node-actions']);
+
+      for (const action of actions) {
+        if (!action.visible) {
+          continue;
+        }
+
+        const actionButton = createElement('button', ['tree-node-action-button']);
+        actionButton.type = 'button';
+        actionButton.title = action.title;
+        actionButton.setAttribute('aria-label', action.title);
+        actionButton.textContent = action.icon;
+
+        actionButton.addEventListener('click', async (event) => {
+          await interactionController.onNodeActionClick({
+            actionId: action.id,
+            nodeData,
+            event
+          });
+        });
+
+        actionsContainer.appendChild(actionButton);
+      }
+
+      row.appendChild(actionsContainer);
+    }
+
+    if (treeSelectionState.selectedNodeId === nodeData.id) {
+      row.classList.add('is-selected');
+    }
+
+    return row;
   }
 
   async function render() {
@@ -5170,56 +5228,41 @@ export function createProjectTree({
       return;
     }
 
-    const projectNode = createElement('div', [APP_CONFIG.ui.classNames.projectNode]);
-    projectNode.textContent = project.project.name;
-    treeRoot.appendChild(projectNode);
+    const treeNodes = buildProjectTreeNodes({
+      project,
+      moduleSections,
+      getDocumentsByModule: (moduleId) => projectManager.getDocumentsByModule(moduleId)
+    });
 
-    for (const sectionConfig of moduleSections) {
-      const section = createElement('div');
-      const header = createElement('div', ['tree-section-header']);
-      header.textContent = sectionConfig.moduleName;
-
-      const addButton = createElement('button', ['tree-add-button']);
-      addButton.type = 'button';
-      addButton.textContent = '+';
-      addButton.addEventListener('click', async () => {
-        await startDocumentCreation(sectionConfig);
-      });
-
-      header.appendChild(addButton);
-      section.appendChild(header);
-
-      const moduleDocuments = projectManager.getDocumentsByModule(sectionConfig.moduleId);
-
-      for (const documentRecord of moduleDocuments) {
-        const item = createElement('div', [APP_CONFIG.ui.classNames.treeItem]);
-        const label = createElement('button', [APP_CONFIG.ui.classNames.treeItemLabel]);
-        label.type = 'button';
-        label.textContent = getDocumentLabel(documentRecord);
-
-        const onLabelClick = createTreeLabelClickHandler(documentRecord, label);
-        label.addEventListener('click', onLabelClick);
-
-        const deleteButton = createElement('button', ['tree-item-delete']);
-        deleteButton.type = 'button';
-        deleteButton.textContent = '🗑';
-        deleteButton.title = 'Удалить документ';
-        deleteButton.addEventListener('click', async (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          tabs.closeTab(documentRecord.path);
-          await projectManager.deleteDocument(documentRecord.path);
-        });
-
-        item.appendChild(label);
-        item.appendChild(deleteButton);
-        section.appendChild(item);
+    for (const nodeData of treeNodes) {
+      if (nodeData.nodeType === TREE_NODE_TYPES.project) {
+        const projectNode = createElement('div', [APP_CONFIG.ui.classNames.projectNode]);
+        projectNode.textContent = nodeData.label;
+        treeRoot.appendChild(projectNode);
+        continue;
       }
 
-      treeRoot.appendChild(section);
+      if (nodeData.nodeType === TREE_NODE_TYPES.module) {
+        const moduleBlock = createElement('div', ['tree-module-block']);
+        moduleBlock.appendChild(renderNodeRow(nodeData, 'tree-section-header tree-node-row'));
+
+        const documentsContainer = createElement('div', ['tree-module-children']);
+
+        for (const documentNode of nodeData.children || []) {
+          const item = createElement('div', [APP_CONFIG.ui.classNames.treeItem]);
+          item.appendChild(renderNodeRow(documentNode));
+          documentsContainer.appendChild(item);
+        }
+
+        moduleBlock.appendChild(documentsContainer);
+        treeRoot.appendChild(moduleBlock);
+      }
     }
 
-    logger.info('project-tree', 'Дерево проекта обновлено');
+    logger.info('project-tree', 'Дерево проекта обновлено', {
+      inlineRenameEnabled: behaviorConfig.inlineRenameEnabled,
+      slowDoubleClickRenameEnabled: behaviorConfig.slowDoubleClickRenameEnabled
+    });
   }
 
   projectManager.subscribe(() => {
@@ -5231,6 +5274,132 @@ export function createProjectTree({
   });
 
   return { render };
+}
+
+
+==================================================
+FILE: renderer/ui/projectTree/treeAdapter.js
+==================================================
+
+import { APP_CONFIG } from '../../../config/app-config.js';
+
+export const TREE_NODE_TYPES = {
+  project: 'project',
+  module: 'module',
+  document: 'document'
+};
+
+export function getDocumentLabel(documentRecord) {
+  return (
+    documentRecord.document?.component?.name ||
+    documentRecord.document?.scenario?.name ||
+    documentRecord.document?.screen?.name ||
+    documentRecord.document?.name ||
+    APP_CONFIG.ui.text.untitled
+  );
+}
+
+export function createTreeBehaviorConfig() {
+  return {
+    inlineRenameEnabled: false,
+    slowDoubleClickRenameEnabled: false
+  };
+}
+
+export function buildProjectTreeNodes({ project, moduleSections, getDocumentsByModule }) {
+  if (!project) {
+    return [];
+  }
+
+  return [
+    {
+      nodeType: TREE_NODE_TYPES.project,
+      id: `project:${project.project?.name || 'unnamed'}`,
+      label: project.project?.name || APP_CONFIG.ui.text.untitled,
+      project
+    },
+    ...moduleSections.map((sectionConfig) => ({
+      nodeType: TREE_NODE_TYPES.module,
+      id: `module:${sectionConfig.moduleId}`,
+      moduleId: sectionConfig.moduleId,
+      moduleName: sectionConfig.moduleName,
+      label: sectionConfig.moduleName,
+      sectionConfig,
+      children: getDocumentsByModule(sectionConfig.moduleId).map((documentRecord) => ({
+        nodeType: TREE_NODE_TYPES.document,
+        id: `document:${documentRecord.path}`,
+        label: getDocumentLabel(documentRecord),
+        moduleId: sectionConfig.moduleId,
+        path: documentRecord.path,
+        documentRecord
+      }))
+    }))
+  ];
+}
+
+export function getNodeActions(nodeData) {
+  if (nodeData?.nodeType === TREE_NODE_TYPES.module) {
+    return [
+      {
+        id: 'create-component',
+        title: 'Добавить компонент',
+        icon: '+',
+        visible: true
+      }
+    ];
+  }
+
+  if (nodeData?.nodeType === TREE_NODE_TYPES.document) {
+    return [
+      {
+        id: 'delete-component',
+        title: 'Удалить компонент',
+        icon: '🗑',
+        visible: true
+      }
+    ];
+  }
+
+  return [];
+}
+
+export function createTreeInteractionController({
+  tabs,
+  onCreateComponentRequest,
+  onDeleteComponentRequest
+}) {
+  async function onNodePrimaryClick(nodeData) {
+    if (nodeData?.nodeType !== TREE_NODE_TYPES.document) {
+      return { handled: false, reason: 'non-document-node' };
+    }
+
+    await tabs.openOrActivateDocument(nodeData.documentRecord);
+    return { handled: true, reason: 'document-open-or-activate' };
+  }
+
+  async function onNodeActionClick({ actionId, nodeData, event }) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if (actionId === 'create-component' && nodeData?.nodeType === TREE_NODE_TYPES.module) {
+      await onCreateComponentRequest?.(nodeData.moduleId, nodeData);
+      return { handled: true, reason: 'create-component' };
+    }
+
+    if (actionId === 'delete-component' && nodeData?.nodeType === TREE_NODE_TYPES.document) {
+      await onDeleteComponentRequest?.(nodeData.documentRecord, nodeData);
+      return { handled: true, reason: 'delete-component' };
+    }
+
+    return { handled: false, reason: 'unsupported-action' };
+  }
+
+  return {
+    onNodePrimaryClick,
+    onNodeActionClick
+  };
 }
 
 
@@ -5642,6 +5811,28 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     return true;
   }
 
+
+  function findTabByDocument(documentRecord) {
+    const tabId = documentRecord?.path;
+
+    if (!tabId || !tabs.has(tabId)) {
+      return null;
+    }
+
+    return tabs.get(tabId);
+  }
+
+  async function openOrActivateDocument(documentRecord, options = {}) {
+    const existingEntry = findTabByDocument(documentRecord);
+
+    if (existingEntry) {
+      await activateTab(existingEntry.tabId);
+      return existingEntry;
+    }
+
+    return openDocument(documentRecord, options);
+  }
+
   async function openDocument(documentRecord, { startRenameMode = false } = {}) {
     const tabId = documentRecord.path;
 
@@ -5743,6 +5934,8 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
 
   return {
     openDocument,
+    openOrActivateDocument,
+    findTabByDocument,
     activateTab,
     closeTab,
     closeAllTabs,
@@ -7109,6 +7302,212 @@ test('failed context finalization reports failed outcome and logs once', async (
   assert.equal(result.outcome, 'failed');
   assert.equal(logger.calls.length, 1);
   assert.match(logger.calls[0].message, /Ошибка завершения редактирования перед сменой контекста/);
+});
+
+
+==================================================
+FILE: tests/projectTreeAdapter.test.js
+==================================================
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  TREE_NODE_TYPES,
+  buildProjectTreeNodes,
+  createTreeBehaviorConfig,
+  createTreeInteractionController,
+  getNodeActions
+} from '../renderer/ui/projectTree/treeAdapter.js';
+
+function createProjectFixture() {
+  return {
+    project: { name: 'Demo' },
+    documents: {
+      metagen: [
+        {
+          moduleId: 'metagen',
+          path: '/tmp/metagen/a.yaml',
+          document: { component: { name: 'Component A' } }
+        }
+      ],
+      metalab: [],
+      metaview: []
+    }
+  };
+}
+
+function createModuleSections() {
+  return [
+    { moduleId: 'metagen', moduleName: 'metagen' },
+    { moduleId: 'metalab', moduleName: 'metalab' },
+    { moduleId: 'metaview', moduleName: 'metaview' }
+  ];
+}
+
+test('document single click activates existing tab if already open', async () => {
+  const calls = [];
+  const controller = createTreeInteractionController({
+    tabs: {
+      openOrActivateDocument: async (documentRecord) => {
+        calls.push({ type: 'activate', path: documentRecord.path });
+      }
+    }
+  });
+
+  const documentNode = {
+    nodeType: TREE_NODE_TYPES.document,
+    documentRecord: { path: '/tmp/metagen/a.yaml' }
+  };
+
+  const result = await controller.onNodePrimaryClick(documentNode);
+  assert.equal(result.handled, true);
+  assert.deepEqual(calls, [{ type: 'activate', path: '/tmp/metagen/a.yaml' }]);
+});
+
+test('document single click opens document if tab not open', async () => {
+  const calls = [];
+  const controller = createTreeInteractionController({
+    tabs: {
+      openOrActivateDocument: async (documentRecord) => {
+        calls.push({ type: 'open-or-activate', path: documentRecord.path });
+      }
+    }
+  });
+
+  const result = await controller.onNodePrimaryClick({
+    nodeType: TREE_NODE_TYPES.document,
+    documentRecord: { path: '/tmp/metagen/new.yaml' }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].path, '/tmp/metagen/new.yaml');
+});
+
+test('module and project node click does not open document', async () => {
+  let openCalls = 0;
+  const controller = createTreeInteractionController({
+    tabs: {
+      openOrActivateDocument: async () => {
+        openCalls += 1;
+      }
+    }
+  });
+
+  const projectResult = await controller.onNodePrimaryClick({ nodeType: TREE_NODE_TYPES.project });
+  const moduleResult = await controller.onNodePrimaryClick({ nodeType: TREE_NODE_TYPES.module });
+
+  assert.equal(projectResult.handled, false);
+  assert.equal(moduleResult.handled, false);
+  assert.equal(openCalls, 0);
+});
+
+test('module nodes expose create action and route callback with moduleId and node payload', async () => {
+  const createCalls = [];
+  const nodeData = {
+    nodeType: TREE_NODE_TYPES.module,
+    moduleId: 'metagen',
+    label: 'metagen'
+  };
+
+  const actions = getNodeActions(nodeData);
+  assert.equal(actions.some((action) => action.id === 'create-component'), true);
+
+  const controller = createTreeInteractionController({
+    tabs: { openOrActivateDocument: async () => {} },
+    onCreateComponentRequest: async (moduleId, nodePayload) => {
+      createCalls.push({ moduleId, nodePayload });
+    }
+  });
+
+  await controller.onNodeActionClick({ actionId: 'create-component', nodeData });
+  assert.equal(createCalls.length, 1);
+  assert.equal(createCalls[0].moduleId, 'metagen');
+  assert.equal(createCalls[0].nodePayload, nodeData);
+});
+
+test('document nodes expose delete action and route callback with document payload', async () => {
+  const deleteCalls = [];
+  const documentRecord = { path: '/tmp/metagen/a.yaml', moduleId: 'metagen' };
+  const nodeData = {
+    nodeType: TREE_NODE_TYPES.document,
+    documentRecord
+  };
+
+  const actions = getNodeActions(nodeData);
+  assert.equal(actions.some((action) => action.id === 'delete-component'), true);
+
+  const controller = createTreeInteractionController({
+    tabs: { openOrActivateDocument: async () => {} },
+    onDeleteComponentRequest: async (record, nodePayload) => {
+      deleteCalls.push({ record, nodePayload });
+    }
+  });
+
+  await controller.onNodeActionClick({ actionId: 'delete-component', nodeData });
+  assert.equal(deleteCalls.length, 1);
+  assert.equal(deleteCalls[0].record, documentRecord);
+  assert.equal(deleteCalls[0].nodePayload, nodeData);
+});
+
+test('action button click isolates DOM event and does not trigger node activation flow', async () => {
+  let prevented = false;
+  let stopped = false;
+  let openCalls = 0;
+
+  const controller = createTreeInteractionController({
+    tabs: {
+      openOrActivateDocument: async () => {
+        openCalls += 1;
+      }
+    },
+    onDeleteComponentRequest: async () => {}
+  });
+
+  await controller.onNodeActionClick({
+    actionId: 'delete-component',
+    nodeData: {
+      nodeType: TREE_NODE_TYPES.document,
+      documentRecord: { path: '/tmp/metagen/a.yaml' }
+    },
+    event: {
+      preventDefault: () => {
+        prevented = true;
+      },
+      stopPropagation: () => {
+        stopped = true;
+      }
+    }
+  });
+
+  assert.equal(prevented, true);
+  assert.equal(stopped, true);
+  assert.equal(openCalls, 0);
+});
+
+test('rename via slow double click is disabled at tree behavior config layer', () => {
+  const config = createTreeBehaviorConfig();
+
+  assert.equal(config.inlineRenameEnabled, false);
+  assert.equal(config.slowDoubleClickRenameEnabled, false);
+});
+
+test('tree node mapping keeps node typing and metadata for future context menu support', () => {
+  const project = createProjectFixture();
+  const nodes = buildProjectTreeNodes({
+    project,
+    moduleSections: createModuleSections(),
+    getDocumentsByModule: (moduleId) => project.documents[moduleId] || []
+  });
+
+  assert.equal(nodes[0].nodeType, TREE_NODE_TYPES.project);
+  const moduleNode = nodes.find((node) => node.nodeType === TREE_NODE_TYPES.module && node.moduleId === 'metagen');
+  assert.ok(moduleNode);
+  assert.equal(moduleNode.label, 'metagen');
+  assert.equal(moduleNode.children.length, 1);
+  assert.equal(moduleNode.children[0].nodeType, TREE_NODE_TYPES.document);
+  assert.equal(moduleNode.children[0].path, '/tmp/metagen/a.yaml');
 });
 
 

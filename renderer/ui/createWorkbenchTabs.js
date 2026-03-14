@@ -402,6 +402,28 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     return true;
   }
 
+
+  function findTabByDocument(documentRecord) {
+    const tabId = documentRecord?.path;
+
+    if (!tabId || !tabs.has(tabId)) {
+      return null;
+    }
+
+    return tabs.get(tabId);
+  }
+
+  async function openOrActivateDocument(documentRecord, options = {}) {
+    const existingEntry = findTabByDocument(documentRecord);
+
+    if (existingEntry) {
+      await activateTab(existingEntry.tabId);
+      return existingEntry;
+    }
+
+    return openDocument(documentRecord, options);
+  }
+
   async function openDocument(documentRecord, { startRenameMode = false } = {}) {
     const tabId = documentRecord.path;
 
@@ -503,6 +525,8 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
 
   return {
     openDocument,
+    openOrActivateDocument,
+    findTabByDocument,
     activateTab,
     closeTab,
     closeAllTabs,
