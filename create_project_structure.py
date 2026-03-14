@@ -54,6 +54,7 @@ PROJECT_FILES = [
   'renderer/modules/metaview/metaviewDocumentFactory.js',
   'renderer/modules/metaview/metaviewModule.js',
   'renderer/runtime/documentLoader.js',
+  'renderer/runtime/appCloseCoordinator.js',
   'renderer/runtime/fileSystemBridge.js',
   'renderer/runtime/idFactory.js',
   'renderer/runtime/naming.js',
@@ -63,8 +64,11 @@ PROJECT_FILES = [
   'renderer/ui/createWorkbenchTabs.js',
   'renderer/ui/dialogs.js',
   'renderer/ui/workbenchShell.js',
+  'tests/appCloseCoordinator.test.js',
   'tests/projectManager.save.integration.test.js',
+  'tests/windowCloseGuard.test.js',
   'vite.config.js',
+  'windowCloseGuard.js',
 ]
 
 

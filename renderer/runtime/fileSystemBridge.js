@@ -8,6 +8,8 @@ export function createFileSystemBridge() {
   return {
     openProjectFileDialog: () => api.openProjectFileDialog(),
     requestAppQuit: () => api.requestAppQuit(),
+    approveWindowClose: () => api.approveWindowClose(),
+    cancelWindowClose: () => api.cancelWindowClose(),
     saveProjectFileAsDialog: (defaultPath) => api.saveProjectFileAsDialog(defaultPath),
     ensureDir: (targetPath) => api.ensureDir(targetPath),
     exists: (targetPath) => api.exists(targetPath),
@@ -17,6 +19,7 @@ export function createFileSystemBridge() {
     deleteFile: (targetPath) => api.deleteFile(targetPath),
     deleteDir: (targetPath) => api.deleteDir(targetPath),
     listFiles: (targetDir, extensions = []) => api.listFiles(targetDir, extensions),
+    onWindowCloseRequested: (listener) => api.onWindowCloseRequested(listener),
     onMenuAction: (listener) => api.onMenuAction(listener)
   };
 }

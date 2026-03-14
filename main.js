@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { APP_CONFIG } from './config/app-config.js';
+import { createWindowCloseGuard } from './windowCloseGuard.js';
 
 function createAppMenu(mainWindow) {
   const sendAction = (action) => {
@@ -30,6 +31,9 @@ function createAppMenu(mainWindow) {
   Menu.setApplicationMenu(menu);
 }
 
+let mainWindow = null;
+const windowCloseGuard = createWindowCloseGuard();
+
 function createWindow() {
   const win = new BrowserWindow({
     width: APP_CONFIG.platform.window.width,
@@ -55,7 +59,29 @@ function createWindow() {
     }
   });
 
+  win.on('close', (event) => {
+    const decision = windowCloseGuard.handleCloseAttempt({
+      isWindowDestroyed: win.isDestroyed()
+    });
+
+    if (decision.preventDefault) {
+      event.preventDefault();
+    }
+
+    if (decision.requestRendererConfirmation) {
+      win.webContents.send('window:close-requested');
+    }
+  });
+
+  win.on('closed', () => {
+    if (mainWindow === win) {
+      mainWindow = null;
+      windowCloseGuard.reset();
+    }
+  });
+
   win.loadURL(APP_CONFIG.platform.window.devServerUrl);
+  return win;
 }
 
 app.whenReady().then(() => {
@@ -93,7 +119,23 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('app:quit', async () => {
+    windowCloseGuard.approveClose();
     app.quit();
+    return true;
+  });
+
+  ipcMain.handle('window:close-approved', async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return false;
+    }
+
+    windowCloseGuard.approveClose();
+    mainWindow.close();
+    return true;
+  });
+
+  ipcMain.handle('window:close-cancelled', async () => {
+    windowCloseGuard.cancelClose();
     return true;
   });
 
@@ -174,7 +216,7 @@ app.whenReady().then(() => {
     return output;
   });
 
-  createWindow();
+  mainWindow = createWindow();
 });
 
 app.on('window-all-closed', () => {

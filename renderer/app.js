@@ -8,6 +8,7 @@ import { initWorkbenchLayout } from './core/layout.js';
 import { createWorkbenchTabs } from './ui/createWorkbenchTabs.js';
 import { createProjectTree } from './ui/createProjectTree.js';
 import { showSaveChangesDialog } from './ui/dialogs.js';
+import { createAppCloseCoordinator } from './runtime/appCloseCoordinator.js';
 
 import { createMetaGenModule } from './modules/metagen/metagenModule.js';
 import { createMetaLabModule } from './modules/metalab/metalabModule.js';
@@ -204,15 +205,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     await projectManager.closeProject();
   }
 
+  const appCloseCoordinator = createAppCloseCoordinator({
+    confirmSaveIfDirty,
+    requestAppQuit: () => fileSystem.requestAppQuit(),
+    approveWindowClose: () => fileSystem.approveWindowClose(),
+    cancelWindowClose: () => fileSystem.cancelWindowClose()
+  });
+
   async function exitFlow() {
-    const canContinue = await confirmSaveIfDirty();
-
-    if (canContinue === 'cancel') {
-      return;
-    }
-
-    await fileSystem.requestAppQuit();
+    await appCloseCoordinator.requestExit();
   }
+
+  fileSystem.onWindowCloseRequested(async () => {
+    try {
+      await appCloseCoordinator.handleWindowCloseRequested();
+    } catch (error) {
+      logger.error('window-close', 'Ошибка обработки запроса закрытия окна', {
+        message: error?.message || String(error)
+      });
+
+      try {
+        await fileSystem.cancelWindowClose();
+      } catch (cancelError) {
+        logger.error('window-close', 'Ошибка отмены закрытия окна', {
+          message: cancelError?.message || String(cancelError)
+        });
+      }
+    }
+  });
 
   fileSystem.onMenuAction(async (action) => {
     try {
