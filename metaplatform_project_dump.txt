@@ -77,7 +77,8 @@ FILE: config/project-config.js
 
 export const PROJECT_CONFIG = {
   defaultProjectRelativePath: 'project-examples/demo-feedmill',
-  projectFileName: 'project.yaml',
+  defaultProjectFileName: 'project.yaml',
+  allowedProjectFileExtensions: ['.yaml', '.yml'],
 
   folders: {
     metagen: 'metagen',
@@ -94,6 +95,7 @@ export const PROJECT_CONFIG = {
     root: 'metaplatform.project'
   }
 };
+
 
 ==================================================
 FILE: config/ui-config.js
@@ -455,8 +457,7 @@ app.whenReady().then(() => {
       return null;
     }
 
-    const normalized = path.join(path.dirname(result.filePath), APP_CONFIG.project.projectFileName);
-    return normalized;
+    return result.filePath;
   });
 
   ipcMain.handle('app:quit', async () => {
@@ -799,8 +800,8 @@ function joinPaths(...parts) {
     .replace(/\/{2,}/g, '/');
 }
 
-function buildProjectFilePath(projectRoot) {
-  return joinPaths(projectRoot, APP_CONFIG.project.projectFileName);
+function buildProjectFilePath(projectRoot, projectFileName = APP_CONFIG.project.defaultProjectFileName) {
+  return joinPaths(projectRoot, projectFileName);
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -889,8 +890,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const openDocuments = await tabs.collectOpenDocumentRecords();
 
     if (project.isUnsaved || forceSaveAs) {
+      const projectStem = String(project.project?.name || 'project').trim() || 'project';
       const suggestedPath = project.projectFilePath
-        || (project.rootPath ? buildProjectFilePath(project.rootPath) : buildProjectFilePath(project.project?.name || 'project'));
+        || buildProjectFilePath(project.rootPath || '.', `${projectStem}.yaml`);
       const targetProjectFilePath = await fileSystem.saveProjectFileAsDialog(suggestedPath);
 
       if (!targetProjectFilePath) {
@@ -1293,8 +1295,8 @@ function joinPaths(...parts) {
     .replace(/\/{2,}/g, '/');
 }
 
-function buildProjectFilePath(projectRoot) {
-  return joinPaths(projectRoot, APP_CONFIG.project.projectFileName);
+function buildProjectFilePath(projectRoot, projectFileName = APP_CONFIG.project.defaultProjectFileName) {
+  return joinPaths(projectRoot, projectFileName);
 }
 
 function dirnameOf(targetPath) {
@@ -1312,7 +1314,7 @@ function dirnameOf(targetPath) {
   return normalized.slice(0, index);
 }
 
-function normalizeProjectFilePath(projectFilePath, { strictFileName = false, normalizeToEntryFile = false } = {}) {
+function normalizeProjectFilePath(projectFilePath) {
   const normalized = String(projectFilePath || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
 
   if (!normalized) {
@@ -1320,18 +1322,15 @@ function normalizeProjectFilePath(projectFilePath, { strictFileName = false, nor
   }
 
   const baseName = normalized.split('/').pop() || '';
-  const isYaml = /\.ya?ml$/i.test(baseName);
-
-  if (!isYaml) {
+  if (!baseName || !baseName.includes('.')) {
     throw new Error(`Project file path must point to a YAML file: ${projectFilePath}`);
   }
 
-  if (strictFileName && baseName !== APP_CONFIG.project.projectFileName) {
-    throw new Error(`Project entry file must be ${APP_CONFIG.project.projectFileName}: ${projectFilePath}`);
-  }
+  const ext = getFileExtension(baseName).toLowerCase();
+  const allowed = APP_CONFIG.project.allowedProjectFileExtensions || ['.yaml', '.yml'];
 
-  if (normalizeToEntryFile) {
-    return buildProjectFilePath(dirnameOf(normalized) || '.');
+  if (!allowed.includes(ext)) {
+    throw new Error(`Project file path must point to a YAML file: ${projectFilePath}`);
   }
 
   return normalized;
@@ -1373,10 +1372,10 @@ function normalizeDocumentName(name) {
   return String(name ?? '').trim();
 }
 
-function getProjectNameFromRoot(targetRoot) {
-  const normalized = String(targetRoot || '').replace(/\\/g, '/').replace(/\/+$/, '');
-  const lastSegment = normalized.split('/').pop();
-  return normalizeDocumentName(lastSegment || '');
+function getProjectDisplayNameFromFilePath(projectFilePath) {
+  const normalized = normalizeProjectFilePath(projectFilePath);
+  const baseName = normalized.split('/').pop() || '';
+  return normalizeDocumentName(stripFileExtension(baseName));
 }
 
 function getDocumentName(documentRecord) {
@@ -1568,8 +1567,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return joinPaths(targetRoot, `.backup-${moduleFolder}`);
   }
 
-  function buildProjectFileBackupPath(targetRoot) {
-    return joinPaths(targetRoot, '.backup-project.yaml');
+  function buildProjectFileBackupPath(targetRoot, projectFileName) {
+    return joinPaths(targetRoot, `.backup-${projectFileName}`);
   }
 
   async function removeDirectoryIfExists(targetPath) {
@@ -1624,10 +1623,10 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
   }
 
-  async function promoteProjectFile(targetRoot) {
-    const stagingProjectFilePath = joinPaths(buildSaveStagingRoot(targetRoot), APP_CONFIG.project.projectFileName);
-    const finalProjectFilePath = buildProjectFilePath(targetRoot);
-    const backupProjectFilePath = buildProjectFileBackupPath(targetRoot);
+  async function promoteProjectFile(targetRoot, projectFileName) {
+    const stagingProjectFilePath = joinPaths(buildSaveStagingRoot(targetRoot), projectFileName);
+    const finalProjectFilePath = buildProjectFilePath(targetRoot, projectFileName);
+    const backupProjectFilePath = buildProjectFileBackupPath(targetRoot, projectFileName);
 
     await fileSystem.deleteFile(backupProjectFilePath);
 
@@ -1650,9 +1649,9 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
   }
 
-  async function rollbackPromotedProjectFile(targetRoot) {
-    const finalProjectFilePath = buildProjectFilePath(targetRoot);
-    const backupProjectFilePath = buildProjectFileBackupPath(targetRoot);
+  async function rollbackPromotedProjectFile(targetRoot, projectFileName) {
+    const finalProjectFilePath = buildProjectFilePath(targetRoot, projectFileName);
+    const backupProjectFilePath = buildProjectFileBackupPath(targetRoot, projectFileName);
 
     if (await fileSystem.exists(finalProjectFilePath)) {
       await fileSystem.deleteFile(finalProjectFilePath);
@@ -1663,11 +1662,11 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
   }
 
-  async function cleanupSaveBackups(targetRoot) {
+  async function cleanupSaveBackups(targetRoot, projectFileName) {
     await removeDirectoryIfExists(buildModuleBackupDir(targetRoot, APP_CONFIG.project.folders.metagen));
     await removeDirectoryIfExists(buildModuleBackupDir(targetRoot, APP_CONFIG.project.folders.metalab));
     await removeDirectoryIfExists(buildModuleBackupDir(targetRoot, APP_CONFIG.project.folders.metaview));
-    await fileSystem.deleteFile(buildProjectFileBackupPath(targetRoot));
+    await fileSystem.deleteFile(buildProjectFileBackupPath(targetRoot, projectFileName));
   }
 
   async function cleanupSaveStaging(targetRoot) {
@@ -1675,16 +1674,16 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
 
-  async function performSaveRollback(targetRoot, promotedModules, projectFilePromoted, originalError) {
+  async function performSaveRollback(targetRoot, projectFileName, promotedModules, projectFilePromoted, originalError) {
     // При сбое commit пытаемся откатить максимум уже продвинутых сущностей.
     // Ошибки rollback не должны скрывать исходную причину сбоя, но и не должны обрывать остальные шаги отката.
     const rollbackErrors = [];
 
     if (projectFilePromoted) {
       try {
-        await rollbackPromotedProjectFile(targetRoot);
+        await rollbackPromotedProjectFile(targetRoot, projectFileName);
       } catch (error) {
-        rollbackErrors.push(new Error(`project.yaml rollback failed: ${error?.message || String(error)}`));
+        rollbackErrors.push(new Error(`project file rollback failed: ${error?.message || String(error)}`));
       }
     }
 
@@ -1712,9 +1711,11 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
   function createProjectRuntime({ rootPath, projectFilePath = null, raw, documents, isUnsaved = false, isDirty = false }) {
     const normalizedRootPath = rootPath ? String(rootPath).replace(/\\/g, '/') : null;
-    const resolvedProjectFilePath = normalizedRootPath
-      ? (projectFilePath || buildProjectFilePath(normalizedRootPath))
-      : null;
+    const resolvedProjectFilePath = projectFilePath ? normalizeProjectFilePath(projectFilePath) : null;
+
+    if (resolvedProjectFilePath && raw?.project) {
+      raw.project.name = getProjectDisplayNameFromFilePath(resolvedProjectFilePath);
+    }
 
     return {
       rootPath: normalizedRootPath,
@@ -1742,19 +1743,20 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return currentProject;
   }
 
-  async function hydrateProjectRuntimeFromDisk(projectRoot) {
-    const projectFilePath = buildProjectFilePath(projectRoot);
-    const exists = await fileSystem.exists(projectFilePath);
+  async function hydrateProjectRuntimeFromDisk(projectFilePath) {
+    const normalizedProjectFilePath = normalizeProjectFilePath(projectFilePath);
+    const projectRoot = getProjectRootFromProjectFile(normalizedProjectFilePath);
+    const exists = await fileSystem.exists(normalizedProjectFilePath);
 
     if (!exists) {
-      throw new Error(`project.yaml не найден: ${projectRoot}`);
+      throw new Error(`Project file not found: ${normalizedProjectFilePath}`);
     }
 
-    const projectFile = await documentLoader.loadYaml(projectFilePath);
+    const projectFile = await documentLoader.loadYaml(normalizedProjectFilePath);
 
     return createProjectRuntime({
       rootPath: projectRoot,
-      projectFilePath,
+      projectFilePath: normalizedProjectFilePath,
       raw: projectFile.data,
       documents: {
         metagen: await scanModuleDocuments(projectRoot, APP_CONFIG.project.folders.metagen, 'metagen'),
@@ -1767,10 +1769,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function openProject(projectFilePath) {
-    const normalizedProjectFilePath = normalizeProjectFilePath(projectFilePath, { strictFileName: true });
-    const projectRoot = getProjectRootFromProjectFile(normalizedProjectFilePath);
-    currentProject = await hydrateProjectRuntimeFromDisk(projectRoot);
-    currentProject.projectFilePath = buildProjectFilePath(projectRoot);
+    const normalizedProjectFilePath = normalizeProjectFilePath(projectFilePath);
+    currentProject = await hydrateProjectRuntimeFromDisk(normalizedProjectFilePath);
 
     onProjectLoaded?.({ projectRuntime: currentProject });
     emitChange();
@@ -1789,7 +1789,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return currentProject;
     }
 
-    const hydrated = await hydrateProjectRuntimeFromDisk(currentProject.rootPath);
+    const hydrated = await hydrateProjectRuntimeFromDisk(currentProject.projectFilePath);
     currentProject.documents = hydrated.documents;
     currentProject.raw = hydrated.raw;
     currentProject.project = hydrated.project;
@@ -2027,7 +2027,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return true;
   }
 
-  async function saveProjectToRoot(targetRoot, openDocuments = [], { renameProjectFromRoot = false } = {}) {
+  async function saveProjectToRoot(targetProjectFilePath, openDocuments = []) {
     if (!currentProject) {
       throw new Error('Project is not opened');
     }
@@ -2071,21 +2071,19 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const docs = Array.from(recordsByIdentity.values());
 
     // prepare payload
+    const normalizedTargetProjectFilePath = normalizeProjectFilePath(targetProjectFilePath);
+    const targetRoot = getProjectRootFromProjectFile(normalizedTargetProjectFilePath);
+    const targetProjectFileName = normalizedTargetProjectFilePath.split('/').pop();
+
     await ensureProjectDirectories(targetRoot);
 
-    const targetProjectName = getProjectNameFromRoot(targetRoot);
-    const shouldReplaceDefaultName = currentProject.isUnsaved
-      && normalizeDocumentName(currentProject.project?.name) === 'Новый проект';
-    const shouldRenameProject = renameProjectFromRoot || shouldReplaceDefaultName;
-
-    if (shouldRenameProject && targetProjectName) {
-      currentProject.project.name = targetProjectName;
-      currentProject.raw.project = {
-        ...(currentProject.raw.project || {}),
-        ...currentProject.project,
-        name: targetProjectName
-      };
-    }
+    const targetProjectName = getProjectDisplayNameFromFilePath(normalizedTargetProjectFilePath);
+    currentProject.project.name = targetProjectName;
+    currentProject.raw.project = {
+      ...(currentProject.raw.project || {}),
+      ...currentProject.project,
+      name: targetProjectName
+    };
 
     const finalProjectPayload = {
       ...currentProject.raw,
@@ -2141,7 +2139,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     // stage project.yaml
-    const stagingProjectFilePath = joinPaths(stagingRoot, APP_CONFIG.project.projectFileName);
+    const stagingProjectFilePath = joinPaths(stagingRoot, targetProjectFileName);
     await documentLoader.saveYaml(stagingProjectFilePath, finalProjectPayload);
 
     // commit promoted entities
@@ -2155,15 +2153,15 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       await promoteModuleDirectory(targetRoot, APP_CONFIG.project.folders.metaview);
       promotedModules.push(APP_CONFIG.project.folders.metaview);
 
-      await promoteProjectFile(targetRoot);
+      await promoteProjectFile(targetRoot, targetProjectFileName);
       projectFilePromoted = true;
     } catch (error) {
       // rollback on failure
-      await performSaveRollback(targetRoot, promotedModules, projectFilePromoted, error);
+      await performSaveRollback(targetRoot, targetProjectFileName, promotedModules, projectFilePromoted, error);
     }
 
     // cleanup (best-effort только после полного успешного commit)
-    await cleanupSaveBackups(targetRoot).catch((error) => {
+    await cleanupSaveBackups(targetRoot, targetProjectFileName).catch((error) => {
       logger.warn('project', 'Cleanup backup-файлов завершился с ошибкой', {
         targetRoot,
         message: error?.message || String(error)
@@ -2177,7 +2175,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     });
 
     // hydrate runtime
-    const hydrated = await hydrateProjectRuntimeFromDisk(targetRoot);
+    const hydrated = await hydrateProjectRuntimeFromDisk(normalizedTargetProjectFilePath);
     currentProject = hydrated;
 
     emitChange();
@@ -2196,17 +2194,16 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    const result = await saveProjectToRoot(currentProject.rootPath, openDocuments, { renameProjectFromRoot: false });
+    const result = await saveProjectToRoot(currentProject.projectFilePath, openDocuments);
     return result;
   }
 
   async function saveProjectAs(newProjectFilePath, openDocuments = []) {
-    const normalizedProjectFilePath = normalizeProjectFilePath(newProjectFilePath, { normalizeToEntryFile: true });
-    const newProjectRoot = getProjectRootFromProjectFile(normalizedProjectFilePath);
+    const normalizedProjectFilePath = normalizeProjectFilePath(newProjectFilePath);
 
-    const result = await saveProjectToRoot(newProjectRoot, openDocuments, { renameProjectFromRoot: true });
+    const result = await saveProjectToRoot(normalizedProjectFilePath, openDocuments);
     logger.info('project', 'Проект сохранен как', {
-      rootPath: newProjectRoot,
+      rootPath: getProjectRootFromProjectFile(normalizedProjectFilePath),
       projectFilePath: normalizedProjectFilePath
     });
     return result;
@@ -5492,7 +5489,7 @@ function createFileSystem({ failRename } = {}) {
   };
 }
 
-async function createFixtureProject(root, { metagenDescription = 'before-save' } = {}) {
+async function createFixtureProject(root, { metagenDescription = 'before-save', projectFileName = APP_CONFIG.project.defaultProjectFileName } = {}) {
   await fs.mkdir(path.join(root, 'metagen'), { recursive: true });
   await fs.mkdir(path.join(root, 'metalab'), { recursive: true });
   await fs.mkdir(path.join(root, 'metaview'), { recursive: true });
@@ -5521,14 +5518,14 @@ async function createFixtureProject(root, { metagenDescription = 'before-save' }
   const metalabDoc = { kind: 'metalab.scenario', version: 1, scenario: { id: 'startup', name: 'Startup' } };
   const metaviewDoc = { kind: 'metaview.screen', version: 1, screen: { id: 'main', name: 'Main' } };
 
-  await fs.writeFile(path.join(root, 'project.yaml'), YAML.stringify(project), 'utf-8');
+  await fs.writeFile(path.join(root, projectFileName), YAML.stringify(project), 'utf-8');
   await fs.writeFile(path.join(root, 'metagen', 'pump.yaml'), YAML.stringify(metagenDoc), 'utf-8');
   await fs.writeFile(path.join(root, 'metalab', 'startup.yaml'), YAML.stringify(metalabDoc), 'utf-8');
   await fs.writeFile(path.join(root, 'metaview', 'main.yaml'), YAML.stringify(metaviewDoc), 'utf-8');
 }
 
-function getProjectFilePath(root) {
-  return path.join(root, APP_CONFIG.project.projectFileName);
+function getProjectFilePath(root, fileName = APP_CONFIG.project.defaultProjectFileName) {
+  return path.join(root, fileName);
 }
 
 
@@ -5670,12 +5667,12 @@ function createManager({ failRename } = {}) {
   });
 }
 
-test('save existing project updates disk and reopens clean runtime', async () => {
+test('save existing project preserves exact project file path', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-existing-'));
-  await createFixtureProject(root);
+  await createFixtureProject(root, { projectFileName: 'qqq.yaml' });
 
   const manager = createManager();
-  await manager.openProject(getProjectFilePath(root));
+  await manager.openProject(getProjectFilePath(root, 'qqq.yaml'));
   const record = manager.getDocumentsByModule('metagen')[0];
   record.document.component.description = 'after-save';
 
@@ -5685,21 +5682,23 @@ test('save existing project updates disk and reopens clean runtime', async () =>
   assert.match(savedText, /after-save/);
 
   await manager.closeProject();
-  await manager.openProject(getProjectFilePath(root));
+  await manager.openProject(getProjectFilePath(root, 'qqq.yaml'));
   const reopened = manager.getDocumentsByModule('metagen')[0];
   assert.equal(reopened.document.component.description, 'after-save');
   assert.equal(manager.hasDirtyProject(), false);
   assert.equal(manager.getCurrentProject().rootPath, root.replace(/\\/g, '/'));
-  assert.equal(manager.getCurrentProject().projectFilePath, getProjectFilePath(root).replace(/\\/g, '/'));
+  assert.equal(manager.getCurrentProject().projectFilePath, getProjectFilePath(root, 'qqq.yaml').replace(/\\/g, '/'));
+  assert.equal(manager.getCurrentProject().project.name, 'qqq');
+  assert.equal(await fs.access(path.join(root, 'project.yaml')).then(() => true).catch(() => false), false);
 });
 
 test('save as writes project into new root', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-src-'));
   const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-dst-'));
-  await createFixtureProject(root);
+  await createFixtureProject(root, { projectFileName: 'qqq.yaml' });
 
   const manager = createManager();
-  await manager.openProject(getProjectFilePath(root));
+  await manager.openProject(getProjectFilePath(root, 'qqq.yaml'));
   const record = manager.getDocumentsByModule('metalab')[0];
   record.document.scenario.name = 'Startup updated';
 
@@ -5713,16 +5712,17 @@ test('save as writes project into new root', async () => {
   assert.equal(manager.getCurrentProject().projectFilePath, getProjectFilePath(targetRoot).replace(/\\/g, '/'));
 });
 
-test('openProject accepts project.yaml file path and hydrates rootPath/projectFilePath', async () => {
+test('openProject keeps exact selected project file name', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-open-file-path-'));
-  await createFixtureProject(root);
+  await createFixtureProject(root, { projectFileName: 'qqq.yaml' });
   const manager = createManager();
 
-  await manager.openProject(getProjectFilePath(root));
+  await manager.openProject(getProjectFilePath(root, 'qqq.yaml'));
   const current = manager.getCurrentProject();
 
   assert.equal(current.rootPath, root.replace(/\\/g, '/'));
-  assert.equal(current.projectFilePath, getProjectFilePath(root).replace(/\\/g, '/'));
+  assert.equal(current.projectFilePath, getProjectFilePath(root, 'qqq.yaml').replace(/\\/g, '/'));
+  assert.equal(current.project.name, 'qqq');
 });
 
 test('open/save-as reject folder-oriented ambiguity at project manager API', async () => {
@@ -5735,16 +5735,17 @@ test('open/save-as reject folder-oriented ambiguity at project manager API', asy
   await assert.rejects(() => manager.saveProjectAs(root), /must point to a YAML file/);
 });
 
-test('save as normalizes selected yaml file to dirname + project.yaml entry file', async () => {
+test('save as preserves selected yaml file name', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-normalize-src-'));
   const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-normalize-dst-'));
   await createFixtureProject(root);
   const manager = createManager();
   await manager.openProject(getProjectFilePath(root));
 
-  await manager.saveProjectAs(path.join(targetRoot, 'custom-name.yaml'));
+  const targetProjectFilePath = path.join(targetRoot, 'custom-name.yaml');
+  await manager.saveProjectAs(targetProjectFilePath);
 
-  const expectedProjectFile = getProjectFilePath(targetRoot);
+  const expectedProjectFile = targetProjectFilePath;
   const expectedMetaGenFile = path.join(targetRoot, 'metagen', 'pump.yaml');
   const expectedMetaLabFile = path.join(targetRoot, 'metalab', 'startup.yaml');
   const expectedMetaViewFile = path.join(targetRoot, 'metaview', 'main.yaml');
@@ -5754,6 +5755,63 @@ test('save as normalizes selected yaml file to dirname + project.yaml entry file
   assert.equal(await fs.access(expectedMetaLabFile).then(() => true).catch(() => false), true);
   assert.equal(await fs.access(expectedMetaViewFile).then(() => true).catch(() => false), true);
   assert.equal(manager.getCurrentProject().projectFilePath, expectedProjectFile.replace(/\\/g, '/'));
+  assert.equal(await fs.access(path.join(targetRoot, 'project.yaml')).then(() => true).catch(() => false), false);
+  assert.equal(manager.getCurrentProject().project.name, 'custom-name');
+});
+
+
+
+test('save as does not rename project from folder name', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-folder-name-src-'));
+  const targetParent = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-folder-name-parent-'));
+  const targetRoot = path.join(targetParent, '123');
+  await fs.mkdir(targetRoot, { recursive: true });
+  await createFixtureProject(root, { projectFileName: 'origin.yaml' });
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root, 'origin.yaml'));
+
+  const targetPath = path.join(targetRoot, 'qqq.yaml');
+  await manager.saveProjectAs(targetPath);
+
+  assert.equal(manager.getCurrentProject().projectFilePath, targetPath.replace(/\\/g, '/'));
+  assert.equal(manager.getCurrentProject().project.name, 'qqq');
+});
+
+test('save as replaces project-owned paths and keeps user-owned paths', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-owned-paths-src-'));
+  const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-owned-paths-dst-'));
+  await createFixtureProject(root, { projectFileName: 'source.yaml' });
+
+  await fs.writeFile(path.join(targetRoot, 'README.txt'), 'user-readme', 'utf-8');
+  await fs.mkdir(path.join(targetRoot, 'manual'), { recursive: true });
+  await fs.writeFile(path.join(targetRoot, 'manual', 'guide.txt'), 'user-guide', 'utf-8');
+
+  await fs.mkdir(path.join(targetRoot, 'metagen'), { recursive: true });
+  await fs.mkdir(path.join(targetRoot, 'metalab'), { recursive: true });
+  await fs.mkdir(path.join(targetRoot, 'metaview'), { recursive: true });
+  await fs.writeFile(path.join(targetRoot, 'metagen', 'old.yaml'), 'old', 'utf-8');
+  await fs.writeFile(path.join(targetRoot, 'metalab', 'old.yaml'), 'old', 'utf-8');
+  await fs.writeFile(path.join(targetRoot, 'metaview', 'old.yaml'), 'old', 'utf-8');
+  await fs.writeFile(path.join(targetRoot, 'abc.yaml'), 'old-project', 'utf-8');
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root, 'source.yaml'));
+  await manager.saveProjectAs(path.join(targetRoot, 'abc.yaml'));
+
+  assert.equal(await fs.readFile(path.join(targetRoot, 'README.txt'), 'utf-8'), 'user-readme');
+  assert.equal(await fs.readFile(path.join(targetRoot, 'manual', 'guide.txt'), 'utf-8'), 'user-guide');
+
+  assert.equal(await fs.access(path.join(targetRoot, 'metagen', 'old.yaml')).then(() => true).catch(() => false), false);
+  assert.equal(await fs.access(path.join(targetRoot, 'metalab', 'old.yaml')).then(() => true).catch(() => false), false);
+  assert.equal(await fs.access(path.join(targetRoot, 'metaview', 'old.yaml')).then(() => true).catch(() => false), false);
+
+  assert.equal(await fs.access(path.join(targetRoot, 'metagen', 'pump.yaml')).then(() => true).catch(() => false), true);
+  assert.equal(await fs.access(path.join(targetRoot, 'metalab', 'startup.yaml')).then(() => true).catch(() => false), true);
+  assert.equal(await fs.access(path.join(targetRoot, 'metaview', 'main.yaml')).then(() => true).catch(() => false), true);
+
+  const projectText = await fs.readFile(path.join(targetRoot, 'abc.yaml'), 'utf-8');
+  assert.match(projectText, /name: abc/);
 });
 
 test('rollback restores promoted modules if module promote fails', async () => {
@@ -5775,15 +5833,15 @@ test('rollback restores promoted modules if module promote fails', async () => {
   assert.doesNotMatch(metagenText, /should-not-commit/);
 });
 
-test('rollback restores module changes if project.yaml promote fails', async () => {
+test('rollback restores module changes if dynamic project file promote fails', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-rollback-project-file-'));
-  await createFixtureProject(root, { metagenDescription: 'before-yaml-promote-failure' });
+  await createFixtureProject(root, { metagenDescription: 'before-yaml-promote-failure', projectFileName: 'qqq.yaml' });
 
   const manager = createManager({
-    failRename: (fromPath) => fromPath.endsWith(path.join('.save-staging', 'project.yaml'))
+    failRename: (fromPath) => fromPath.endsWith(path.join('.save-staging', 'qqq.yaml'))
   });
 
-  await manager.openProject(getProjectFilePath(root));
+  await manager.openProject(getProjectFilePath(root, 'qqq.yaml'));
   const record = manager.getDocumentsByModule('metagen')[0];
   record.document.component.description = 'must-be-rolled-back';
 

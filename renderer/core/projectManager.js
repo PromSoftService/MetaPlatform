@@ -10,8 +10,8 @@ function joinPaths(...parts) {
     .replace(/\/{2,}/g, '/');
 }
 
-function buildProjectFilePath(projectRoot) {
-  return joinPaths(projectRoot, APP_CONFIG.project.projectFileName);
+function buildProjectFilePath(projectRoot, projectFileName = APP_CONFIG.project.defaultProjectFileName) {
+  return joinPaths(projectRoot, projectFileName);
 }
 
 function dirnameOf(targetPath) {
@@ -29,7 +29,7 @@ function dirnameOf(targetPath) {
   return normalized.slice(0, index);
 }
 
-function normalizeProjectFilePath(projectFilePath, { strictFileName = false, normalizeToEntryFile = false } = {}) {
+function normalizeProjectFilePath(projectFilePath) {
   const normalized = String(projectFilePath || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
 
   if (!normalized) {
@@ -37,18 +37,15 @@ function normalizeProjectFilePath(projectFilePath, { strictFileName = false, nor
   }
 
   const baseName = normalized.split('/').pop() || '';
-  const isYaml = /\.ya?ml$/i.test(baseName);
-
-  if (!isYaml) {
+  if (!baseName || !baseName.includes('.')) {
     throw new Error(`Project file path must point to a YAML file: ${projectFilePath}`);
   }
 
-  if (strictFileName && baseName !== APP_CONFIG.project.projectFileName) {
-    throw new Error(`Project entry file must be ${APP_CONFIG.project.projectFileName}: ${projectFilePath}`);
-  }
+  const ext = getFileExtension(baseName).toLowerCase();
+  const allowed = APP_CONFIG.project.allowedProjectFileExtensions || ['.yaml', '.yml'];
 
-  if (normalizeToEntryFile) {
-    return buildProjectFilePath(dirnameOf(normalized) || '.');
+  if (!allowed.includes(ext)) {
+    throw new Error(`Project file path must point to a YAML file: ${projectFilePath}`);
   }
 
   return normalized;
@@ -90,10 +87,10 @@ function normalizeDocumentName(name) {
   return String(name ?? '').trim();
 }
 
-function getProjectNameFromRoot(targetRoot) {
-  const normalized = String(targetRoot || '').replace(/\\/g, '/').replace(/\/+$/, '');
-  const lastSegment = normalized.split('/').pop();
-  return normalizeDocumentName(lastSegment || '');
+function getProjectDisplayNameFromFilePath(projectFilePath) {
+  const normalized = normalizeProjectFilePath(projectFilePath);
+  const baseName = normalized.split('/').pop() || '';
+  return normalizeDocumentName(stripFileExtension(baseName));
 }
 
 function getDocumentName(documentRecord) {
@@ -285,8 +282,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return joinPaths(targetRoot, `.backup-${moduleFolder}`);
   }
 
-  function buildProjectFileBackupPath(targetRoot) {
-    return joinPaths(targetRoot, '.backup-project.yaml');
+  function buildProjectFileBackupPath(targetRoot, projectFileName) {
+    return joinPaths(targetRoot, `.backup-${projectFileName}`);
   }
 
   async function removeDirectoryIfExists(targetPath) {
@@ -341,10 +338,10 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
   }
 
-  async function promoteProjectFile(targetRoot) {
-    const stagingProjectFilePath = joinPaths(buildSaveStagingRoot(targetRoot), APP_CONFIG.project.projectFileName);
-    const finalProjectFilePath = buildProjectFilePath(targetRoot);
-    const backupProjectFilePath = buildProjectFileBackupPath(targetRoot);
+  async function promoteProjectFile(targetRoot, projectFileName) {
+    const stagingProjectFilePath = joinPaths(buildSaveStagingRoot(targetRoot), projectFileName);
+    const finalProjectFilePath = buildProjectFilePath(targetRoot, projectFileName);
+    const backupProjectFilePath = buildProjectFileBackupPath(targetRoot, projectFileName);
 
     await fileSystem.deleteFile(backupProjectFilePath);
 
@@ -367,9 +364,9 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
   }
 
-  async function rollbackPromotedProjectFile(targetRoot) {
-    const finalProjectFilePath = buildProjectFilePath(targetRoot);
-    const backupProjectFilePath = buildProjectFileBackupPath(targetRoot);
+  async function rollbackPromotedProjectFile(targetRoot, projectFileName) {
+    const finalProjectFilePath = buildProjectFilePath(targetRoot, projectFileName);
+    const backupProjectFilePath = buildProjectFileBackupPath(targetRoot, projectFileName);
 
     if (await fileSystem.exists(finalProjectFilePath)) {
       await fileSystem.deleteFile(finalProjectFilePath);
@@ -380,11 +377,11 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
   }
 
-  async function cleanupSaveBackups(targetRoot) {
+  async function cleanupSaveBackups(targetRoot, projectFileName) {
     await removeDirectoryIfExists(buildModuleBackupDir(targetRoot, APP_CONFIG.project.folders.metagen));
     await removeDirectoryIfExists(buildModuleBackupDir(targetRoot, APP_CONFIG.project.folders.metalab));
     await removeDirectoryIfExists(buildModuleBackupDir(targetRoot, APP_CONFIG.project.folders.metaview));
-    await fileSystem.deleteFile(buildProjectFileBackupPath(targetRoot));
+    await fileSystem.deleteFile(buildProjectFileBackupPath(targetRoot, projectFileName));
   }
 
   async function cleanupSaveStaging(targetRoot) {
@@ -392,16 +389,16 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
 
-  async function performSaveRollback(targetRoot, promotedModules, projectFilePromoted, originalError) {
+  async function performSaveRollback(targetRoot, projectFileName, promotedModules, projectFilePromoted, originalError) {
     // При сбое commit пытаемся откатить максимум уже продвинутых сущностей.
     // Ошибки rollback не должны скрывать исходную причину сбоя, но и не должны обрывать остальные шаги отката.
     const rollbackErrors = [];
 
     if (projectFilePromoted) {
       try {
-        await rollbackPromotedProjectFile(targetRoot);
+        await rollbackPromotedProjectFile(targetRoot, projectFileName);
       } catch (error) {
-        rollbackErrors.push(new Error(`project.yaml rollback failed: ${error?.message || String(error)}`));
+        rollbackErrors.push(new Error(`project file rollback failed: ${error?.message || String(error)}`));
       }
     }
 
@@ -429,9 +426,11 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
   function createProjectRuntime({ rootPath, projectFilePath = null, raw, documents, isUnsaved = false, isDirty = false }) {
     const normalizedRootPath = rootPath ? String(rootPath).replace(/\\/g, '/') : null;
-    const resolvedProjectFilePath = normalizedRootPath
-      ? (projectFilePath || buildProjectFilePath(normalizedRootPath))
-      : null;
+    const resolvedProjectFilePath = projectFilePath ? normalizeProjectFilePath(projectFilePath) : null;
+
+    if (resolvedProjectFilePath && raw?.project) {
+      raw.project.name = getProjectDisplayNameFromFilePath(resolvedProjectFilePath);
+    }
 
     return {
       rootPath: normalizedRootPath,
@@ -459,19 +458,20 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return currentProject;
   }
 
-  async function hydrateProjectRuntimeFromDisk(projectRoot) {
-    const projectFilePath = buildProjectFilePath(projectRoot);
-    const exists = await fileSystem.exists(projectFilePath);
+  async function hydrateProjectRuntimeFromDisk(projectFilePath) {
+    const normalizedProjectFilePath = normalizeProjectFilePath(projectFilePath);
+    const projectRoot = getProjectRootFromProjectFile(normalizedProjectFilePath);
+    const exists = await fileSystem.exists(normalizedProjectFilePath);
 
     if (!exists) {
-      throw new Error(`project.yaml не найден: ${projectRoot}`);
+      throw new Error(`Project file not found: ${normalizedProjectFilePath}`);
     }
 
-    const projectFile = await documentLoader.loadYaml(projectFilePath);
+    const projectFile = await documentLoader.loadYaml(normalizedProjectFilePath);
 
     return createProjectRuntime({
       rootPath: projectRoot,
-      projectFilePath,
+      projectFilePath: normalizedProjectFilePath,
       raw: projectFile.data,
       documents: {
         metagen: await scanModuleDocuments(projectRoot, APP_CONFIG.project.folders.metagen, 'metagen'),
@@ -484,10 +484,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function openProject(projectFilePath) {
-    const normalizedProjectFilePath = normalizeProjectFilePath(projectFilePath, { strictFileName: true });
-    const projectRoot = getProjectRootFromProjectFile(normalizedProjectFilePath);
-    currentProject = await hydrateProjectRuntimeFromDisk(projectRoot);
-    currentProject.projectFilePath = buildProjectFilePath(projectRoot);
+    const normalizedProjectFilePath = normalizeProjectFilePath(projectFilePath);
+    currentProject = await hydrateProjectRuntimeFromDisk(normalizedProjectFilePath);
 
     onProjectLoaded?.({ projectRuntime: currentProject });
     emitChange();
@@ -506,7 +504,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return currentProject;
     }
 
-    const hydrated = await hydrateProjectRuntimeFromDisk(currentProject.rootPath);
+    const hydrated = await hydrateProjectRuntimeFromDisk(currentProject.projectFilePath);
     currentProject.documents = hydrated.documents;
     currentProject.raw = hydrated.raw;
     currentProject.project = hydrated.project;
@@ -744,7 +742,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return true;
   }
 
-  async function saveProjectToRoot(targetRoot, openDocuments = [], { renameProjectFromRoot = false } = {}) {
+  async function saveProjectToRoot(targetProjectFilePath, openDocuments = []) {
     if (!currentProject) {
       throw new Error('Project is not opened');
     }
@@ -788,21 +786,19 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const docs = Array.from(recordsByIdentity.values());
 
     // prepare payload
+    const normalizedTargetProjectFilePath = normalizeProjectFilePath(targetProjectFilePath);
+    const targetRoot = getProjectRootFromProjectFile(normalizedTargetProjectFilePath);
+    const targetProjectFileName = normalizedTargetProjectFilePath.split('/').pop();
+
     await ensureProjectDirectories(targetRoot);
 
-    const targetProjectName = getProjectNameFromRoot(targetRoot);
-    const shouldReplaceDefaultName = currentProject.isUnsaved
-      && normalizeDocumentName(currentProject.project?.name) === 'Новый проект';
-    const shouldRenameProject = renameProjectFromRoot || shouldReplaceDefaultName;
-
-    if (shouldRenameProject && targetProjectName) {
-      currentProject.project.name = targetProjectName;
-      currentProject.raw.project = {
-        ...(currentProject.raw.project || {}),
-        ...currentProject.project,
-        name: targetProjectName
-      };
-    }
+    const targetProjectName = getProjectDisplayNameFromFilePath(normalizedTargetProjectFilePath);
+    currentProject.project.name = targetProjectName;
+    currentProject.raw.project = {
+      ...(currentProject.raw.project || {}),
+      ...currentProject.project,
+      name: targetProjectName
+    };
 
     const finalProjectPayload = {
       ...currentProject.raw,
@@ -858,7 +854,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     // stage project.yaml
-    const stagingProjectFilePath = joinPaths(stagingRoot, APP_CONFIG.project.projectFileName);
+    const stagingProjectFilePath = joinPaths(stagingRoot, targetProjectFileName);
     await documentLoader.saveYaml(stagingProjectFilePath, finalProjectPayload);
 
     // commit promoted entities
@@ -872,15 +868,15 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       await promoteModuleDirectory(targetRoot, APP_CONFIG.project.folders.metaview);
       promotedModules.push(APP_CONFIG.project.folders.metaview);
 
-      await promoteProjectFile(targetRoot);
+      await promoteProjectFile(targetRoot, targetProjectFileName);
       projectFilePromoted = true;
     } catch (error) {
       // rollback on failure
-      await performSaveRollback(targetRoot, promotedModules, projectFilePromoted, error);
+      await performSaveRollback(targetRoot, targetProjectFileName, promotedModules, projectFilePromoted, error);
     }
 
     // cleanup (best-effort только после полного успешного commit)
-    await cleanupSaveBackups(targetRoot).catch((error) => {
+    await cleanupSaveBackups(targetRoot, targetProjectFileName).catch((error) => {
       logger.warn('project', 'Cleanup backup-файлов завершился с ошибкой', {
         targetRoot,
         message: error?.message || String(error)
@@ -894,7 +890,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     });
 
     // hydrate runtime
-    const hydrated = await hydrateProjectRuntimeFromDisk(targetRoot);
+    const hydrated = await hydrateProjectRuntimeFromDisk(normalizedTargetProjectFilePath);
     currentProject = hydrated;
 
     emitChange();
@@ -913,17 +909,16 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    const result = await saveProjectToRoot(currentProject.rootPath, openDocuments, { renameProjectFromRoot: false });
+    const result = await saveProjectToRoot(currentProject.projectFilePath, openDocuments);
     return result;
   }
 
   async function saveProjectAs(newProjectFilePath, openDocuments = []) {
-    const normalizedProjectFilePath = normalizeProjectFilePath(newProjectFilePath, { normalizeToEntryFile: true });
-    const newProjectRoot = getProjectRootFromProjectFile(normalizedProjectFilePath);
+    const normalizedProjectFilePath = normalizeProjectFilePath(newProjectFilePath);
 
-    const result = await saveProjectToRoot(newProjectRoot, openDocuments, { renameProjectFromRoot: true });
+    const result = await saveProjectToRoot(normalizedProjectFilePath, openDocuments);
     logger.info('project', 'Проект сохранен как', {
-      rootPath: newProjectRoot,
+      rootPath: getProjectRootFromProjectFile(normalizedProjectFilePath),
       projectFilePath: normalizedProjectFilePath
     });
     return result;

@@ -67,7 +67,7 @@ function createFileSystem({ failRename } = {}) {
   };
 }
 
-async function createFixtureProject(root, { metagenDescription = 'before-save' } = {}) {
+async function createFixtureProject(root, { metagenDescription = 'before-save', projectFileName = APP_CONFIG.project.defaultProjectFileName } = {}) {
   await fs.mkdir(path.join(root, 'metagen'), { recursive: true });
   await fs.mkdir(path.join(root, 'metalab'), { recursive: true });
   await fs.mkdir(path.join(root, 'metaview'), { recursive: true });
@@ -96,14 +96,14 @@ async function createFixtureProject(root, { metagenDescription = 'before-save' }
   const metalabDoc = { kind: 'metalab.scenario', version: 1, scenario: { id: 'startup', name: 'Startup' } };
   const metaviewDoc = { kind: 'metaview.screen', version: 1, screen: { id: 'main', name: 'Main' } };
 
-  await fs.writeFile(path.join(root, 'project.yaml'), YAML.stringify(project), 'utf-8');
+  await fs.writeFile(path.join(root, projectFileName), YAML.stringify(project), 'utf-8');
   await fs.writeFile(path.join(root, 'metagen', 'pump.yaml'), YAML.stringify(metagenDoc), 'utf-8');
   await fs.writeFile(path.join(root, 'metalab', 'startup.yaml'), YAML.stringify(metalabDoc), 'utf-8');
   await fs.writeFile(path.join(root, 'metaview', 'main.yaml'), YAML.stringify(metaviewDoc), 'utf-8');
 }
 
-function getProjectFilePath(root) {
-  return path.join(root, APP_CONFIG.project.projectFileName);
+function getProjectFilePath(root, fileName = APP_CONFIG.project.defaultProjectFileName) {
+  return path.join(root, fileName);
 }
 
 
@@ -245,12 +245,12 @@ function createManager({ failRename } = {}) {
   });
 }
 
-test('save existing project updates disk and reopens clean runtime', async () => {
+test('save existing project preserves exact project file path', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-existing-'));
-  await createFixtureProject(root);
+  await createFixtureProject(root, { projectFileName: 'qqq.yaml' });
 
   const manager = createManager();
-  await manager.openProject(getProjectFilePath(root));
+  await manager.openProject(getProjectFilePath(root, 'qqq.yaml'));
   const record = manager.getDocumentsByModule('metagen')[0];
   record.document.component.description = 'after-save';
 
@@ -260,21 +260,23 @@ test('save existing project updates disk and reopens clean runtime', async () =>
   assert.match(savedText, /after-save/);
 
   await manager.closeProject();
-  await manager.openProject(getProjectFilePath(root));
+  await manager.openProject(getProjectFilePath(root, 'qqq.yaml'));
   const reopened = manager.getDocumentsByModule('metagen')[0];
   assert.equal(reopened.document.component.description, 'after-save');
   assert.equal(manager.hasDirtyProject(), false);
   assert.equal(manager.getCurrentProject().rootPath, root.replace(/\\/g, '/'));
-  assert.equal(manager.getCurrentProject().projectFilePath, getProjectFilePath(root).replace(/\\/g, '/'));
+  assert.equal(manager.getCurrentProject().projectFilePath, getProjectFilePath(root, 'qqq.yaml').replace(/\\/g, '/'));
+  assert.equal(manager.getCurrentProject().project.name, 'qqq');
+  assert.equal(await fs.access(path.join(root, 'project.yaml')).then(() => true).catch(() => false), false);
 });
 
 test('save as writes project into new root', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-src-'));
   const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-dst-'));
-  await createFixtureProject(root);
+  await createFixtureProject(root, { projectFileName: 'qqq.yaml' });
 
   const manager = createManager();
-  await manager.openProject(getProjectFilePath(root));
+  await manager.openProject(getProjectFilePath(root, 'qqq.yaml'));
   const record = manager.getDocumentsByModule('metalab')[0];
   record.document.scenario.name = 'Startup updated';
 
@@ -288,16 +290,17 @@ test('save as writes project into new root', async () => {
   assert.equal(manager.getCurrentProject().projectFilePath, getProjectFilePath(targetRoot).replace(/\\/g, '/'));
 });
 
-test('openProject accepts project.yaml file path and hydrates rootPath/projectFilePath', async () => {
+test('openProject keeps exact selected project file name', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-open-file-path-'));
-  await createFixtureProject(root);
+  await createFixtureProject(root, { projectFileName: 'qqq.yaml' });
   const manager = createManager();
 
-  await manager.openProject(getProjectFilePath(root));
+  await manager.openProject(getProjectFilePath(root, 'qqq.yaml'));
   const current = manager.getCurrentProject();
 
   assert.equal(current.rootPath, root.replace(/\\/g, '/'));
-  assert.equal(current.projectFilePath, getProjectFilePath(root).replace(/\\/g, '/'));
+  assert.equal(current.projectFilePath, getProjectFilePath(root, 'qqq.yaml').replace(/\\/g, '/'));
+  assert.equal(current.project.name, 'qqq');
 });
 
 test('open/save-as reject folder-oriented ambiguity at project manager API', async () => {
@@ -310,16 +313,17 @@ test('open/save-as reject folder-oriented ambiguity at project manager API', asy
   await assert.rejects(() => manager.saveProjectAs(root), /must point to a YAML file/);
 });
 
-test('save as normalizes selected yaml file to dirname + project.yaml entry file', async () => {
+test('save as preserves selected yaml file name', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-normalize-src-'));
   const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-normalize-dst-'));
   await createFixtureProject(root);
   const manager = createManager();
   await manager.openProject(getProjectFilePath(root));
 
-  await manager.saveProjectAs(path.join(targetRoot, 'custom-name.yaml'));
+  const targetProjectFilePath = path.join(targetRoot, 'custom-name.yaml');
+  await manager.saveProjectAs(targetProjectFilePath);
 
-  const expectedProjectFile = getProjectFilePath(targetRoot);
+  const expectedProjectFile = targetProjectFilePath;
   const expectedMetaGenFile = path.join(targetRoot, 'metagen', 'pump.yaml');
   const expectedMetaLabFile = path.join(targetRoot, 'metalab', 'startup.yaml');
   const expectedMetaViewFile = path.join(targetRoot, 'metaview', 'main.yaml');
@@ -329,6 +333,63 @@ test('save as normalizes selected yaml file to dirname + project.yaml entry file
   assert.equal(await fs.access(expectedMetaLabFile).then(() => true).catch(() => false), true);
   assert.equal(await fs.access(expectedMetaViewFile).then(() => true).catch(() => false), true);
   assert.equal(manager.getCurrentProject().projectFilePath, expectedProjectFile.replace(/\\/g, '/'));
+  assert.equal(await fs.access(path.join(targetRoot, 'project.yaml')).then(() => true).catch(() => false), false);
+  assert.equal(manager.getCurrentProject().project.name, 'custom-name');
+});
+
+
+
+test('save as does not rename project from folder name', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-folder-name-src-'));
+  const targetParent = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-folder-name-parent-'));
+  const targetRoot = path.join(targetParent, '123');
+  await fs.mkdir(targetRoot, { recursive: true });
+  await createFixtureProject(root, { projectFileName: 'origin.yaml' });
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root, 'origin.yaml'));
+
+  const targetPath = path.join(targetRoot, 'qqq.yaml');
+  await manager.saveProjectAs(targetPath);
+
+  assert.equal(manager.getCurrentProject().projectFilePath, targetPath.replace(/\\/g, '/'));
+  assert.equal(manager.getCurrentProject().project.name, 'qqq');
+});
+
+test('save as replaces project-owned paths and keeps user-owned paths', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-owned-paths-src-'));
+  const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-owned-paths-dst-'));
+  await createFixtureProject(root, { projectFileName: 'source.yaml' });
+
+  await fs.writeFile(path.join(targetRoot, 'README.txt'), 'user-readme', 'utf-8');
+  await fs.mkdir(path.join(targetRoot, 'manual'), { recursive: true });
+  await fs.writeFile(path.join(targetRoot, 'manual', 'guide.txt'), 'user-guide', 'utf-8');
+
+  await fs.mkdir(path.join(targetRoot, 'metagen'), { recursive: true });
+  await fs.mkdir(path.join(targetRoot, 'metalab'), { recursive: true });
+  await fs.mkdir(path.join(targetRoot, 'metaview'), { recursive: true });
+  await fs.writeFile(path.join(targetRoot, 'metagen', 'old.yaml'), 'old', 'utf-8');
+  await fs.writeFile(path.join(targetRoot, 'metalab', 'old.yaml'), 'old', 'utf-8');
+  await fs.writeFile(path.join(targetRoot, 'metaview', 'old.yaml'), 'old', 'utf-8');
+  await fs.writeFile(path.join(targetRoot, 'abc.yaml'), 'old-project', 'utf-8');
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root, 'source.yaml'));
+  await manager.saveProjectAs(path.join(targetRoot, 'abc.yaml'));
+
+  assert.equal(await fs.readFile(path.join(targetRoot, 'README.txt'), 'utf-8'), 'user-readme');
+  assert.equal(await fs.readFile(path.join(targetRoot, 'manual', 'guide.txt'), 'utf-8'), 'user-guide');
+
+  assert.equal(await fs.access(path.join(targetRoot, 'metagen', 'old.yaml')).then(() => true).catch(() => false), false);
+  assert.equal(await fs.access(path.join(targetRoot, 'metalab', 'old.yaml')).then(() => true).catch(() => false), false);
+  assert.equal(await fs.access(path.join(targetRoot, 'metaview', 'old.yaml')).then(() => true).catch(() => false), false);
+
+  assert.equal(await fs.access(path.join(targetRoot, 'metagen', 'pump.yaml')).then(() => true).catch(() => false), true);
+  assert.equal(await fs.access(path.join(targetRoot, 'metalab', 'startup.yaml')).then(() => true).catch(() => false), true);
+  assert.equal(await fs.access(path.join(targetRoot, 'metaview', 'main.yaml')).then(() => true).catch(() => false), true);
+
+  const projectText = await fs.readFile(path.join(targetRoot, 'abc.yaml'), 'utf-8');
+  assert.match(projectText, /name: abc/);
 });
 
 test('rollback restores promoted modules if module promote fails', async () => {
@@ -350,15 +411,15 @@ test('rollback restores promoted modules if module promote fails', async () => {
   assert.doesNotMatch(metagenText, /should-not-commit/);
 });
 
-test('rollback restores module changes if project.yaml promote fails', async () => {
+test('rollback restores module changes if dynamic project file promote fails', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-rollback-project-file-'));
-  await createFixtureProject(root, { metagenDescription: 'before-yaml-promote-failure' });
+  await createFixtureProject(root, { metagenDescription: 'before-yaml-promote-failure', projectFileName: 'qqq.yaml' });
 
   const manager = createManager({
-    failRename: (fromPath) => fromPath.endsWith(path.join('.save-staging', 'project.yaml'))
+    failRename: (fromPath) => fromPath.endsWith(path.join('.save-staging', 'qqq.yaml'))
   });
 
-  await manager.openProject(getProjectFilePath(root));
+  await manager.openProject(getProjectFilePath(root, 'qqq.yaml'));
   const record = manager.getDocumentsByModule('metagen')[0];
   record.document.component.description = 'must-be-rolled-back';
 

@@ -1,6 +1,7 @@
 export const PROJECT_CONFIG = {
   defaultProjectRelativePath: 'project-examples/demo-feedmill',
-  projectFileName: 'project.yaml',
+  defaultProjectFileName: 'project.yaml',
+  allowedProjectFileExtensions: ['.yaml', '.yml'],
 
   folders: {
     metagen: 'metagen',

@@ -89,8 +89,7 @@ app.whenReady().then(() => {
       return null;
     }
 
-    const normalized = path.join(path.dirname(result.filePath), APP_CONFIG.project.projectFileName);
-    return normalized;
+    return result.filePath;
   });
 
   ipcMain.handle('app:quit', async () => {

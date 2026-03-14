@@ -22,8 +22,8 @@ function joinPaths(...parts) {
     .replace(/\/{2,}/g, '/');
 }
 
-function buildProjectFilePath(projectRoot) {
-  return joinPaths(projectRoot, APP_CONFIG.project.projectFileName);
+function buildProjectFilePath(projectRoot, projectFileName = APP_CONFIG.project.defaultProjectFileName) {
+  return joinPaths(projectRoot, projectFileName);
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -112,8 +112,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const openDocuments = await tabs.collectOpenDocumentRecords();
 
     if (project.isUnsaved || forceSaveAs) {
+      const projectStem = String(project.project?.name || 'project').trim() || 'project';
       const suggestedPath = project.projectFilePath
-        || (project.rootPath ? buildProjectFilePath(project.rootPath) : buildProjectFilePath(project.project?.name || 'project'));
+        || buildProjectFilePath(project.rootPath || '.', `${projectStem}.yaml`);
       const targetProjectFilePath = await fileSystem.saveProjectFileAsDialog(suggestedPath);
 
       if (!targetProjectFilePath) {
