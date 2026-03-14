@@ -102,6 +102,10 @@ async function createFixtureProject(root, { metagenDescription = 'before-save' }
   await fs.writeFile(path.join(root, 'metaview', 'main.yaml'), YAML.stringify(metaviewDoc), 'utf-8');
 }
 
+function getProjectFilePath(root) {
+  return path.join(root, APP_CONFIG.project.projectFileName);
+}
+
 
 
 function createFakeElement(tagName) {
@@ -246,7 +250,7 @@ test('save existing project updates disk and reopens clean runtime', async () =>
   await createFixtureProject(root);
 
   const manager = createManager();
-  await manager.openProject(root);
+  await manager.openProject(getProjectFilePath(root));
   const record = manager.getDocumentsByModule('metagen')[0];
   record.document.component.description = 'after-save';
 
@@ -256,10 +260,12 @@ test('save existing project updates disk and reopens clean runtime', async () =>
   assert.match(savedText, /after-save/);
 
   await manager.closeProject();
-  await manager.openProject(root);
+  await manager.openProject(getProjectFilePath(root));
   const reopened = manager.getDocumentsByModule('metagen')[0];
   assert.equal(reopened.document.component.description, 'after-save');
   assert.equal(manager.hasDirtyProject(), false);
+  assert.equal(manager.getCurrentProject().rootPath, root.replace(/\\/g, '/'));
+  assert.equal(manager.getCurrentProject().projectFilePath, getProjectFilePath(root).replace(/\\/g, '/'));
 });
 
 test('save as writes project into new root', async () => {
@@ -268,16 +274,61 @@ test('save as writes project into new root', async () => {
   await createFixtureProject(root);
 
   const manager = createManager();
-  await manager.openProject(root);
+  await manager.openProject(getProjectFilePath(root));
   const record = manager.getDocumentsByModule('metalab')[0];
   record.document.scenario.name = 'Startup updated';
 
-  await manager.saveProjectAs(targetRoot);
+  await manager.saveProjectAs(getProjectFilePath(targetRoot));
 
   const newProjectText = await fs.readFile(path.join(targetRoot, 'project.yaml'), 'utf-8');
   const newScenarioText = await fs.readFile(path.join(targetRoot, 'metalab', 'startup_updated.yaml'), 'utf-8');
   assert.match(newProjectText, /project:/);
   assert.match(newScenarioText, /Startup updated/);
+  assert.equal(manager.getCurrentProject().rootPath, targetRoot.replace(/\\/g, '/'));
+  assert.equal(manager.getCurrentProject().projectFilePath, getProjectFilePath(targetRoot).replace(/\\/g, '/'));
+});
+
+test('openProject accepts project.yaml file path and hydrates rootPath/projectFilePath', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-open-file-path-'));
+  await createFixtureProject(root);
+  const manager = createManager();
+
+  await manager.openProject(getProjectFilePath(root));
+  const current = manager.getCurrentProject();
+
+  assert.equal(current.rootPath, root.replace(/\\/g, '/'));
+  assert.equal(current.projectFilePath, getProjectFilePath(root).replace(/\\/g, '/'));
+});
+
+test('open/save-as reject folder-oriented ambiguity at project manager API', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-open-folder-reject-'));
+  await createFixtureProject(root);
+  const manager = createManager();
+
+  await assert.rejects(() => manager.openProject(root), /must point to a YAML file/);
+  await manager.openProject(getProjectFilePath(root));
+  await assert.rejects(() => manager.saveProjectAs(root), /must point to a YAML file/);
+});
+
+test('save as normalizes selected yaml file to dirname + project.yaml entry file', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-normalize-src-'));
+  const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-as-normalize-dst-'));
+  await createFixtureProject(root);
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  await manager.saveProjectAs(path.join(targetRoot, 'custom-name.yaml'));
+
+  const expectedProjectFile = getProjectFilePath(targetRoot);
+  const expectedMetaGenFile = path.join(targetRoot, 'metagen', 'pump.yaml');
+  const expectedMetaLabFile = path.join(targetRoot, 'metalab', 'startup.yaml');
+  const expectedMetaViewFile = path.join(targetRoot, 'metaview', 'main.yaml');
+
+  assert.equal(await fs.access(expectedProjectFile).then(() => true).catch(() => false), true);
+  assert.equal(await fs.access(expectedMetaGenFile).then(() => true).catch(() => false), true);
+  assert.equal(await fs.access(expectedMetaLabFile).then(() => true).catch(() => false), true);
+  assert.equal(await fs.access(expectedMetaViewFile).then(() => true).catch(() => false), true);
+  assert.equal(manager.getCurrentProject().projectFilePath, expectedProjectFile.replace(/\\/g, '/'));
 });
 
 test('rollback restores promoted modules if module promote fails', async () => {
@@ -288,7 +339,7 @@ test('rollback restores promoted modules if module promote fails', async () => {
     failRename: (fromPath) => fromPath.endsWith(path.join('.save-staging', 'metalab'))
   });
 
-  await manager.openProject(root);
+  await manager.openProject(getProjectFilePath(root));
   const record = manager.getDocumentsByModule('metagen')[0];
   record.document.component.description = 'should-not-commit';
 
@@ -307,7 +358,7 @@ test('rollback restores module changes if project.yaml promote fails', async () 
     failRename: (fromPath) => fromPath.endsWith(path.join('.save-staging', 'project.yaml'))
   });
 
-  await manager.openProject(root);
+  await manager.openProject(getProjectFilePath(root));
   const record = manager.getDocumentsByModule('metagen')[0];
   record.document.component.description = 'must-be-rolled-back';
 
@@ -323,7 +374,7 @@ test('openDocuments snapshot overrides currentProject documents during save', as
   await createFixtureProject(root, { metagenDescription: 'disk-version' });
 
   const manager = createManager();
-  await manager.openProject(root);
+  await manager.openProject(getProjectFilePath(root));
   const record = manager.getDocumentsByModule('metagen')[0];
 
   const openDocumentRecord = {
@@ -350,7 +401,7 @@ test('close tab syncs runtime snapshot to project and reopen reads fresh record'
   await createFixtureProject(root, { metagenDescription: 'before-close' });
 
   const manager = createManager();
-  await manager.openProject(root);
+  await manager.openProject(getProjectFilePath(root));
 
   const baseRecord = manager.getDocumentsByModule('metagen')[0];
   const expectedDescription = 'after-close-runtime-sync';
@@ -404,7 +455,7 @@ test('updateTabPaths remaps active tab and document path after save as pathMap',
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-tabs-remap-'));
   await createFixtureProject(root);
   const manager = createManager();
-  await manager.openProject(root);
+  await manager.openProject(getProjectFilePath(root));
 
   const record = manager.getDocumentsByModule('metagen')[0];
   const previousPath = record.path;
@@ -432,6 +483,53 @@ test('updateTabPaths remaps active tab and document path after save as pathMap',
 
     await tabs.closeTab(nextPath);
     assert.equal(tabs.getActiveDocumentRecord(), null);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
+
+test('collectOpenDocumentRecords uses runtime collectDocumentRecord and syncs project snapshot', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-collect-open-records-'));
+  await createFixtureProject(root, { metagenDescription: 'before-runtime-collect' });
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const record = manager.getDocumentsByModule('metagen')[0];
+  const updatedDescription = 'after-runtime-collect';
+
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async () => null,
+        replaceDocumentRecord: async (...args) => manager.replaceDocumentRecord(...args)
+      },
+      openEditor: async ({ documentRecord }) => ({
+        collectDocumentRecord: async () => ({
+          ...documentRecord,
+          document: {
+            ...documentRecord.document,
+            component: {
+              ...documentRecord.document.component,
+              description: updatedDescription
+            }
+          }
+        }),
+        dispose: () => {}
+      })
+    });
+
+    await tabs.openDocument(record);
+    const openRecords = await tabs.collectOpenDocumentRecords();
+    assert.equal(openRecords.length, 1);
+    assert.equal(openRecords[0].document.component.description, updatedDescription);
+
+    const synced = manager.getCurrentProject().documents.metagen.find((entry) => entry.path === record.path);
+    assert.equal(synced.document.component.description, updatedDescription);
   } finally {
     globalThis.document = previousDocument;
   }

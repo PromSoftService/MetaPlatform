@@ -62,7 +62,10 @@ app.whenReady().then(() => {
   ipcMain.handle('dialog:open-project', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Открыть проект',
-      properties: ['openDirectory']
+      properties: ['openFile'],
+      filters: [
+        { name: 'Project YAML', extensions: ['yaml', 'yml'] }
+      ]
     });
 
     if (result.canceled || !result.filePaths[0]) {
@@ -73,18 +76,21 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('dialog:save-project-as', async (_event, defaultPath) => {
-    const result = await dialog.showOpenDialog({
+    const result = await dialog.showSaveDialog({
       title: 'Сохранить проект как',
       defaultPath,
-      buttonLabel: 'Выбрать',
-      properties: ['openDirectory', 'createDirectory']
+      buttonLabel: 'Сохранить',
+      filters: [
+        { name: 'YAML', extensions: ['yaml', 'yml'] }
+      ]
     });
 
-    if (result.canceled || !result.filePaths[0]) {
+    if (result.canceled || !result.filePath) {
       return null;
     }
 
-    return result.filePaths[0];
+    const normalized = path.join(path.dirname(result.filePath), APP_CONFIG.project.projectFileName);
+    return normalized;
   });
 
   ipcMain.handle('app:quit', async () => {

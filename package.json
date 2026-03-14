@@ -6,7 +6,9 @@
   "main": "main.js",
   "scripts": {
     "dev": "vite",
-    "start": "electron ."
+    "start": "electron .",
+    "test": "node --test",
+    "test:integration": "node --test tests/*.test.js"
   },
   "dependencies": {
     "split.js": "^1.6.5",

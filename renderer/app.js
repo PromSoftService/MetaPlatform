@@ -12,11 +12,18 @@ import { showSaveChangesDialog } from './ui/dialogs.js';
 import { createMetaGenModule } from './modules/metagen/metagenModule.js';
 import { createMetaLabModule } from './modules/metalab/metalabModule.js';
 import { createMetaViewModule } from './modules/metaview/metaviewModule.js';
+import { APP_CONFIG } from '../config/app-config.js';
 
-function dirnameOf(targetPath) {
-  const normalized = String(targetPath || '').replace(/\\/g, '/');
-  const index = normalized.lastIndexOf('/');
-  return index > 0 ? normalized.slice(0, index) : normalized;
+function joinPaths(...parts) {
+  return parts
+    .filter(Boolean)
+    .join('/')
+    .replace(/\\/g, '/')
+    .replace(/\/{2,}/g, '/');
+}
+
+function buildProjectFilePath(projectRoot) {
+  return joinPaths(projectRoot, APP_CONFIG.project.projectFileName);
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -105,14 +112,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const openDocuments = await tabs.collectOpenDocumentRecords();
 
     if (project.isUnsaved || forceSaveAs) {
-      const suggestedPath = `${dirnameOf(project.rootPath || '.')}/${project.project.name || 'project'}`;
-      const targetRoot = await fileSystem.saveProjectAsDialog(suggestedPath);
+      const suggestedPath = project.projectFilePath
+        || (project.rootPath ? buildProjectFilePath(project.rootPath) : buildProjectFilePath(project.project?.name || 'project'));
+      const targetProjectFilePath = await fileSystem.saveProjectFileAsDialog(suggestedPath);
 
-      if (!targetRoot) {
+      if (!targetProjectFilePath) {
         return false;
       }
 
-      const result = await projectManager.saveProjectAs(targetRoot, openDocuments);
+      const result = await projectManager.saveProjectAs(targetProjectFilePath, openDocuments);
       tabs.updateTabPaths(result?.pathMap);
       await tree.render();
       logger.clear();
@@ -168,7 +176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    const selectedPath = await fileSystem.openProjectDialog();
+    const selectedPath = await fileSystem.openProjectFileDialog();
 
     if (!selectedPath) {
       return;

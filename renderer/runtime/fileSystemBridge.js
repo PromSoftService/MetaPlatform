@@ -6,9 +6,9 @@ export function createFileSystemBridge() {
   }
 
   return {
-    openProjectDialog: () => api.openProjectDialog(),
+    openProjectFileDialog: () => api.openProjectFileDialog(),
     requestAppQuit: () => api.requestAppQuit(),
-    saveProjectAsDialog: (defaultPath) => api.saveProjectAsDialog(defaultPath),
+    saveProjectFileAsDialog: (defaultPath) => api.saveProjectFileAsDialog(defaultPath),
     ensureDir: (targetPath) => api.ensureDir(targetPath),
     exists: (targetPath) => api.exists(targetPath),
     readText: (targetPath) => api.readText(targetPath),

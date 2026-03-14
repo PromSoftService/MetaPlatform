@@ -14,6 +14,56 @@ function buildProjectFilePath(projectRoot) {
   return joinPaths(projectRoot, APP_CONFIG.project.projectFileName);
 }
 
+function dirnameOf(targetPath) {
+  const normalized = String(targetPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  const index = normalized.lastIndexOf('/');
+
+  if (index < 0) {
+    return '';
+  }
+
+  if (index === 0) {
+    return '/';
+  }
+
+  return normalized.slice(0, index);
+}
+
+function normalizeProjectFilePath(projectFilePath, { strictFileName = false, normalizeToEntryFile = false } = {}) {
+  const normalized = String(projectFilePath || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+
+  if (!normalized) {
+    throw new Error('Project file path is required');
+  }
+
+  const baseName = normalized.split('/').pop() || '';
+  const isYaml = /\.ya?ml$/i.test(baseName);
+
+  if (!isYaml) {
+    throw new Error(`Project file path must point to a YAML file: ${projectFilePath}`);
+  }
+
+  if (strictFileName && baseName !== APP_CONFIG.project.projectFileName) {
+    throw new Error(`Project entry file must be ${APP_CONFIG.project.projectFileName}: ${projectFilePath}`);
+  }
+
+  if (normalizeToEntryFile) {
+    return buildProjectFilePath(dirnameOf(normalized) || '.');
+  }
+
+  return normalized;
+}
+
+function getProjectRootFromProjectFile(projectFilePath) {
+  const root = dirnameOf(projectFilePath);
+
+  if (!root) {
+    return '.';
+  }
+
+  return root;
+}
+
 function getFileExtension(fileName) {
   const normalized = String(fileName || '');
   const lastDotIndex = normalized.lastIndexOf('.');
@@ -377,10 +427,15 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     );
   }
 
-  function createProjectRuntime({ rootPath, raw, documents, isUnsaved = false, isDirty = false }) {
+  function createProjectRuntime({ rootPath, projectFilePath = null, raw, documents, isUnsaved = false, isDirty = false }) {
+    const normalizedRootPath = rootPath ? String(rootPath).replace(/\\/g, '/') : null;
+    const resolvedProjectFilePath = normalizedRootPath
+      ? (projectFilePath || buildProjectFilePath(normalizedRootPath))
+      : null;
+
     return {
-      rootPath,
-      projectFilePath: rootPath ? buildProjectFilePath(rootPath) : null,
+      rootPath: normalizedRootPath,
+      projectFilePath: resolvedProjectFilePath,
       raw,
       project: raw.project,
       documents,
@@ -416,6 +471,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     return createProjectRuntime({
       rootPath: projectRoot,
+      projectFilePath,
       raw: projectFile.data,
       documents: {
         metagen: await scanModuleDocuments(projectRoot, APP_CONFIG.project.folders.metagen, 'metagen'),
@@ -427,8 +483,11 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     });
   }
 
-  async function openProject(projectRoot) {
+  async function openProject(projectFilePath) {
+    const normalizedProjectFilePath = normalizeProjectFilePath(projectFilePath, { strictFileName: true });
+    const projectRoot = getProjectRootFromProjectFile(normalizedProjectFilePath);
     currentProject = await hydrateProjectRuntimeFromDisk(projectRoot);
+    currentProject.projectFilePath = buildProjectFilePath(projectRoot);
 
     onProjectLoaded?.({ projectRuntime: currentProject });
     emitChange();
@@ -451,6 +510,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     currentProject.documents = hydrated.documents;
     currentProject.raw = hydrated.raw;
     currentProject.project = hydrated.project;
+    currentProject.projectFilePath = hydrated.projectFilePath;
 
     emitChange();
     return currentProject;
@@ -849,7 +909,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       throw new Error('Project is not opened');
     }
 
-    if (!currentProject.rootPath) {
+    if (!currentProject.rootPath || !currentProject.projectFilePath) {
       return null;
     }
 
@@ -857,9 +917,15 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return result;
   }
 
-  async function saveProjectAs(newProjectRoot, openDocuments = []) {
+  async function saveProjectAs(newProjectFilePath, openDocuments = []) {
+    const normalizedProjectFilePath = normalizeProjectFilePath(newProjectFilePath, { normalizeToEntryFile: true });
+    const newProjectRoot = getProjectRootFromProjectFile(normalizedProjectFilePath);
+
     const result = await saveProjectToRoot(newProjectRoot, openDocuments, { renameProjectFromRoot: true });
-    logger.info('project', 'Проект сохранен как', { to: newProjectRoot });
+    logger.info('project', 'Проект сохранен как', {
+      rootPath: newProjectRoot,
+      projectFilePath: normalizedProjectFilePath
+    });
     return result;
   }
 
