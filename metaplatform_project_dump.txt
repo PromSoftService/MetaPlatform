@@ -193,6 +193,7 @@ PROJECT_FILES = [
   'renderer/modules/metagen/tables/createMetaGenDataSheet.js',
   'renderer/modules/metagen/tables/createMetaGenParamsSheet.js',
   'renderer/modules/metagen/tables/createMetaGenSimpleSheet.js',
+  'renderer/modules/metagen/tables/finalizeActiveTableEditing.js',
   'renderer/modules/metagen/tables/metaGenParamsTableAutoStyle.js',
   'renderer/modules/metagen/tables/sheetSnapshot.js',
   'renderer/modules/metalab/metalabCommands.js',
@@ -213,9 +214,12 @@ PROJECT_FILES = [
   'renderer/ui/createProjectTree.js',
   'renderer/ui/createWorkbenchTabs.js',
   'renderer/ui/dialogs.js',
+  'renderer/ui/tabEditLifecycle.js',
   'renderer/ui/workbenchShell.js',
   'tests/appCloseCoordinator.test.js',
   'tests/projectManager.save.integration.test.js',
+  'tests/finalizeActiveTableEditing.test.js',
+  'tests/tabEditLifecycle.test.js',
   'tests/windowCloseGuard.test.js',
   'vite.config.js',
   'main/runtime/windowCloseGuard.js',
@@ -306,6 +310,7 @@ PROJECT_FILES = [
   'renderer/modules/metagen/tables/createMetaGenDataSheet.js',
   'renderer/modules/metagen/tables/createMetaGenParamsSheet.js',
   'renderer/modules/metagen/tables/createMetaGenSimpleSheet.js',
+  'renderer/modules/metagen/tables/finalizeActiveTableEditing.js',
   'renderer/modules/metagen/tables/metaGenParamsTableAutoStyle.js',
   'renderer/modules/metagen/tables/sheetSnapshot.js',
   'renderer/modules/metalab/metalabCommands.js',
@@ -326,9 +331,12 @@ PROJECT_FILES = [
   'renderer/ui/createProjectTree.js',
   'renderer/ui/createWorkbenchTabs.js',
   'renderer/ui/dialogs.js',
+  'renderer/ui/tabEditLifecycle.js',
   'renderer/ui/workbenchShell.js',
   'tests/appCloseCoordinator.test.js',
   'tests/projectManager.save.integration.test.js',
+  'tests/finalizeActiveTableEditing.test.js',
+  'tests/tabEditLifecycle.test.js',
   'tests/windowCloseGuard.test.js',
   'vite.config.js',
   'main/runtime/windowCloseGuard.js',
@@ -2361,6 +2369,10 @@ import { METAGEN_CONFIG } from '../../modules/metagen/metagenConfig.js';
 import { clearMountElement } from '../shared/editorHost.js';
 import { createMetaGenParamsSheet } from '../../modules/metagen/tables/createMetaGenParamsSheet.js';
 import { createMetaGenDataSheet } from '../../modules/metagen/tables/createMetaGenDataSheet.js';
+import {
+  finalizeActiveTableEditing,
+  TABLE_EDIT_FINALIZE_RESULT
+} from '../../modules/metagen/tables/finalizeActiveTableEditing.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -2485,6 +2497,7 @@ export async function createMetaGenEditor({ documentRecord, mountElement, logger
   const tableConfig = METAGEN_CONFIG.tableRuntime;
   const logMessages = tableConfig.logMessages;
   const loggerSource = `${METAGEN_CONFIG.moduleId}.editor`;
+  const lifecycleSource = `${METAGEN_CONFIG.moduleId}.editor.lifecycle`;
   const paramsSource = `${METAGEN_CONFIG.moduleId}.table.params`;
   const dataSource = `${METAGEN_CONFIG.moduleId}.table.data`;
   const autoStyleSource = `${METAGEN_CONFIG.moduleId}.table.params.auto-style`;
@@ -2551,6 +2564,8 @@ export async function createMetaGenEditor({ documentRecord, mountElement, logger
   });
 
   async function extractValue() {
+    await finishActiveTableEditing();
+
     documentRecord.document.params = paramsTable?.extractDocumentValue?.() || {
       format: 'header-plus-rows',
       header: [],
@@ -2576,6 +2591,38 @@ export async function createMetaGenEditor({ documentRecord, mountElement, logger
   tableDirtyDisposables.push(bindTableDirtyTracker(paramsTable, () => paramsTable?.extractDocumentValue?.(), markDirty));
   tableDirtyDisposables.push(bindTableDirtyTracker(dataTable, () => dataTable?.extractDocumentValue?.(), markDirty));
 
+  async function finishActiveTableEditing() {
+    const results = await Promise.all([
+      finalizeActiveTableEditing({
+        tableRuntime: paramsTable?.workbook,
+        logger,
+        source: `${lifecycleSource}.params`
+      }),
+      finalizeActiveTableEditing({
+        tableRuntime: dataTable?.workbook,
+        logger,
+        source: `${lifecycleSource}.data`
+      })
+    ]);
+
+    if (results.includes(TABLE_EDIT_FINALIZE_RESULT.FAILED)) {
+      logger?.warn?.(lifecycleSource, 'Не удалось завершить редактирование в одной из таблиц MetaGen', {
+        results
+      });
+      return TABLE_EDIT_FINALIZE_RESULT.FAILED;
+    }
+
+    if (results.includes(TABLE_EDIT_FINALIZE_RESULT.COMMITTED)) {
+      return TABLE_EDIT_FINALIZE_RESULT.COMMITTED;
+    }
+
+    if (results.includes(TABLE_EDIT_FINALIZE_RESULT.CANCELLED)) {
+      return TABLE_EDIT_FINALIZE_RESULT.CANCELLED;
+    }
+
+    return TABLE_EDIT_FINALIZE_RESULT.NO_OP;
+  }
+
   async function trySave() {
     try {
       const nextRecord = await extractValue();
@@ -2595,6 +2642,7 @@ export async function createMetaGenEditor({ documentRecord, mountElement, logger
     paramsTable,
     dataTable,
     isDirty: () => runtimeDirty,
+    finishActiveTableEditing,
     async collectDocumentRecord() {
       await extractValue();
       return documentRecord;
@@ -3413,6 +3461,64 @@ export function createMetaGenSimpleSheet({
     logger.error(source, logMessages.tableCreateFailed, error);
     return null;
   }
+}
+
+
+==================================================
+FILE: renderer/modules/metagen/tables/finalizeActiveTableEditing.js
+==================================================
+
+export const TABLE_EDIT_FINALIZE_RESULT = {
+  COMMITTED: 'committed',
+  CANCELLED: 'cancelled',
+  NO_OP: 'no-op',
+  FAILED: 'failed'
+};
+
+export async function finalizeActiveTableEditing({ tableRuntime, logger, source }) {
+  if (!tableRuntime || typeof tableRuntime.isCellEditing !== 'function') {
+    return TABLE_EDIT_FINALIZE_RESULT.NO_OP;
+  }
+
+  if (!tableRuntime.isCellEditing()) {
+    return TABLE_EDIT_FINALIZE_RESULT.NO_OP;
+  }
+
+  if (typeof tableRuntime.endEditingAsync === 'function') {
+    try {
+      const committed = await tableRuntime.endEditingAsync(true);
+
+      if (committed) {
+        return TABLE_EDIT_FINALIZE_RESULT.COMMITTED;
+      }
+
+      if (typeof tableRuntime.abortEditingAsync === 'function') {
+        const cancelled = await tableRuntime.abortEditingAsync();
+        return cancelled ? TABLE_EDIT_FINALIZE_RESULT.CANCELLED : TABLE_EDIT_FINALIZE_RESULT.FAILED;
+      }
+
+      return TABLE_EDIT_FINALIZE_RESULT.FAILED;
+    } catch (error) {
+      logger?.error?.(source, 'Ошибка завершения редактирования ячейки', {
+        message: error?.message || String(error)
+      });
+
+      if (typeof tableRuntime.abortEditingAsync === 'function') {
+        try {
+          const cancelled = await tableRuntime.abortEditingAsync();
+          return cancelled ? TABLE_EDIT_FINALIZE_RESULT.CANCELLED : TABLE_EDIT_FINALIZE_RESULT.FAILED;
+        } catch (abortError) {
+          logger?.error?.(source, 'Ошибка отмены редактирования ячейки после неудачного commit', {
+            message: abortError?.message || String(abortError)
+          });
+        }
+      }
+
+      return TABLE_EDIT_FINALIZE_RESULT.FAILED;
+    }
+  }
+
+  return TABLE_EDIT_FINALIZE_RESULT.FAILED;
 }
 
 
@@ -4946,6 +5052,7 @@ FILE: renderer/ui/createWorkbenchTabs.js
 ==================================================
 
 import { APP_CONFIG } from '../../config/app-config.js';
+import { finalizeEditingBeforeTabSwitch } from './tabEditLifecycle.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -5010,12 +5117,25 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   let activeTabId = null;
   let temporaryCounter = 0;
 
-  function activateTab(tabId) {
+  async function activateTab(tabId) {
+    const currentEntry = activeTabId && tabs.has(activeTabId) ? tabs.get(activeTabId) : null;
+    const canActivate = await finalizeEditingBeforeTabSwitch({
+      activeEntry: currentEntry,
+      nextTabId: tabId,
+      logger
+    });
+
+    if (!canActivate) {
+      return false;
+    }
+
     activeTabId = tabId;
     for (const entry of tabs.values()) {
       entry.tabNode.classList.toggle(APP_CONFIG.ui.classNames.tabActive, entry.tabId === tabId);
       entry.pageNode.classList.toggle(APP_CONFIG.ui.classNames.pageActive, entry.tabId === tabId);
     }
+
+    return true;
   }
 
   function updateTabTitle(entry) {
@@ -5081,7 +5201,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     const fallback = orderedEntries[index + 1] || orderedEntries[index - 1];
 
     if (fallback && tabs.has(fallback.tabId)) {
-      activateTab(fallback.tabId);
+      await activateTab(fallback.tabId);
     }
   }
 
@@ -5117,10 +5237,12 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       isTemporary: true
     };
 
-    tabNode.addEventListener('click', () => activateTab(entry.tabId));
+    tabNode.addEventListener('click', async () => {
+      await activateTab(entry.tabId);
+    });
     tabsList.appendChild(tabNode);
     tabs.set(tabId, entry);
-    activateTab(tabId);
+    void activateTab(tabId);
 
     return entry;
   }
@@ -5295,7 +5417,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
         event.preventDefault();
         const updatedTabId = await finalize(true);
         if (updatedTabId) {
-          activateTab(updatedTabId);
+          await activateTab(updatedTabId);
         }
       }
 
@@ -5303,7 +5425,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
         event.preventDefault();
         const updatedTabId = await finalize(false);
         if (updatedTabId) {
-          activateTab(updatedTabId);
+          await activateTab(updatedTabId);
         }
       }
     });
@@ -5311,7 +5433,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     input.addEventListener('blur', async () => {
       const updatedTabId = await finalize(true);
       if (updatedTabId) {
-        activateTab(updatedTabId);
+        await activateTab(updatedTabId);
       }
     });
 
@@ -5322,7 +5444,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     const tabId = documentRecord.path;
 
     if (tabs.has(tabId)) {
-      activateTab(tabId);
+      void activateTab(tabId);
       if (startRenameMode) {
         await startRename(tabId);
       }
@@ -5355,7 +5477,9 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     const entry = { tabId, tabNode, pageNode, runtime, documentRecord };
     tabs.set(tabId, entry);
 
-    tabNode.addEventListener('click', () => activateTab(entry.tabId));
+    tabNode.addEventListener('click', async () => {
+      await activateTab(entry.tabId);
+    });
     tabNode.addEventListener('dblclick', async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -5363,7 +5487,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     });
 
     tabsList.appendChild(tabNode);
-    activateTab(tabId);
+    void activateTab(tabId);
 
     if (startRenameMode) {
       await startRename(entry.tabId);
@@ -5551,6 +5675,34 @@ export function showSaveChangesDialog({
 
     saveButton.focus();
   });
+}
+
+
+==================================================
+FILE: renderer/ui/tabEditLifecycle.js
+==================================================
+
+export async function finalizeEditingBeforeTabSwitch({ activeEntry, nextTabId, logger }) {
+  if (!activeEntry || activeEntry.tabId === nextTabId) {
+    return true;
+  }
+
+  if (typeof activeEntry.runtime?.finishActiveTableEditing !== 'function') {
+    return true;
+  }
+
+  try {
+    await activeEntry.runtime.finishActiveTableEditing();
+    return true;
+  } catch (error) {
+    logger?.error?.('tabs', 'Ошибка завершения редактирования перед переключением вкладки', {
+      fromTabId: activeEntry.tabId,
+      toTabId: nextTabId,
+      message: error?.message || String(error)
+    });
+
+    return false;
+  }
 }
 
 
@@ -6391,6 +6543,183 @@ test('collectOpenDocumentRecords uses runtime collectDocumentRecord and syncs pr
   } finally {
     globalThis.document = previousDocument;
   }
+});
+
+
+==================================================
+FILE: tests/finalizeActiveTableEditing.test.js
+==================================================
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  finalizeActiveTableEditing,
+  TABLE_EDIT_FINALIZE_RESULT
+} from '../renderer/modules/metagen/tables/finalizeActiveTableEditing.js';
+
+function createLogger() {
+  const calls = [];
+  return {
+    calls,
+    error(source, message, details) {
+      calls.push({ level: 'error', source, message, details });
+    }
+  };
+}
+
+test('finalizeActiveTableEditing returns no-op when workbook is not editing', async () => {
+  const logger = createLogger();
+  const result = await finalizeActiveTableEditing({
+    tableRuntime: {
+      isCellEditing: () => false
+    },
+    logger,
+    source: 'metagen.test'
+  });
+
+  assert.equal(result, TABLE_EDIT_FINALIZE_RESULT.NO_OP);
+  assert.equal(logger.calls.length, 0);
+});
+
+test('finalizeActiveTableEditing commits active edit when commit succeeds', async () => {
+  const result = await finalizeActiveTableEditing({
+    tableRuntime: {
+      isCellEditing: () => true,
+      endEditingAsync: async () => true
+    },
+    source: 'metagen.test'
+  });
+
+  assert.equal(result, TABLE_EDIT_FINALIZE_RESULT.COMMITTED);
+});
+
+test('finalizeActiveTableEditing cancels edit when commit returns false but abort succeeds', async () => {
+  const result = await finalizeActiveTableEditing({
+    tableRuntime: {
+      isCellEditing: () => true,
+      endEditingAsync: async () => false,
+      abortEditingAsync: async () => true
+    },
+    source: 'metagen.test'
+  });
+
+  assert.equal(result, TABLE_EDIT_FINALIZE_RESULT.CANCELLED);
+});
+
+test('finalizeActiveTableEditing returns failed and logs when commit and abort fail', async () => {
+  const logger = createLogger();
+  const result = await finalizeActiveTableEditing({
+    tableRuntime: {
+      isCellEditing: () => true,
+      endEditingAsync: async () => {
+        throw new Error('commit failed');
+      },
+      abortEditingAsync: async () => {
+        throw new Error('abort failed');
+      }
+    },
+    logger,
+    source: 'metagen.test'
+  });
+
+  assert.equal(result, TABLE_EDIT_FINALIZE_RESULT.FAILED);
+  assert.equal(logger.calls.length, 2);
+  assert.match(logger.calls[0].message, /Ошибка завершения редактирования ячейки/);
+  assert.match(logger.calls[1].message, /Ошибка отмены редактирования ячейки/);
+});
+
+
+==================================================
+FILE: tests/tabEditLifecycle.test.js
+==================================================
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { finalizeEditingBeforeTabSwitch } from '../renderer/ui/tabEditLifecycle.js';
+
+function createLogger() {
+  const calls = [];
+  return {
+    calls,
+    error(source, message, details) {
+      calls.push({ level: 'error', source, message, details });
+    }
+  };
+}
+
+test('switching away from active tab finalizes pending table edit before activation', async () => {
+  const calls = [];
+  const result = await finalizeEditingBeforeTabSwitch({
+    activeEntry: {
+      tabId: 'tab-A',
+      runtime: {
+        finishActiveTableEditing: async () => {
+          calls.push('finalized');
+        }
+      }
+    },
+    nextTabId: 'tab-B',
+    logger: createLogger()
+  });
+
+  assert.equal(result, true);
+  assert.deepEqual(calls, ['finalized']);
+});
+
+test('switching tabs does not keep hidden pending state in old tab when no runtime finalizer exists', async () => {
+  const result = await finalizeEditingBeforeTabSwitch({
+    activeEntry: {
+      tabId: 'tab-A',
+      runtime: {}
+    },
+    nextTabId: 'tab-B',
+    logger: createLogger()
+  });
+
+  assert.equal(result, true);
+});
+
+test('switch to the same tab is a no-op and does not re-finalize', async () => {
+  let finalizeCalls = 0;
+
+  const result = await finalizeEditingBeforeTabSwitch({
+    activeEntry: {
+      tabId: 'tab-A',
+      runtime: {
+        finishActiveTableEditing: async () => {
+          finalizeCalls += 1;
+        }
+      }
+    },
+    nextTabId: 'tab-A',
+    logger: createLogger()
+  });
+
+  assert.equal(result, true);
+  assert.equal(finalizeCalls, 0);
+});
+
+test('failed finalization is handled predictably by blocking tab switch and logging error', async () => {
+  const logger = createLogger();
+
+  const result = await finalizeEditingBeforeTabSwitch({
+    activeEntry: {
+      tabId: 'tab-A',
+      runtime: {
+        finishActiveTableEditing: async () => {
+          throw new Error('cannot finalize');
+        }
+      }
+    },
+    nextTabId: 'tab-B',
+    logger
+  });
+
+  assert.equal(result, false);
+  assert.equal(logger.calls.length, 1);
+  assert.match(logger.calls[0].message, /Ошибка завершения редактирования перед переключением вкладки/);
 });
 
 

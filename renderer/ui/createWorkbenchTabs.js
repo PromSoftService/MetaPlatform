@@ -1,4 +1,5 @@
 import { APP_CONFIG } from '../../config/app-config.js';
+import { finalizeEditingBeforeTabSwitch } from './tabEditLifecycle.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -63,12 +64,25 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   let activeTabId = null;
   let temporaryCounter = 0;
 
-  function activateTab(tabId) {
+  async function activateTab(tabId) {
+    const currentEntry = activeTabId && tabs.has(activeTabId) ? tabs.get(activeTabId) : null;
+    const canActivate = await finalizeEditingBeforeTabSwitch({
+      activeEntry: currentEntry,
+      nextTabId: tabId,
+      logger
+    });
+
+    if (!canActivate) {
+      return false;
+    }
+
     activeTabId = tabId;
     for (const entry of tabs.values()) {
       entry.tabNode.classList.toggle(APP_CONFIG.ui.classNames.tabActive, entry.tabId === tabId);
       entry.pageNode.classList.toggle(APP_CONFIG.ui.classNames.pageActive, entry.tabId === tabId);
     }
+
+    return true;
   }
 
   function updateTabTitle(entry) {
@@ -134,7 +148,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     const fallback = orderedEntries[index + 1] || orderedEntries[index - 1];
 
     if (fallback && tabs.has(fallback.tabId)) {
-      activateTab(fallback.tabId);
+      await activateTab(fallback.tabId);
     }
   }
 
@@ -170,10 +184,12 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       isTemporary: true
     };
 
-    tabNode.addEventListener('click', () => activateTab(entry.tabId));
+    tabNode.addEventListener('click', async () => {
+      await activateTab(entry.tabId);
+    });
     tabsList.appendChild(tabNode);
     tabs.set(tabId, entry);
-    activateTab(tabId);
+    void activateTab(tabId);
 
     return entry;
   }
@@ -348,7 +364,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
         event.preventDefault();
         const updatedTabId = await finalize(true);
         if (updatedTabId) {
-          activateTab(updatedTabId);
+          await activateTab(updatedTabId);
         }
       }
 
@@ -356,7 +372,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
         event.preventDefault();
         const updatedTabId = await finalize(false);
         if (updatedTabId) {
-          activateTab(updatedTabId);
+          await activateTab(updatedTabId);
         }
       }
     });
@@ -364,7 +380,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     input.addEventListener('blur', async () => {
       const updatedTabId = await finalize(true);
       if (updatedTabId) {
-        activateTab(updatedTabId);
+        await activateTab(updatedTabId);
       }
     });
 
@@ -375,7 +391,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     const tabId = documentRecord.path;
 
     if (tabs.has(tabId)) {
-      activateTab(tabId);
+      void activateTab(tabId);
       if (startRenameMode) {
         await startRename(tabId);
       }
@@ -408,7 +424,9 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     const entry = { tabId, tabNode, pageNode, runtime, documentRecord };
     tabs.set(tabId, entry);
 
-    tabNode.addEventListener('click', () => activateTab(entry.tabId));
+    tabNode.addEventListener('click', async () => {
+      await activateTab(entry.tabId);
+    });
     tabNode.addEventListener('dblclick', async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -416,7 +434,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     });
 
     tabsList.appendChild(tabNode);
-    activateTab(tabId);
+    void activateTab(tabId);
 
     if (startRenameMode) {
       await startRename(entry.tabId);

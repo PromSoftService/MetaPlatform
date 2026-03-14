@@ -15,6 +15,10 @@ import { METAGEN_CONFIG } from '../../modules/metagen/metagenConfig.js';
 import { clearMountElement } from '../shared/editorHost.js';
 import { createMetaGenParamsSheet } from '../../modules/metagen/tables/createMetaGenParamsSheet.js';
 import { createMetaGenDataSheet } from '../../modules/metagen/tables/createMetaGenDataSheet.js';
+import {
+  finalizeActiveTableEditing,
+  TABLE_EDIT_FINALIZE_RESULT
+} from '../../modules/metagen/tables/finalizeActiveTableEditing.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -139,6 +143,7 @@ export async function createMetaGenEditor({ documentRecord, mountElement, logger
   const tableConfig = METAGEN_CONFIG.tableRuntime;
   const logMessages = tableConfig.logMessages;
   const loggerSource = `${METAGEN_CONFIG.moduleId}.editor`;
+  const lifecycleSource = `${METAGEN_CONFIG.moduleId}.editor.lifecycle`;
   const paramsSource = `${METAGEN_CONFIG.moduleId}.table.params`;
   const dataSource = `${METAGEN_CONFIG.moduleId}.table.data`;
   const autoStyleSource = `${METAGEN_CONFIG.moduleId}.table.params.auto-style`;
@@ -205,6 +210,8 @@ export async function createMetaGenEditor({ documentRecord, mountElement, logger
   });
 
   async function extractValue() {
+    await finishActiveTableEditing();
+
     documentRecord.document.params = paramsTable?.extractDocumentValue?.() || {
       format: 'header-plus-rows',
       header: [],
@@ -230,6 +237,38 @@ export async function createMetaGenEditor({ documentRecord, mountElement, logger
   tableDirtyDisposables.push(bindTableDirtyTracker(paramsTable, () => paramsTable?.extractDocumentValue?.(), markDirty));
   tableDirtyDisposables.push(bindTableDirtyTracker(dataTable, () => dataTable?.extractDocumentValue?.(), markDirty));
 
+  async function finishActiveTableEditing() {
+    const results = await Promise.all([
+      finalizeActiveTableEditing({
+        tableRuntime: paramsTable?.workbook,
+        logger,
+        source: `${lifecycleSource}.params`
+      }),
+      finalizeActiveTableEditing({
+        tableRuntime: dataTable?.workbook,
+        logger,
+        source: `${lifecycleSource}.data`
+      })
+    ]);
+
+    if (results.includes(TABLE_EDIT_FINALIZE_RESULT.FAILED)) {
+      logger?.warn?.(lifecycleSource, 'Не удалось завершить редактирование в одной из таблиц MetaGen', {
+        results
+      });
+      return TABLE_EDIT_FINALIZE_RESULT.FAILED;
+    }
+
+    if (results.includes(TABLE_EDIT_FINALIZE_RESULT.COMMITTED)) {
+      return TABLE_EDIT_FINALIZE_RESULT.COMMITTED;
+    }
+
+    if (results.includes(TABLE_EDIT_FINALIZE_RESULT.CANCELLED)) {
+      return TABLE_EDIT_FINALIZE_RESULT.CANCELLED;
+    }
+
+    return TABLE_EDIT_FINALIZE_RESULT.NO_OP;
+  }
+
   async function trySave() {
     try {
       const nextRecord = await extractValue();
@@ -249,6 +288,7 @@ export async function createMetaGenEditor({ documentRecord, mountElement, logger
     paramsTable,
     dataTable,
     isDirty: () => runtimeDirty,
+    finishActiveTableEditing,
     async collectDocumentRecord() {
       await extractValue();
       return documentRecord;
