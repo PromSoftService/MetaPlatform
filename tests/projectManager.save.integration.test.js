@@ -5,7 +5,7 @@ import os from 'node:os';
 import fs from 'node:fs/promises';
 import YAML from 'yaml';
 
-import { createProjectManager } from '../renderer/core/projectManager.js';
+import { createProjectManager, getProjectOwnedPaths } from '../renderer/core/projectManager.js';
 import { createModuleRegistry } from '../renderer/core/moduleRegistry.js';
 import { createMetaGenDocument } from '../renderer/modules/metagen/metagenDocumentFactory.js';
 import { createMetaLabDocument } from '../renderer/modules/metalab/metalabDocumentFactory.js';
@@ -356,6 +356,29 @@ test('save as does not rename project from folder name', async () => {
   assert.equal(manager.getCurrentProject().project.name, 'qqq');
 });
 
+test('getProjectOwnedPaths returns explicit project-owned contract', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-owned-contract-'));
+  const projectFilePath = path.join(root, 'custom.yaml');
+
+  const owned = getProjectOwnedPaths(projectFilePath);
+
+  assert.equal(owned.rootPath, root.replace(/\\/g, '/'));
+  assert.equal(owned.projectFileName, 'custom.yaml');
+  assert.equal(owned.projectFilePath, projectFilePath.replace(/\\/g, '/'));
+  assert.deepEqual(owned.moduleFolders, {
+    metagen: 'metagen',
+    metalab: 'metalab',
+    metaview: 'metaview'
+  });
+  assert.deepEqual(owned.moduleDirectories, {
+    metagen: path.join(root, 'metagen').replace(/\\/g, '/'),
+    metalab: path.join(root, 'metalab').replace(/\\/g, '/'),
+    metaview: path.join(root, 'metaview').replace(/\\/g, '/')
+  });
+  assert.equal('readmePath' in owned, false);
+  assert.equal('manualPath' in owned, false);
+});
+
 test('save as replaces project-owned paths and keeps user-owned paths', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-owned-paths-src-'));
   const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-owned-paths-dst-'));
@@ -390,6 +413,23 @@ test('save as replaces project-owned paths and keeps user-owned paths', async ()
 
   const projectText = await fs.readFile(path.join(targetRoot, 'abc.yaml'), 'utf-8');
   assert.match(projectText, /name: abc/);
+});
+
+test('save as does not do implicit full-root cleanup for unknown user-owned paths', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-no-root-cleanup-src-'));
+  const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-no-root-cleanup-dst-'));
+  await createFixtureProject(root, { projectFileName: 'source.yaml' });
+
+  await fs.writeFile(path.join(targetRoot, 'extra.txt'), 'keep-me', 'utf-8');
+  await fs.mkdir(path.join(targetRoot, 'docs'), { recursive: true });
+  await fs.writeFile(path.join(targetRoot, 'docs', 'manual.md'), 'keep-docs', 'utf-8');
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root, 'source.yaml'));
+  await manager.saveProjectAs(path.join(targetRoot, 'target.yaml'));
+
+  assert.equal(await fs.readFile(path.join(targetRoot, 'extra.txt'), 'utf-8'), 'keep-me');
+  assert.equal(await fs.readFile(path.join(targetRoot, 'docs', 'manual.md'), 'utf-8'), 'keep-docs');
 });
 
 test('rollback restores promoted modules if module promote fails', async () => {
@@ -428,6 +468,32 @@ test('rollback restores module changes if dynamic project file promote fails', a
   const metagenText = await fs.readFile(path.join(root, 'metagen', 'pump.yaml'), 'utf-8');
   assert.match(metagenText, /before-yaml-promote-failure/);
   assert.doesNotMatch(metagenText, /must-be-rolled-back/);
+});
+
+test('rollback keeps user-owned paths untouched while reverting project-owned paths', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-rollback-user-owned-'));
+  await createFixtureProject(root, { metagenDescription: 'rollback-user-owned-stable' });
+
+  await fs.writeFile(path.join(root, 'README.txt'), 'user-owned-readme', 'utf-8');
+  await fs.mkdir(path.join(root, 'notes'), { recursive: true });
+  await fs.writeFile(path.join(root, 'notes', 'todo.txt'), 'user-owned-note', 'utf-8');
+
+  const manager = createManager({
+    failRename: (fromPath) => fromPath.endsWith(path.join('.save-staging', 'project.yaml'))
+  });
+
+  await manager.openProject(getProjectFilePath(root));
+  const record = manager.getDocumentsByModule('metagen')[0];
+  record.document.component.description = 'must-rollback-with-user-owned-intact';
+
+  await assert.rejects(() => manager.saveProject(), /Injected rename failure/);
+
+  const metagenText = await fs.readFile(path.join(root, 'metagen', 'pump.yaml'), 'utf-8');
+  assert.match(metagenText, /rollback-user-owned-stable/);
+  assert.doesNotMatch(metagenText, /must-rollback-with-user-owned-intact/);
+
+  assert.equal(await fs.readFile(path.join(root, 'README.txt'), 'utf-8'), 'user-owned-readme');
+  assert.equal(await fs.readFile(path.join(root, 'notes', 'todo.txt'), 'utf-8'), 'user-owned-note');
 });
 
 test('openDocuments snapshot overrides currentProject documents during save', async () => {

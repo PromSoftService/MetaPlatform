@@ -14,6 +14,33 @@ function buildProjectFilePath(projectRoot, projectFileName = APP_CONFIG.project.
   return joinPaths(projectRoot, projectFileName);
 }
 
+function getDefaultProjectModuleDirectories(projectRoot) {
+  return {
+    metagen: joinPaths(projectRoot, APP_CONFIG.project.folders.metagen),
+    metalab: joinPaths(projectRoot, APP_CONFIG.project.folders.metalab),
+    metaview: joinPaths(projectRoot, APP_CONFIG.project.folders.metaview)
+  };
+}
+
+export function getProjectOwnedPaths(targetProjectFilePath) {
+  const normalizedProjectFilePath = normalizeProjectFilePath(targetProjectFilePath);
+  const targetRoot = getProjectRootFromProjectFile(normalizedProjectFilePath);
+  const targetProjectFileName = normalizedProjectFilePath.split('/').pop();
+  const moduleDirectories = getDefaultProjectModuleDirectories(targetRoot);
+
+  return {
+    rootPath: targetRoot,
+    projectFileName: targetProjectFileName,
+    projectFilePath: buildProjectFilePath(targetRoot, targetProjectFileName),
+    moduleDirectories,
+    moduleFolders: {
+      metagen: APP_CONFIG.project.folders.metagen,
+      metalab: APP_CONFIG.project.folders.metalab,
+      metaview: APP_CONFIG.project.folders.metaview
+    }
+  };
+}
+
 function dirnameOf(targetPath) {
   const normalized = String(targetPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
   const index = normalized.lastIndexOf('/');
@@ -264,9 +291,10 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
   async function ensureProjectDirectories(projectRoot) {
     await fileSystem.ensureDir(projectRoot);
-    await fileSystem.ensureDir(joinPaths(projectRoot, APP_CONFIG.project.folders.metagen));
-    await fileSystem.ensureDir(joinPaths(projectRoot, APP_CONFIG.project.folders.metalab));
-    await fileSystem.ensureDir(joinPaths(projectRoot, APP_CONFIG.project.folders.metaview));
+    const moduleDirectories = getDefaultProjectModuleDirectories(projectRoot);
+    await fileSystem.ensureDir(moduleDirectories.metagen);
+    await fileSystem.ensureDir(moduleDirectories.metalab);
+    await fileSystem.ensureDir(moduleDirectories.metaview);
     await fileSystem.ensureDir(joinPaths(projectRoot, APP_CONFIG.project.folders.generated));
   }
 
@@ -377,11 +405,12 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
   }
 
-  async function cleanupSaveBackups(targetRoot, projectFileName) {
-    await removeDirectoryIfExists(buildModuleBackupDir(targetRoot, APP_CONFIG.project.folders.metagen));
-    await removeDirectoryIfExists(buildModuleBackupDir(targetRoot, APP_CONFIG.project.folders.metalab));
-    await removeDirectoryIfExists(buildModuleBackupDir(targetRoot, APP_CONFIG.project.folders.metaview));
-    await fileSystem.deleteFile(buildProjectFileBackupPath(targetRoot, projectFileName));
+  async function cleanupSaveBackups(projectOwnedPaths) {
+    for (const moduleFolder of Object.values(projectOwnedPaths.moduleFolders)) {
+      await removeDirectoryIfExists(buildModuleBackupDir(projectOwnedPaths.rootPath, moduleFolder));
+    }
+
+    await fileSystem.deleteFile(buildProjectFileBackupPath(projectOwnedPaths.rootPath, projectOwnedPaths.projectFileName));
   }
 
   async function cleanupSaveStaging(targetRoot) {
@@ -389,14 +418,14 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
 
-  async function performSaveRollback(targetRoot, projectFileName, promotedModules, projectFilePromoted, originalError) {
+  async function performSaveRollback(projectOwnedPaths, promotedModules, projectFilePromoted, originalError) {
     // При сбое commit пытаемся откатить максимум уже продвинутых сущностей.
     // Ошибки rollback не должны скрывать исходную причину сбоя, но и не должны обрывать остальные шаги отката.
     const rollbackErrors = [];
 
     if (projectFilePromoted) {
       try {
-        await rollbackPromotedProjectFile(targetRoot, projectFileName);
+        await rollbackPromotedProjectFile(projectOwnedPaths.rootPath, projectOwnedPaths.projectFileName);
       } catch (error) {
         rollbackErrors.push(new Error(`project file rollback failed: ${error?.message || String(error)}`));
       }
@@ -404,7 +433,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     for (const moduleFolder of [...promotedModules].reverse()) {
       try {
-        await rollbackPromotedModuleDirectory(targetRoot, moduleFolder);
+        await rollbackPromotedModuleDirectory(projectOwnedPaths.rootPath, moduleFolder);
       } catch (error) {
         rollbackErrors.push(new Error(`${moduleFolder} rollback failed: ${error?.message || String(error)}`));
       }
@@ -786,9 +815,11 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const docs = Array.from(recordsByIdentity.values());
 
     // prepare payload
-    const normalizedTargetProjectFilePath = normalizeProjectFilePath(targetProjectFilePath);
-    const targetRoot = getProjectRootFromProjectFile(normalizedTargetProjectFilePath);
-    const targetProjectFileName = normalizedTargetProjectFilePath.split('/').pop();
+    const projectOwnedPaths = getProjectOwnedPaths(targetProjectFilePath);
+    const normalizedTargetProjectFilePath = projectOwnedPaths.projectFilePath;
+    const targetRoot = projectOwnedPaths.rootPath;
+    const targetProjectFileName = projectOwnedPaths.projectFileName;
+    const moduleFolders = Object.values(projectOwnedPaths.moduleFolders);
 
     await ensureProjectDirectories(targetRoot);
 
@@ -817,9 +848,9 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     // Это снижает риск частично пустого проекта при ошибке записи.
     await removeDirectoryIfExists(stagingRoot);
 
-    await fileSystem.ensureDir(buildModuleStagingDir(targetRoot, APP_CONFIG.project.folders.metagen));
-    await fileSystem.ensureDir(buildModuleStagingDir(targetRoot, APP_CONFIG.project.folders.metalab));
-    await fileSystem.ensureDir(buildModuleStagingDir(targetRoot, APP_CONFIG.project.folders.metaview));
+    for (const moduleFolder of moduleFolders) {
+      await fileSystem.ensureDir(buildModuleStagingDir(targetRoot, moduleFolder));
+    }
 
     // stage document files
     for (const record of docs) {
@@ -859,24 +890,20 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     // commit promoted entities
     try {
-      await promoteModuleDirectory(targetRoot, APP_CONFIG.project.folders.metagen);
-      promotedModules.push(APP_CONFIG.project.folders.metagen);
-
-      await promoteModuleDirectory(targetRoot, APP_CONFIG.project.folders.metalab);
-      promotedModules.push(APP_CONFIG.project.folders.metalab);
-
-      await promoteModuleDirectory(targetRoot, APP_CONFIG.project.folders.metaview);
-      promotedModules.push(APP_CONFIG.project.folders.metaview);
+      for (const moduleFolder of moduleFolders) {
+        await promoteModuleDirectory(targetRoot, moduleFolder);
+        promotedModules.push(moduleFolder);
+      }
 
       await promoteProjectFile(targetRoot, targetProjectFileName);
       projectFilePromoted = true;
     } catch (error) {
       // rollback on failure
-      await performSaveRollback(targetRoot, targetProjectFileName, promotedModules, projectFilePromoted, error);
+      await performSaveRollback(projectOwnedPaths, promotedModules, projectFilePromoted, error);
     }
 
     // cleanup (best-effort только после полного успешного commit)
-    await cleanupSaveBackups(targetRoot, targetProjectFileName).catch((error) => {
+    await cleanupSaveBackups(projectOwnedPaths).catch((error) => {
       logger.warn('project', 'Cleanup backup-файлов завершился с ошибкой', {
         targetRoot,
         message: error?.message || String(error)
