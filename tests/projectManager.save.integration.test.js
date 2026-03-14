@@ -22,7 +22,7 @@ function createLogger() {
   };
 }
 
-function createFileSystem({ failRename } = {}) {
+function createFileSystem({ failRename, onRename } = {}) {
   return {
     openProjectDialog: async () => null,
     requestAppQuit: async () => true,
@@ -42,6 +42,8 @@ function createFileSystem({ failRename } = {}) {
       await fs.writeFile(targetPath, text, 'utf-8');
     },
     rename: async (fromPath, toPath) => {
+      onRename?.(fromPath, toPath);
+
       if (failRename?.(fromPath, toPath)) {
         throw new Error(`Injected rename failure: ${fromPath} -> ${toPath}`);
       }
@@ -211,7 +213,7 @@ function createFakeDocument() {
   };
 }
 
-function createManager({ failRename } = {}) {
+function createManager({ failRename, onRename } = {}) {
   const logger = createLogger();
   const moduleRegistry = createModuleRegistry({ logger });
   moduleRegistry.registerModule({
@@ -238,7 +240,7 @@ function createManager({ failRename } = {}) {
 
   return createProjectManager({
     logger,
-    fileSystem: createFileSystem({ failRename }),
+    fileSystem: createFileSystem({ failRename, onRename }),
     moduleRegistry,
     onProjectLoaded: () => {},
     onProjectClosed: () => {}
@@ -430,6 +432,109 @@ test('save as does not do implicit full-root cleanup for unknown user-owned path
 
   assert.equal(await fs.readFile(path.join(targetRoot, 'extra.txt'), 'utf-8'), 'keep-me');
   assert.equal(await fs.readFile(path.join(targetRoot, 'docs', 'manual.md'), 'utf-8'), 'keep-docs');
+});
+
+
+test('rename of unsaved component with future project path skips fs.rename and updates runtime path', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-rename-unsaved-skip-fs-'));
+  await createFixtureProject(root);
+
+  const renameCalls = [];
+  const manager = createManager({
+    onRename: (fromPath, toPath) => renameCalls.push([fromPath, toPath])
+  });
+
+  await manager.openProject(getProjectFilePath(root));
+  const created = await manager.createDocument('metagen', 'Future Component');
+  const oldPath = created.path;
+
+  assert.equal(await fs.access(oldPath).then(() => true).catch(() => false), false);
+
+  const renamed = await manager.renameDocument(oldPath, 'Renamed Future Component');
+
+  assert.ok(renamed);
+  assert.equal(renamed.previousPath, oldPath);
+  assert.notEqual(renamed.nextPath, oldPath);
+  assert.equal(renameCalls.length, 0);
+
+  const updatedRecord = manager.getDocumentByPath(renamed.nextPath);
+  assert.ok(updatedRecord);
+  assert.equal(updatedRecord.document.component.name, 'Renamed Future Component');
+  assert.equal(await fs.access(oldPath).then(() => true).catch(() => false), false);
+  assert.equal(await fs.access(renamed.nextPath).then(() => true).catch(() => false), false);
+});
+
+test('rename of unsaved component updates future save path and save persists only renamed file', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-rename-unsaved-save-path-'));
+  await createFixtureProject(root);
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const created = await manager.createDocument('metagen', 'Future Save Name');
+  const oldPath = created.path;
+  const renamed = await manager.renameDocument(oldPath, 'Future Saved Name');
+
+  assert.ok(renamed);
+  await manager.saveProject();
+
+  const oldFileName = path.basename(oldPath);
+  const nextFileName = path.basename(renamed.nextPath);
+
+  assert.equal(await fs.access(path.join(root, 'metagen', oldFileName)).then(() => true).catch(() => false), false);
+  assert.equal(await fs.access(path.join(root, 'metagen', nextFileName)).then(() => true).catch(() => false), true);
+
+  const savedYaml = await fs.readFile(path.join(root, 'metagen', nextFileName), 'utf-8');
+  assert.match(savedYaml, /Future Saved Name/);
+});
+
+test('rename of existing persisted component renames file on disk and updates path', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-rename-persisted-'));
+  await createFixtureProject(root);
+
+  const renameCalls = [];
+  const manager = createManager({
+    onRename: (fromPath, toPath) => renameCalls.push([fromPath, toPath])
+  });
+
+  await manager.openProject(getProjectFilePath(root));
+  const persisted = manager.getDocumentsByModule('metagen')[0];
+  const oldPath = persisted.path;
+
+  const renamed = await manager.renameDocument(oldPath, 'Pump Renamed');
+
+  assert.ok(renamed);
+  assert.equal(renameCalls.length, 1);
+  assert.equal(renameCalls[0][0], oldPath);
+  assert.equal(renameCalls[0][1], renamed.nextPath);
+  assert.equal(await fs.access(oldPath).then(() => true).catch(() => false), false);
+  assert.equal(await fs.access(renamed.nextPath).then(() => true).catch(() => false), true);
+
+  const updated = manager.getDocumentByPath(renamed.nextPath);
+  assert.equal(updated.document.component.name, 'Pump Renamed');
+});
+
+test('rename failure on persisted component leaves runtime and disk paths unchanged', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-rename-failure-consistency-'));
+  await createFixtureProject(root);
+
+  const manager = createManager({
+    failRename: (fromPath) => fromPath.endsWith('pump.yaml')
+  });
+
+  await manager.openProject(getProjectFilePath(root));
+  const persisted = manager.getDocumentsByModule('metagen')[0];
+  const oldPath = persisted.path;
+
+  await assert.rejects(() => manager.renameDocument(oldPath, 'Pump Rename Fails'), /Injected rename failure/);
+
+  const stillOld = manager.getDocumentByPath(oldPath);
+  assert.ok(stillOld);
+  assert.equal(stillOld.document.component.name, 'Pump');
+  assert.equal(await fs.access(oldPath).then(() => true).catch(() => false), true);
+
+  const failedPath = path.join(root, 'metagen', 'pump_rename_fails.yaml');
+  assert.equal(await fs.access(failedPath).then(() => true).catch(() => false), false);
 });
 
 test('rollback restores promoted modules if module promote fails', async () => {

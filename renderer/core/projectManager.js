@@ -192,6 +192,14 @@ function setDocumentName(documentRecord, nextName) {
   syncDocumentIdentityFromName(documentRecord, nextName);
 }
 
+function cloneDocumentPayload(document) {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(document);
+  }
+
+  return JSON.parse(JSON.stringify(document));
+}
+
 function createDefaultProjectRaw() {
   return {
     kind: APP_CONFIG.project.projectKinds.root,
@@ -690,21 +698,33 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    // При rename синхронизируем не только display name, но и внутренние id/связанные поля,
-    // чтобы документ не входил в рассинхронизированное состояние.
     const previousPath = record.path;
-    setDocumentName(record, resolvedName);
+    let nextPath = previousPath;
 
-    if (currentProject.rootPath && !String(record.path).startsWith('unsaved://')) {
+    if (currentProject.rootPath && !String(previousPath).startsWith('unsaved://')) {
       const module = moduleRegistry.getModule(record.moduleId);
       const moduleFolder = getModuleFolder(record.moduleId);
-      const nextFileName = module.getFileName(record.document);
-      const nextPath = joinPaths(currentProject.rootPath, moduleFolder, nextFileName);
+      const renamedDocument = cloneDocumentPayload(record.document);
+      setDocumentName({ document: renamedDocument }, resolvedName);
 
-      if (nextPath !== record.path) {
-        await fileSystem.rename(record.path, nextPath);
-        record.path = nextPath;
+      const nextFileName = module.getFileName(renamedDocument);
+      nextPath = joinPaths(currentProject.rootPath, moduleFolder, nextFileName);
+
+      if (nextPath !== previousPath) {
+        const hasPhysicalSource = await fileSystem.exists(previousPath);
+
+        if (hasPhysicalSource) {
+          await fileSystem.rename(previousPath, nextPath);
+        }
       }
+    }
+
+    // Финализируем runtime только после того, как стало ясно,
+    // что файловая операция либо не нужна, либо уже успешно выполнена.
+    setDocumentName(record, resolvedName);
+
+    if (nextPath !== previousPath) {
+      record.path = nextPath;
     }
 
     currentProject.documents[record.moduleId].sort((a, b) => getDocumentName(a).localeCompare(getDocumentName(b)));
