@@ -218,7 +218,7 @@ PROJECT_FILES = [
   'tests/projectManager.save.integration.test.js',
   'tests/windowCloseGuard.test.js',
   'vite.config.js',
-  'windowCloseGuard.js',
+  'main/runtime/windowCloseGuard.js',
 ]
 
 
@@ -331,7 +331,7 @@ PROJECT_FILES = [
   'tests/projectManager.save.integration.test.js',
   'tests/windowCloseGuard.test.js',
   'vite.config.js',
-  'windowCloseGuard.js',
+  'main/runtime/windowCloseGuard.js',
 ]
 
 
@@ -378,7 +378,7 @@ import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { APP_CONFIG } from './config/app-config.js';
-import { createWindowCloseGuard } from './windowCloseGuard.js';
+import { createWindowCloseGuard } from './main/runtime/windowCloseGuard.js';
 
 function createAppMenu(mainWindow) {
   const sendAction = (action) => {
@@ -6401,7 +6401,7 @@ FILE: tests/windowCloseGuard.test.js
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createWindowCloseGuard } from '../windowCloseGuard.js';
+import { createWindowCloseGuard } from '../main/runtime/windowCloseGuard.js';
 
 test('first close attempt requests renderer confirmation', () => {
   const guard = createWindowCloseGuard();
@@ -6478,7 +6478,7 @@ export default defineConfig({
 });
 
 ==================================================
-FILE: windowCloseGuard.js
+FILE: main/runtime/windowCloseGuard.js
 ==================================================
 
 export function createWindowCloseGuard() {

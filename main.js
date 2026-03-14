@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { APP_CONFIG } from './config/app-config.js';
-import { createWindowCloseGuard } from './windowCloseGuard.js';
+import { createWindowCloseGuard } from './main/runtime/windowCloseGuard.js';
 
 function createAppMenu(mainWindow) {
   const sendAction = (action) => {

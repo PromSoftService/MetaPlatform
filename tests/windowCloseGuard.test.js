@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createWindowCloseGuard } from '../windowCloseGuard.js';
+import { createWindowCloseGuard } from '../main/runtime/windowCloseGuard.js';
 
 test('first close attempt requests renderer confirmation', () => {
   const guard = createWindowCloseGuard();

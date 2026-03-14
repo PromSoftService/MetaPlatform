@@ -69,7 +69,7 @@ PROJECT_FILES = [
   'tests/projectManager.save.integration.test.js',
   'tests/windowCloseGuard.test.js',
   'vite.config.js',
-  'windowCloseGuard.js',
+  'main/runtime/windowCloseGuard.js',
 ]
 
 
