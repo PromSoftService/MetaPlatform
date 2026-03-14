@@ -132,7 +132,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     return nextRecord;
   }
 
-  async function closeTab(tabId) {
+  async function closeTab(tabId, options = {}) {
     const entry = tabs.get(tabId);
 
     if (!entry) {
@@ -142,13 +142,23 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     const orderedEntries = Array.from(tabs.values());
     const index = orderedEntries.findIndex((tabEntry) => tabEntry.tabId === tabId);
 
-    try {
-      await syncEntryDocumentRecordToProject(entry);
-    } catch (error) {
-      logger.error('tabs', 'Ошибка синхронизации snapshot перед закрытием вкладки', {
-        tabId,
-        message: error?.message || String(error)
-      });
+    await finalizeEditingBeforeContextTransition({
+      activeEntry: entry,
+      logger,
+      source: 'tabs',
+      reason: 'tab-close',
+      blockOnFailure: false
+    });
+
+    if (!options.skipProjectSync) {
+      try {
+        await syncEntryDocumentRecordToProject(entry);
+      } catch (error) {
+        logger.error('tabs', 'Ошибка синхронизации snapshot перед закрытием вкладки', {
+          tabId,
+          message: error?.message || String(error)
+        });
+      }
     }
 
     entry.runtime?.dispose?.();
@@ -288,9 +298,9 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     return entry;
   }
 
-  async function closeAllTabs() {
+  async function closeAllTabs(options = {}) {
     for (const tabId of Array.from(tabs.keys())) {
-      await closeTab(tabId);
+      await closeTab(tabId, options);
     }
   }
 
@@ -483,6 +493,11 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
 
   async function collectOpenDocumentRecords() {
     const output = [];
+
+    await finalizeActiveEditorContextBeforeTransition({
+      reason: "collect-open-document-records",
+      blockOnFailure: false
+    });
 
     for (const entry of tabs.values()) {
       try {

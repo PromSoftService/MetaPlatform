@@ -234,6 +234,7 @@ PROJECT_FILES = [
   'tests/projectManager.save.integration.test.js',
   'tests/finalizeActiveTableEditing.test.js',
   'tests/finalizeEditingOnContextLeave.test.js',
+  'tests/metagenSheetSnapshot.test.js',
   'tests/editorContextLifecycle.test.js',
   'tests/projectTreeAdapter.test.js',
   'tests/tabEditLifecycle.test.js',
@@ -358,6 +359,7 @@ PROJECT_FILES = [
   'tests/projectManager.save.integration.test.js',
   'tests/finalizeActiveTableEditing.test.js',
   'tests/finalizeEditingOnContextLeave.test.js',
+  'tests/metagenSheetSnapshot.test.js',
   'tests/editorContextLifecycle.test.js',
   'tests/projectTreeAdapter.test.js',
   'tests/tabEditLifecycle.test.js',
@@ -969,8 +971,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function handleDeleteComponentRequest(documentRecord) {
-    await tabs.closeTab(documentRecord.path);
     await projectManager.deleteDocument(documentRecord.path);
+    await tabs.closeTab(documentRecord.path, { skipProjectSync: true });
   }
 
   const tree = createProjectTree({
@@ -1642,6 +1644,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   let currentProject = null;
   const listeners = new Set();
   let unsavedCounter = 0;
+  let deletedDocumentIdentities = new Set();
 
   function emitChange() {
     for (const listener of listeners) {
@@ -1908,6 +1911,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       isDirty: false
     });
 
+    deletedDocumentIdentities = new Set();
     onProjectLoaded?.({ projectRuntime: currentProject });
     emitChange();
     return currentProject;
@@ -1941,6 +1945,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   async function openProject(projectFilePath) {
     const normalizedProjectFilePath = normalizeProjectFilePath(projectFilePath);
     currentProject = await hydrateProjectRuntimeFromDisk(normalizedProjectFilePath);
+    deletedDocumentIdentities = new Set();
 
     onProjectLoaded?.({ projectRuntime: currentProject });
     emitChange();
@@ -1949,6 +1954,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
   async function closeProject() {
     currentProject = null;
+    deletedDocumentIdentities = new Set();
     emitChange();
     onProjectClosed?.();
   }
@@ -1960,6 +1966,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     const hydrated = await hydrateProjectRuntimeFromDisk(currentProject.projectFilePath);
+    deletedDocumentIdentities = new Set();
     currentProject.documents = hydrated.documents;
     currentProject.raw = hydrated.raw;
     currentProject.project = hydrated.project;
@@ -1992,18 +1999,20 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     const moduleDocuments = currentProject.documents[nextRecord.moduleId];
 
+    const nextIdentityKey = getDocumentIdentityKey(nextRecord);
+
+    if (nextIdentityKey && deletedDocumentIdentities.has(nextIdentityKey)) {
+      return null;
+    }
+
     if (!Array.isArray(moduleDocuments)) {
       return null;
     }
 
     let index = moduleDocuments.findIndex((entry) => entry.path === nextRecord.path);
 
-    if (index < 0) {
-      const nextIdentityKey = getDocumentIdentityKey(nextRecord);
-
-      if (nextIdentityKey) {
-        index = moduleDocuments.findIndex((entry) => getDocumentIdentityKey(entry) === nextIdentityKey);
-      }
+    if (index < 0 && nextIdentityKey) {
+      index = moduleDocuments.findIndex((entry) => getDocumentIdentityKey(entry) === nextIdentityKey);
     }
 
     if (index < 0) {
@@ -2198,7 +2207,13 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return false;
     }
 
+    const identityKey = getDocumentIdentityKey(record);
+
     currentProject.documents[record.moduleId] = currentProject.documents[record.moduleId].filter((entry) => entry.path !== targetPath);
+
+    if (identityKey) {
+      deletedDocumentIdentities.add(identityKey);
+    }
 
     if (currentProject.rootPath && !String(targetPath).startsWith('unsaved://')) {
       await fileSystem.deleteFile(targetPath);
@@ -2226,7 +2241,15 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     // collect documents: openDocuments имеет приоритет над snapshot в currentProject.documents.
     const recordsByIdentity = new Map();
 
+    const isDeletedRecord = (record) => {
+      const identityKey = getDocumentIdentityKey(record);
+      return Boolean(identityKey && deletedDocumentIdentities.has(identityKey));
+    };
+
     for (const record of getAllDocuments()) {
+      if (isDeletedRecord(record)) {
+        continue;
+      }
       const identityKey = getDocumentIdentityKey(record);
 
       if (!identityKey) {
@@ -2237,7 +2260,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     for (const record of openDocuments) {
-      if (!record?.document) {
+      if (!record?.document || isDeletedRecord(record)) {
         continue;
       }
 
@@ -2357,6 +2380,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     // hydrate runtime
     const hydrated = await hydrateProjectRuntimeFromDisk(normalizedTargetProjectFilePath);
     currentProject = hydrated;
+    deletedDocumentIdentities = new Set();
 
     emitChange();
     return {
@@ -2959,6 +2983,8 @@ export const METAGEN_CONFIG = {
 
     tables: {
       params: {
+        // Initial runtime grid size for new/bootstrapped sheet instance.
+        // Persisted YAML snapshot uses actual table content size.
         rows: 100,
         defaultColumns: 10,
         autoStyle: {
@@ -3008,6 +3034,8 @@ export const METAGEN_CONFIG = {
       },
 
       data: {
+        // Initial runtime grid size for new/bootstrapped sheet instance.
+        // Persisted YAML snapshot uses actual table content size.
         rows: 100,
         headers: [
           'Тип',
@@ -3235,7 +3263,7 @@ FILE: renderer/modules/metagen/tables/createMetaGenDataSheet.js
 ==================================================
 
 import { createMetaGenSimpleSheet } from './createMetaGenSimpleSheet.js';
-import { readSheetMatrix } from './sheetSnapshot.js';
+import { readTableDocument, trimTrailingEmptyRows } from './sheetSnapshot.js';
 
 function buildHiddenMenuConfig(commands) {
   return Object.fromEntries(commands.map((command) => [command, { hidden: true }]));
@@ -3349,7 +3377,11 @@ function writeDataDocumentToSheet(sheet, dataDocument, columnCount) {
 }
 
 function extractRows(sheet, rowCount, columnCount) {
-  return readSheetMatrix(sheet, 0, rowCount, columnCount);
+  return trimTrailingEmptyRows(readTableDocument(sheet, {
+    maxRows: rowCount,
+    maxColumns: columnCount,
+    columns: []
+  }).rows);
 }
 
 export async function createMetaGenDataSheet({
@@ -3438,7 +3470,12 @@ FILE: renderer/modules/metagen/tables/createMetaGenParamsSheet.js
 
 import { createMetaGenSimpleSheet } from './createMetaGenSimpleSheet.js';
 import { createMetaGenParamsTableAutoStyle } from './metaGenParamsTableAutoStyle.js';
-import { readSheetMatrix } from './sheetSnapshot.js';
+import {
+  readHeaderPlusRowsDocument,
+  readSheetMatrix,
+  trimTrailingEmptyCells,
+  trimTrailingEmptyRows
+} from './sheetSnapshot.js';
 
 function writeParamsDocumentToSheet(sheet, paramsDocument, columnCount) {
   const rows = [];
@@ -3462,7 +3499,7 @@ function writeParamsDocumentToSheet(sheet, paramsDocument, columnCount) {
 }
 
 function extractHeader(sheet, columnCount) {
-  return readSheetMatrix(sheet, 0, 1, columnCount)[0] || [];
+  return trimTrailingEmptyCells(readSheetMatrix(sheet, 0, 1, columnCount)[0] || []);
 }
 
 function extractBodyRows(sheet, rowCount, columnCount) {
@@ -3470,7 +3507,10 @@ function extractBodyRows(sheet, rowCount, columnCount) {
     return [];
   }
 
-  return readSheetMatrix(sheet, 1, rowCount - 1, columnCount);
+  const bodyRows = readSheetMatrix(sheet, 1, rowCount - 1, columnCount)
+    .map((row) => trimTrailingEmptyCells(row));
+
+  return trimTrailingEmptyRows(bodyRows);
 }
 
 export function createMetaGenParamsSheet({
@@ -3523,6 +3563,15 @@ export function createMetaGenParamsSheet({
     ...sheetRuntime,
     ...autoStyleController,
     extractDocumentValue() {
+      const snapshot = readHeaderPlusRowsDocument(sheetRuntime.sheet, {
+        maxRows: tableConfig.rows,
+        maxColumns: tableConfig.defaultColumns
+      });
+
+      if (snapshot.header.length === 0 && snapshot.rows.length === 0) {
+        return snapshot;
+      }
+
       return {
         format: 'header-plus-rows',
         header: extractHeader(sheetRuntime.sheet, tableConfig.defaultColumns),
@@ -4224,6 +4273,131 @@ export function readSheetMatrix(sheet, startRow, rowCount, columnCount) {
   }
 
   return rows;
+}
+
+function isEmptyCellValue(value) {
+  return value === '';
+}
+
+function isEmptyRow(row = []) {
+  return !Array.isArray(row) || row.every((cell) => isEmptyCellValue(cell));
+}
+
+export function trimTrailingEmptyCells(row = []) {
+  if (!Array.isArray(row) || row.length === 0) {
+    return [];
+  }
+
+  let endIndex = row.length;
+
+  while (endIndex > 0 && isEmptyCellValue(row[endIndex - 1])) {
+    endIndex -= 1;
+  }
+
+  return row.slice(0, endIndex);
+}
+
+export function trimTrailingEmptyRows(rows = []) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return [];
+  }
+
+  let endIndex = rows.length;
+
+  while (endIndex > 0 && isEmptyRow(rows[endIndex - 1])) {
+    endIndex -= 1;
+  }
+
+  return rows.slice(0, endIndex);
+}
+
+export function getSheetActualRowCount(sheet, { maxRows = 0, maxColumns = 0 } = {}) {
+  if (!sheet || maxRows <= 0 || maxColumns <= 0) {
+    return 0;
+  }
+
+  for (let rowIndex = maxRows - 1; rowIndex >= 0; rowIndex -= 1) {
+    const [rowValues] = readSheetMatrix(sheet, rowIndex, 1, maxColumns);
+
+    if (!isEmptyRow(rowValues)) {
+      return rowIndex + 1;
+    }
+  }
+
+  return 0;
+}
+
+export function getSheetActualColumnCount(sheet, { maxRows = 0, maxColumns = 0 } = {}) {
+  if (!sheet || maxRows <= 0 || maxColumns <= 0) {
+    return 0;
+  }
+
+  for (let columnIndex = maxColumns - 1; columnIndex >= 0; columnIndex -= 1) {
+    let hasValue = false;
+
+    for (let rowIndex = 0; rowIndex < maxRows; rowIndex += 1) {
+      const [rowValues] = readSheetMatrix(sheet, rowIndex, 1, maxColumns);
+
+      if (!isEmptyCellValue(rowValues[columnIndex] ?? '')) {
+        hasValue = true;
+        break;
+      }
+    }
+
+    if (hasValue) {
+      return columnIndex + 1;
+    }
+  }
+
+  return 0;
+}
+
+export function readTrimmedSheetMatrix(sheet, { maxRows = 0, maxColumns = 0 } = {}) {
+  const actualRowCount = getSheetActualRowCount(sheet, { maxRows, maxColumns });
+
+  if (actualRowCount <= 0) {
+    return [];
+  }
+
+  const actualColumnCount = getSheetActualColumnCount(sheet, { maxRows: actualRowCount, maxColumns });
+
+  if (actualColumnCount <= 0) {
+    return [];
+  }
+
+  const matrix = readSheetMatrix(sheet, 0, actualRowCount, actualColumnCount);
+  const rowsWithoutTrailingEmptyRows = trimTrailingEmptyRows(matrix);
+
+  return rowsWithoutTrailingEmptyRows.map((row) => trimTrailingEmptyCells(row));
+}
+
+export function readHeaderPlusRowsDocument(sheet, { maxRows = 0, maxColumns = 0 } = {}) {
+  const matrix = readTrimmedSheetMatrix(sheet, { maxRows, maxColumns });
+
+  if (matrix.length === 0) {
+    return {
+      format: 'header-plus-rows',
+      header: [],
+      rows: []
+    };
+  }
+
+  return {
+    format: 'header-plus-rows',
+    header: trimTrailingEmptyCells(matrix[0] || []),
+    rows: trimTrailingEmptyRows((matrix.slice(1) || []).map((row) => trimTrailingEmptyCells(row)))
+  };
+}
+
+export function readTableDocument(sheet, { maxRows = 0, maxColumns = 0, columns = [] } = {}) {
+  const matrix = readTrimmedSheetMatrix(sheet, { maxRows, maxColumns });
+  const normalizedColumns = Array.isArray(columns) ? [...columns] : [];
+
+  return {
+    format: 'table',
+    columns: normalizedColumns,
+    rows: trimTrailingEmptyRows(matrix)
+  };
 }
 
 
@@ -5648,7 +5822,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     return nextRecord;
   }
 
-  async function closeTab(tabId) {
+  async function closeTab(tabId, options = {}) {
     const entry = tabs.get(tabId);
 
     if (!entry) {
@@ -5658,13 +5832,23 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     const orderedEntries = Array.from(tabs.values());
     const index = orderedEntries.findIndex((tabEntry) => tabEntry.tabId === tabId);
 
-    try {
-      await syncEntryDocumentRecordToProject(entry);
-    } catch (error) {
-      logger.error('tabs', 'Ошибка синхронизации snapshot перед закрытием вкладки', {
-        tabId,
-        message: error?.message || String(error)
-      });
+    await finalizeEditingBeforeContextTransition({
+      activeEntry: entry,
+      logger,
+      source: 'tabs',
+      reason: 'tab-close',
+      blockOnFailure: false
+    });
+
+    if (!options.skipProjectSync) {
+      try {
+        await syncEntryDocumentRecordToProject(entry);
+      } catch (error) {
+        logger.error('tabs', 'Ошибка синхронизации snapshot перед закрытием вкладки', {
+          tabId,
+          message: error?.message || String(error)
+        });
+      }
     }
 
     entry.runtime?.dispose?.();
@@ -5804,9 +5988,9 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     return entry;
   }
 
-  async function closeAllTabs() {
+  async function closeAllTabs(options = {}) {
     for (const tabId of Array.from(tabs.keys())) {
-      await closeTab(tabId);
+      await closeTab(tabId, options);
     }
   }
 
@@ -5999,6 +6183,11 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
 
   async function collectOpenDocumentRecords() {
     const output = [];
+
+    await finalizeActiveEditorContextBeforeTransition({
+      reason: "collect-open-document-records",
+      blockOnFailure: false
+    });
 
     for (const entry of tabs.values()) {
       try {
@@ -7439,6 +7628,74 @@ test('openDocuments snapshot overrides currentProject documents during save', as
 });
 
 
+
+
+test('deleting opened component and saving project does not resurrect deleted document', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-delete-opened-save-'));
+  await createFixtureProject(root, { metagenDescription: 'to-delete' });
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+  const record = manager.getDocumentsByModule('metagen')[0];
+
+  const staleOpenRecord = {
+    moduleId: 'metagen',
+    path: record.path,
+    document: {
+      ...record.document,
+      component: {
+        ...record.document.component,
+        description: 'stale-open-snapshot'
+      }
+    }
+  };
+
+  await manager.deleteDocument(record.path);
+  await manager.saveProject([staleOpenRecord]);
+
+  assert.equal(manager.getDocumentByPath(record.path), null);
+  assert.equal(await fs.access(record.path).then(() => true).catch(() => false), false);
+
+  await manager.refresh();
+  assert.equal(manager.getDocumentByPath(record.path), null);
+});
+
+test('deleted existing component is absent after save and reopen', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-delete-existing-reopen-'));
+  await createFixtureProject(root, { metagenDescription: 'delete-existing-reopen' });
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+  const record = manager.getDocumentsByModule('metagen')[0];
+
+  await manager.deleteDocument(record.path);
+  await manager.saveProject();
+
+  await manager.closeProject();
+  await manager.openProject(getProjectFilePath(root));
+
+  assert.equal(manager.getDocumentsByModule('metagen').length, 0);
+  assert.equal(await fs.access(record.path).then(() => true).catch(() => false), false);
+});
+
+test('deleting unsaved/new component does not throw and does not survive save', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-delete-unsaved-'));
+  await createFixtureProject(root);
+
+  const manager = createManager();
+  await manager.createNewProject();
+
+  const created = await manager.createDocument('metagen', 'Temp Unsaved');
+  assert.ok(created.path.startsWith('unsaved://'));
+
+  await assert.doesNotReject(() => manager.deleteDocument(created.path));
+  const targetProjectFilePath = path.join(root, 'target.yaml');
+  await manager.saveProjectAs(targetProjectFilePath, [created]);
+
+  assert.equal(manager.getDocumentsByModule('metagen').some((entry) => entry.document?.component?.name === 'Temp Unsaved'), false);
+  const metagenFiles = await fs.readdir(path.join(root, 'metagen')).catch(() => []);
+  assert.equal(metagenFiles.some((name) => name.includes('temp_unsaved')), false);
+});
 test('close tab syncs runtime snapshot to project and reopen reads fresh record', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-close-reopen-'));
   await createFixtureProject(root, { metagenDescription: 'before-close' });
@@ -7494,6 +7751,58 @@ test('close tab syncs runtime snapshot to project and reopen reads fresh record'
   }
 });
 
+
+
+test('closeTab with skipProjectSync does not call replaceDocumentRecord and prevents deleted record resurrection', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-close-skip-sync-'));
+  await createFixtureProject(root, { metagenDescription: 'before-delete' });
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+  const baseRecord = manager.getDocumentsByModule('metagen')[0];
+
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  const replaceCalls = [];
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async () => null,
+        replaceDocumentRecord: async (record) => {
+          replaceCalls.push(record.path);
+          return manager.replaceDocumentRecord(record);
+        }
+      },
+      openEditor: async ({ documentRecord }) => ({
+        collectDocumentRecord: async () => ({
+          ...documentRecord,
+          document: {
+            ...documentRecord.document,
+            component: {
+              ...documentRecord.document.component,
+              description: 'stale-collect'
+            }
+          }
+        }),
+        dispose: () => {}
+      })
+    });
+
+    await tabs.openDocument(baseRecord);
+    await manager.deleteDocument(baseRecord.path);
+    await tabs.closeTab(baseRecord.path, { skipProjectSync: true });
+
+    assert.deepEqual(replaceCalls, []);
+    await manager.saveProject();
+    assert.equal(manager.getDocumentByPath(baseRecord.path), null);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
 test('updateTabPaths remaps active tab and document path after save as pathMap', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-tabs-remap-'));
   await createFixtureProject(root);
@@ -7579,6 +7888,49 @@ test('collectOpenDocumentRecords uses runtime collectDocumentRecord and syncs pr
 });
 
 
+
+
+test('collectOpenDocumentRecords finalizes active editing before collectDocumentRecord', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-collect-finalize-before-collect-'));
+  await createFixtureProject(root);
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const record = manager.getDocumentsByModule('metagen')[0];
+  const calls = [];
+
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async () => null,
+        replaceDocumentRecord: async (...args) => manager.replaceDocumentRecord(...args)
+      },
+      openEditor: async ({ documentRecord }) => ({
+        finalizeEditingBeforeContextLeave: async ({ reason }) => {
+          calls.push(`finalize:${reason}`);
+          return { continued: true, outcome: 'committed', reason };
+        },
+        collectDocumentRecord: async () => {
+          calls.push('collect');
+          return documentRecord;
+        },
+        dispose: () => {}
+      })
+    });
+
+    await tabs.openDocument(record);
+    await tabs.collectOpenDocumentRecords();
+
+    assert.deepEqual(calls, ['finalize:collect-open-document-records', 'collect']);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
 test('menu/focus-triggered transition path on tabs uses shared finalize contract for active runtime', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-tabs-menu-finalize-'));
   await createFixtureProject(root);
@@ -7802,6 +8154,116 @@ test('failed finalize blocks transition predictably and logs error', async () =>
   assert.equal(result.outcome, TABLE_EDIT_FINALIZE_RESULT.FAILED);
   assert.equal(logger.calls.length, 1);
   assert.match(logger.calls[0].message, /Не удалось завершить редактирование при потере контекста/);
+});
+
+
+==================================================
+FILE: tests/metagenSheetSnapshot.test.js
+==================================================
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  readHeaderPlusRowsDocument,
+  readTableDocument,
+  getSheetActualRowCount,
+  getSheetActualColumnCount
+} from '../renderer/modules/metagen/tables/sheetSnapshot.js';
+
+function createFakeSheet(matrix) {
+  return {
+    getRange(startRow, startColumn, rowCount, columnCount) {
+      return {
+        getValues() {
+          const output = [];
+
+          for (let rowOffset = 0; rowOffset < rowCount; rowOffset += 1) {
+            const row = [];
+            for (let columnOffset = 0; columnOffset < columnCount; columnOffset += 1) {
+              row.push(matrix[startRow + rowOffset]?.[startColumn + columnOffset] ?? '');
+            }
+            output.push(row);
+          }
+
+          return output;
+        }
+      };
+    }
+  };
+}
+
+test('params snapshot uses actual sheet dimensions instead of fixed runtime bounds', () => {
+  const sheet = createFakeSheet([
+    ['A', 'B', '', '', ''],
+    ['1', '2', '', '', ''],
+    ['', '', '', '', '']
+  ]);
+
+  const snapshot = readHeaderPlusRowsDocument(sheet, { maxRows: 100, maxColumns: 10 });
+
+  assert.deepEqual(snapshot, {
+    format: 'header-plus-rows',
+    header: ['A', 'B'],
+    rows: [['1', '2']]
+  });
+});
+
+test('params snapshot trims trailing empty rows and trailing empty cells', () => {
+  const sheet = createFakeSheet([
+    ['name', 'type', '', ''],
+    ['p1', 'int', '', ''],
+    ['p2', '', '', ''],
+    ['', '', '', ''],
+    ['', '', '', '']
+  ]);
+
+  const snapshot = readHeaderPlusRowsDocument(sheet, { maxRows: 100, maxColumns: 10 });
+
+  assert.deepEqual(snapshot.header, ['name', 'type']);
+  assert.deepEqual(snapshot.rows, [['p1', 'int'], ['p2']]);
+});
+
+test('empty params sheet serializes to stable empty header-plus-rows payload', () => {
+  const sheet = createFakeSheet([
+    ['', '', ''],
+    ['', '', '']
+  ]);
+
+  const snapshot = readHeaderPlusRowsDocument(sheet, { maxRows: 100, maxColumns: 10 });
+
+  assert.deepEqual(snapshot, {
+    format: 'header-plus-rows',
+    header: [],
+    rows: []
+  });
+});
+
+test('data snapshot trims trailing empty rows and keeps config columns contract', () => {
+  const sheet = createFakeSheet([
+    ['BOOL', 'Main', 'x', '1'],
+    ['', '', '', ''],
+    ['', '', '', '']
+  ]);
+
+  const snapshot = readTableDocument(sheet, {
+    maxRows: 100,
+    maxColumns: 4,
+    columns: ['Тип', 'Блок данных', 'Имя переменной', 'Значение']
+  });
+
+  assert.deepEqual(snapshot.columns, ['Тип', 'Блок данных', 'Имя переменной', 'Значение']);
+  assert.deepEqual(snapshot.rows, [['BOOL', 'Main', 'x', '1']]);
+});
+
+test('actual row/column detection returns 0 for fully empty sheet', () => {
+  const sheet = createFakeSheet([
+    ['', '', ''],
+    ['', '', '']
+  ]);
+
+  assert.equal(getSheetActualRowCount(sheet, { maxRows: 100, maxColumns: 10 }), 0);
+  assert.equal(getSheetActualColumnCount(sheet, { maxRows: 100, maxColumns: 10 }), 0);
 });
 
 

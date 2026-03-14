@@ -102,8 +102,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function handleDeleteComponentRequest(documentRecord) {
-    await tabs.closeTab(documentRecord.path);
     await projectManager.deleteDocument(documentRecord.path);
+    await tabs.closeTab(documentRecord.path, { skipProjectSync: true });
   }
 
   const tree = createProjectTree({

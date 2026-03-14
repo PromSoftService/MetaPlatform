@@ -74,6 +74,7 @@ PROJECT_FILES = [
   'tests/projectManager.save.integration.test.js',
   'tests/finalizeActiveTableEditing.test.js',
   'tests/finalizeEditingOnContextLeave.test.js',
+  'tests/metagenSheetSnapshot.test.js',
   'tests/editorContextLifecycle.test.js',
   'tests/projectTreeAdapter.test.js',
   'tests/tabEditLifecycle.test.js',

@@ -628,6 +628,74 @@ test('openDocuments snapshot overrides currentProject documents during save', as
 });
 
 
+
+
+test('deleting opened component and saving project does not resurrect deleted document', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-delete-opened-save-'));
+  await createFixtureProject(root, { metagenDescription: 'to-delete' });
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+  const record = manager.getDocumentsByModule('metagen')[0];
+
+  const staleOpenRecord = {
+    moduleId: 'metagen',
+    path: record.path,
+    document: {
+      ...record.document,
+      component: {
+        ...record.document.component,
+        description: 'stale-open-snapshot'
+      }
+    }
+  };
+
+  await manager.deleteDocument(record.path);
+  await manager.saveProject([staleOpenRecord]);
+
+  assert.equal(manager.getDocumentByPath(record.path), null);
+  assert.equal(await fs.access(record.path).then(() => true).catch(() => false), false);
+
+  await manager.refresh();
+  assert.equal(manager.getDocumentByPath(record.path), null);
+});
+
+test('deleted existing component is absent after save and reopen', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-delete-existing-reopen-'));
+  await createFixtureProject(root, { metagenDescription: 'delete-existing-reopen' });
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+  const record = manager.getDocumentsByModule('metagen')[0];
+
+  await manager.deleteDocument(record.path);
+  await manager.saveProject();
+
+  await manager.closeProject();
+  await manager.openProject(getProjectFilePath(root));
+
+  assert.equal(manager.getDocumentsByModule('metagen').length, 0);
+  assert.equal(await fs.access(record.path).then(() => true).catch(() => false), false);
+});
+
+test('deleting unsaved/new component does not throw and does not survive save', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-delete-unsaved-'));
+  await createFixtureProject(root);
+
+  const manager = createManager();
+  await manager.createNewProject();
+
+  const created = await manager.createDocument('metagen', 'Temp Unsaved');
+  assert.ok(created.path.startsWith('unsaved://'));
+
+  await assert.doesNotReject(() => manager.deleteDocument(created.path));
+  const targetProjectFilePath = path.join(root, 'target.yaml');
+  await manager.saveProjectAs(targetProjectFilePath, [created]);
+
+  assert.equal(manager.getDocumentsByModule('metagen').some((entry) => entry.document?.component?.name === 'Temp Unsaved'), false);
+  const metagenFiles = await fs.readdir(path.join(root, 'metagen')).catch(() => []);
+  assert.equal(metagenFiles.some((name) => name.includes('temp_unsaved')), false);
+});
 test('close tab syncs runtime snapshot to project and reopen reads fresh record', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-close-reopen-'));
   await createFixtureProject(root, { metagenDescription: 'before-close' });
@@ -683,6 +751,58 @@ test('close tab syncs runtime snapshot to project and reopen reads fresh record'
   }
 });
 
+
+
+test('closeTab with skipProjectSync does not call replaceDocumentRecord and prevents deleted record resurrection', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-close-skip-sync-'));
+  await createFixtureProject(root, { metagenDescription: 'before-delete' });
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+  const baseRecord = manager.getDocumentsByModule('metagen')[0];
+
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  const replaceCalls = [];
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async () => null,
+        replaceDocumentRecord: async (record) => {
+          replaceCalls.push(record.path);
+          return manager.replaceDocumentRecord(record);
+        }
+      },
+      openEditor: async ({ documentRecord }) => ({
+        collectDocumentRecord: async () => ({
+          ...documentRecord,
+          document: {
+            ...documentRecord.document,
+            component: {
+              ...documentRecord.document.component,
+              description: 'stale-collect'
+            }
+          }
+        }),
+        dispose: () => {}
+      })
+    });
+
+    await tabs.openDocument(baseRecord);
+    await manager.deleteDocument(baseRecord.path);
+    await tabs.closeTab(baseRecord.path, { skipProjectSync: true });
+
+    assert.deepEqual(replaceCalls, []);
+    await manager.saveProject();
+    assert.equal(manager.getDocumentByPath(baseRecord.path), null);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
 test('updateTabPaths remaps active tab and document path after save as pathMap', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-tabs-remap-'));
   await createFixtureProject(root);
@@ -768,6 +888,49 @@ test('collectOpenDocumentRecords uses runtime collectDocumentRecord and syncs pr
 });
 
 
+
+
+test('collectOpenDocumentRecords finalizes active editing before collectDocumentRecord', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-collect-finalize-before-collect-'));
+  await createFixtureProject(root);
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const record = manager.getDocumentsByModule('metagen')[0];
+  const calls = [];
+
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async () => null,
+        replaceDocumentRecord: async (...args) => manager.replaceDocumentRecord(...args)
+      },
+      openEditor: async ({ documentRecord }) => ({
+        finalizeEditingBeforeContextLeave: async ({ reason }) => {
+          calls.push(`finalize:${reason}`);
+          return { continued: true, outcome: 'committed', reason };
+        },
+        collectDocumentRecord: async () => {
+          calls.push('collect');
+          return documentRecord;
+        },
+        dispose: () => {}
+      })
+    });
+
+    await tabs.openDocument(record);
+    await tabs.collectOpenDocumentRecords();
+
+    assert.deepEqual(calls, ['finalize:collect-open-document-records', 'collect']);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
 test('menu/focus-triggered transition path on tabs uses shared finalize contract for active runtime', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-tabs-menu-finalize-'));
   await createFixtureProject(root);

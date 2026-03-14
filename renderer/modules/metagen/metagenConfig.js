@@ -38,6 +38,8 @@ export const METAGEN_CONFIG = {
 
     tables: {
       params: {
+        // Initial runtime grid size for new/bootstrapped sheet instance.
+        // Persisted YAML snapshot uses actual table content size.
         rows: 100,
         defaultColumns: 10,
         autoStyle: {
@@ -87,6 +89,8 @@ export const METAGEN_CONFIG = {
       },
 
       data: {
+        // Initial runtime grid size for new/bootstrapped sheet instance.
+        // Persisted YAML snapshot uses actual table content size.
         rows: 100,
         headers: [
           'Тип',

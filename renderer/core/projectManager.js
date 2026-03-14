@@ -224,6 +224,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   let currentProject = null;
   const listeners = new Set();
   let unsavedCounter = 0;
+  let deletedDocumentIdentities = new Set();
 
   function emitChange() {
     for (const listener of listeners) {
@@ -490,6 +491,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       isDirty: false
     });
 
+    deletedDocumentIdentities = new Set();
     onProjectLoaded?.({ projectRuntime: currentProject });
     emitChange();
     return currentProject;
@@ -523,6 +525,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   async function openProject(projectFilePath) {
     const normalizedProjectFilePath = normalizeProjectFilePath(projectFilePath);
     currentProject = await hydrateProjectRuntimeFromDisk(normalizedProjectFilePath);
+    deletedDocumentIdentities = new Set();
 
     onProjectLoaded?.({ projectRuntime: currentProject });
     emitChange();
@@ -531,6 +534,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
   async function closeProject() {
     currentProject = null;
+    deletedDocumentIdentities = new Set();
     emitChange();
     onProjectClosed?.();
   }
@@ -542,6 +546,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     const hydrated = await hydrateProjectRuntimeFromDisk(currentProject.projectFilePath);
+    deletedDocumentIdentities = new Set();
     currentProject.documents = hydrated.documents;
     currentProject.raw = hydrated.raw;
     currentProject.project = hydrated.project;
@@ -574,18 +579,20 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     const moduleDocuments = currentProject.documents[nextRecord.moduleId];
 
+    const nextIdentityKey = getDocumentIdentityKey(nextRecord);
+
+    if (nextIdentityKey && deletedDocumentIdentities.has(nextIdentityKey)) {
+      return null;
+    }
+
     if (!Array.isArray(moduleDocuments)) {
       return null;
     }
 
     let index = moduleDocuments.findIndex((entry) => entry.path === nextRecord.path);
 
-    if (index < 0) {
-      const nextIdentityKey = getDocumentIdentityKey(nextRecord);
-
-      if (nextIdentityKey) {
-        index = moduleDocuments.findIndex((entry) => getDocumentIdentityKey(entry) === nextIdentityKey);
-      }
+    if (index < 0 && nextIdentityKey) {
+      index = moduleDocuments.findIndex((entry) => getDocumentIdentityKey(entry) === nextIdentityKey);
     }
 
     if (index < 0) {
@@ -780,7 +787,13 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return false;
     }
 
+    const identityKey = getDocumentIdentityKey(record);
+
     currentProject.documents[record.moduleId] = currentProject.documents[record.moduleId].filter((entry) => entry.path !== targetPath);
+
+    if (identityKey) {
+      deletedDocumentIdentities.add(identityKey);
+    }
 
     if (currentProject.rootPath && !String(targetPath).startsWith('unsaved://')) {
       await fileSystem.deleteFile(targetPath);
@@ -808,7 +821,15 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     // collect documents: openDocuments имеет приоритет над snapshot в currentProject.documents.
     const recordsByIdentity = new Map();
 
+    const isDeletedRecord = (record) => {
+      const identityKey = getDocumentIdentityKey(record);
+      return Boolean(identityKey && deletedDocumentIdentities.has(identityKey));
+    };
+
     for (const record of getAllDocuments()) {
+      if (isDeletedRecord(record)) {
+        continue;
+      }
       const identityKey = getDocumentIdentityKey(record);
 
       if (!identityKey) {
@@ -819,7 +840,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     for (const record of openDocuments) {
-      if (!record?.document) {
+      if (!record?.document || isDeletedRecord(record)) {
         continue;
       }
 
@@ -939,6 +960,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     // hydrate runtime
     const hydrated = await hydrateProjectRuntimeFromDisk(normalizedTargetProjectFilePath);
     currentProject = hydrated;
+    deletedDocumentIdentities = new Set();
 
     emitChange();
     return {

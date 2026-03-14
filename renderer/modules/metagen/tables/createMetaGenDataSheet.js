@@ -1,5 +1,5 @@
 import { createMetaGenSimpleSheet } from './createMetaGenSimpleSheet.js';
-import { readSheetMatrix } from './sheetSnapshot.js';
+import { readTableDocument, trimTrailingEmptyRows } from './sheetSnapshot.js';
 
 function buildHiddenMenuConfig(commands) {
   return Object.fromEntries(commands.map((command) => [command, { hidden: true }]));
@@ -113,7 +113,11 @@ function writeDataDocumentToSheet(sheet, dataDocument, columnCount) {
 }
 
 function extractRows(sheet, rowCount, columnCount) {
-  return readSheetMatrix(sheet, 0, rowCount, columnCount);
+  return trimTrailingEmptyRows(readTableDocument(sheet, {
+    maxRows: rowCount,
+    maxColumns: columnCount,
+    columns: []
+  }).rows);
 }
 
 export async function createMetaGenDataSheet({

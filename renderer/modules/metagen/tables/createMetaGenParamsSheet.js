@@ -1,6 +1,11 @@
 import { createMetaGenSimpleSheet } from './createMetaGenSimpleSheet.js';
 import { createMetaGenParamsTableAutoStyle } from './metaGenParamsTableAutoStyle.js';
-import { readSheetMatrix } from './sheetSnapshot.js';
+import {
+  readHeaderPlusRowsDocument,
+  readSheetMatrix,
+  trimTrailingEmptyCells,
+  trimTrailingEmptyRows
+} from './sheetSnapshot.js';
 
 function writeParamsDocumentToSheet(sheet, paramsDocument, columnCount) {
   const rows = [];
@@ -24,7 +29,7 @@ function writeParamsDocumentToSheet(sheet, paramsDocument, columnCount) {
 }
 
 function extractHeader(sheet, columnCount) {
-  return readSheetMatrix(sheet, 0, 1, columnCount)[0] || [];
+  return trimTrailingEmptyCells(readSheetMatrix(sheet, 0, 1, columnCount)[0] || []);
 }
 
 function extractBodyRows(sheet, rowCount, columnCount) {
@@ -32,7 +37,10 @@ function extractBodyRows(sheet, rowCount, columnCount) {
     return [];
   }
 
-  return readSheetMatrix(sheet, 1, rowCount - 1, columnCount);
+  const bodyRows = readSheetMatrix(sheet, 1, rowCount - 1, columnCount)
+    .map((row) => trimTrailingEmptyCells(row));
+
+  return trimTrailingEmptyRows(bodyRows);
 }
 
 export function createMetaGenParamsSheet({
@@ -85,6 +93,15 @@ export function createMetaGenParamsSheet({
     ...sheetRuntime,
     ...autoStyleController,
     extractDocumentValue() {
+      const snapshot = readHeaderPlusRowsDocument(sheetRuntime.sheet, {
+        maxRows: tableConfig.rows,
+        maxColumns: tableConfig.defaultColumns
+      });
+
+      if (snapshot.header.length === 0 && snapshot.rows.length === 0) {
+        return snapshot;
+      }
+
       return {
         format: 'header-plus-rows',
         header: extractHeader(sheetRuntime.sheet, tableConfig.defaultColumns),
