@@ -132,7 +132,7 @@ test('tree row render accepts multiple classes as separate tokens', async () => 
       await tree.render();
     });
 
-    const moduleBlock = treeRoot.children[1];
+    const moduleBlock = treeRoot.children[0];
     const sectionHeaderRow = moduleBlock.children[0];
 
     assert.equal(sectionHeaderRow.classList.contains('tree-section-header'), true);
@@ -175,7 +175,7 @@ test('module node render path does not pass combined class token with spaces', a
       await tree.render();
     });
 
-    const metagenModuleBlock = treeRoot.children[1];
+    const metagenModuleBlock = treeRoot.children[0];
     assert.ok(metagenModuleBlock, 'module block should be rendered');
 
     const sectionHeaderRow = metagenModuleBlock.children[0];
@@ -215,6 +215,98 @@ test('rendering project tree for new project no longer crashes', async () => {
     });
 
     assert.equal(treeRoot.children.length > 0, true);
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
+
+test('project panel title reflects current project name', async () => {
+  const originalDocument = global.document;
+  const { document, projectPanelTitle } = createFakeDocument();
+  global.document = document;
+
+  try {
+    const tree = createProjectTree({
+      logger: createLoggerFixture(),
+      projectManager: createProjectManagerFixture({
+        project: { project: { name: 'Demo Project' }, isUnsaved: false },
+        documentsByModule: {
+          metagen: [],
+          metalab: [],
+          metaview: []
+        }
+      }),
+      tabs: {
+        startTemporaryDocumentCreation: async () => {},
+        closeTab: () => {},
+        openOrActivateDocument: async () => {}
+      }
+    });
+
+    await tree.render();
+    assert.equal(projectPanelTitle.textContent, 'Demo Project');
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
+test('project panel title marks unsaved state with marker', async () => {
+  const originalDocument = global.document;
+  const { document, projectPanelTitle } = createFakeDocument();
+  global.document = document;
+
+  try {
+    const tree = createProjectTree({
+      logger: createLoggerFixture(),
+      projectManager: createProjectManagerFixture({
+        project: { project: { name: 'Dirty Project' }, isUnsaved: true },
+        documentsByModule: {
+          metagen: [],
+          metalab: [],
+          metaview: []
+        }
+      }),
+      tabs: {
+        startTemporaryDocumentCreation: async () => {},
+        closeTab: () => {},
+        openOrActivateDocument: async () => {}
+      }
+    });
+
+    await tree.render();
+    assert.equal(projectPanelTitle.textContent, 'Dirty Project ●');
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
+test('project title is not rendered as a dedicated tree node', async () => {
+  const originalDocument = global.document;
+  const { document, treeRoot } = createFakeDocument();
+  global.document = document;
+
+  try {
+    const tree = createProjectTree({
+      logger: createLoggerFixture(),
+      projectManager: createProjectManagerFixture({
+        project: { project: { name: 'Demo Project' }, isUnsaved: false },
+        documentsByModule: {
+          metagen: [],
+          metalab: [],
+          metaview: []
+        }
+      }),
+      tabs: {
+        startTemporaryDocumentCreation: async () => {},
+        closeTab: () => {},
+        openOrActivateDocument: async () => {}
+      }
+    });
+
+    await tree.render();
+    assert.equal(treeRoot.children.length, 3);
+    assert.equal(treeRoot.children.every((child) => !child.classList.contains('project-node')), true);
   } finally {
     global.document = originalDocument;
   }

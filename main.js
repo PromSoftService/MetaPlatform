@@ -15,14 +15,14 @@ function createAppMenu(mainWindow) {
     {
       label: 'Файл',
       submenu: [
-        { label: 'Создать проект', click: () => sendAction('new-project') },
-        { label: 'Открыть проект', click: () => sendAction('open-project') },
-        { label: 'Закрыть проект', click: () => sendAction('close-project') },
+        { label: '🆕 Создать проект', click: () => sendAction('new-project') },
+        { label: '📂 Открыть проект', click: () => sendAction('open-project') },
+        { label: '📁 Закрыть проект', click: () => sendAction('close-project') },
         { type: 'separator' },
-        { label: 'Сохранить', click: () => sendAction('save') },
-        { label: 'Сохранить как', click: () => sendAction('save-as') },
+        { label: '💾 Сохранить', click: () => sendAction('save') },
+        { label: '📝 Сохранить как', click: () => sendAction('save-as') },
         { type: 'separator' },
-        { label: 'Выход', click: () => sendAction('exit') }
+        { label: '🚪 Выход', click: () => sendAction('exit') }
       ]
     }
   ];

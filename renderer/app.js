@@ -49,7 +49,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   moduleRegistry.registerModule(metaLabModule);
   moduleRegistry.registerModule(metaViewModule);
 
-  const legacyProjectTitlePlaceholder = document.querySelector('#legacy-project-title-placeholder');
   const tabs = createWorkbenchTabs({
     logger,
     projectManager: {
@@ -71,16 +70,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Элемент оставлен в шапке как legacy-placeholder от старого двойного отображения имени проекта.
-  // Фактическое имя проекта рендерится в другом месте интерфейса.
-  // Здесь placeholder намеренно очищается, это не баг.
-  function clearLegacyProjectTitlePlaceholder() {
-    if (!legacyProjectTitlePlaceholder) {
-      return;
-    }
-
-    legacyProjectTitlePlaceholder.textContent = '';
-  }
 
   projectManager = createProjectManager({
     logger,
@@ -88,16 +77,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     moduleRegistry,
     onProjectLoaded: ({ projectRuntime }) => {
       window.MetaPlatformRuntime.activeProject = projectRuntime;
-      clearLegacyProjectTitlePlaceholder();
     },
     onProjectClosed: () => {
       window.MetaPlatformRuntime.activeProject = null;
-      clearLegacyProjectTitlePlaceholder();
     }
-  });
-
-  projectManager.subscribe(() => {
-    clearLegacyProjectTitlePlaceholder();
   });
 
   async function handleCreateComponentRequest(moduleId) {
@@ -155,7 +138,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       tabs.updateTabPaths(result?.pathMap);
       await tree.render();
       logger.clear();
-      clearLegacyProjectTitlePlaceholder();
       return true;
     }
 
@@ -163,7 +145,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     tabs.updateTabPaths(result?.pathMap);
     await tree.render();
     logger.clear();
-    clearLegacyProjectTitlePlaceholder();
     return true;
   }
 

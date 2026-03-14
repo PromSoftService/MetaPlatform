@@ -39,6 +39,7 @@ export function createProjectTree({
 }) {
   const treeRoot = document.getElementById(APP_CONFIG.ui.dom.projectTreeId);
   const projectPanelTitleNode = document.querySelector(APP_CONFIG.ui.dom.projectPanelTitleSelector);
+  const unsavedMarker = '●';
 
   const moduleSections = [
     {
@@ -62,6 +63,15 @@ export function createProjectTree({
   const treeSelectionState = {
     selectedNodeId: null
   };
+
+  function getProjectPanelTitle(project) {
+    if (!project) {
+      return APP_CONFIG.ui.panelHeaders.project;
+    }
+
+    const projectName = String(project.project?.name || APP_CONFIG.ui.text.untitled).trim() || APP_CONFIG.ui.text.untitled;
+    return project.isUnsaved ? `${projectName} ${unsavedMarker}` : projectName;
+  }
 
   async function startDocumentCreation(sectionConfig) {
     await tabs.startTemporaryDocumentCreation({
@@ -156,7 +166,7 @@ export function createProjectTree({
     treeRoot.innerHTML = '';
 
     if (projectPanelTitleNode) {
-      projectPanelTitleNode.textContent = '';
+      projectPanelTitleNode.textContent = getProjectPanelTitle(project);
     }
 
     if (!project) {
@@ -170,13 +180,6 @@ export function createProjectTree({
     });
 
     for (const nodeData of treeNodes) {
-      if (nodeData.nodeType === TREE_NODE_TYPES.project) {
-        const projectNode = createElement('div', [APP_CONFIG.ui.classNames.projectNode]);
-        projectNode.textContent = nodeData.label;
-        treeRoot.appendChild(projectNode);
-        continue;
-      }
-
       if (nodeData.nodeType === TREE_NODE_TYPES.module) {
         const moduleBlock = createElement('div', ['tree-module-block']);
         moduleBlock.appendChild(renderNodeRow(nodeData, ['tree-section-header', 'tree-node-row']));
@@ -208,5 +211,5 @@ export function createProjectTree({
     });
   });
 
-  return { render };
+  return { render, getProjectPanelTitle };
 }
