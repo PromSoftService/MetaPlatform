@@ -20,7 +20,15 @@
   --tab-close-size: 18px;
   --panel-padding-x: 12px;
   --gutter-size: 4px;
+
+  --tree-row-border-radius: 6px;
+  --tree-row-padding-x: 10px;
+  --tree-row-padding-y: 8px;
+  --tree-module-row-font-size: 12px;
+  --tree-module-row-letter-spacing: 0.04em;
+  --tree-component-indent: 16px;
 }
+
 
 html,
 body {
@@ -230,21 +238,40 @@ body {
   margin-top: 12px;
 }
 
+.tree-module-children {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .tree-section-header {
   margin: 0 0 8px;
+  font-size: var(--tree-module-row-font-size);
+  font-weight: 700;
+  letter-spacing: var(--tree-module-row-letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
 }
 
 .tree-item {
-  margin-bottom: 6px;
+  margin-bottom: 0;
 }
 
 .tree-node-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
   border: 1px solid transparent;
+  border-radius: var(--tree-row-border-radius);
   background: transparent;
   transition: background-color 120ms ease-in-out, border-color 120ms ease-in-out;
+}
+
+.tree-node-document-row {
+  padding-left: var(--tree-component-indent);
 }
 
 .tree-node-row:hover {
@@ -264,7 +291,7 @@ body {
   background: transparent;
   color: var(--color-text);
   text-align: left;
-  padding: 8px 10px;
+  padding: var(--tree-row-padding-y) var(--tree-row-padding-x);
   cursor: pointer;
   font: inherit;
   overflow: hidden;
@@ -503,12 +530,6 @@ body {
   height: var(--gutter-size) !important;
 }
 
-
-.tree-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
 
 .tree-item-delete {
   border: 1px solid var(--color-border);

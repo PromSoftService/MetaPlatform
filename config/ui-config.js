@@ -19,6 +19,14 @@ export const UI_CONFIG = {
     page: 'workbench-page',
     pageActive: 'is-active',
     treeItem: 'tree-item',
+    treeModuleBlock: 'tree-module-block',
+    treeModuleChildren: 'tree-module-children',
+    treeNodeRow: 'tree-node-row',
+    treeSectionHeader: 'tree-section-header',
+    treeNodeDocumentRow: 'tree-node-document-row',
+    treeNodeLabel: 'tree-node-label',
+    treeNodeActions: 'tree-node-actions',
+    treeNodeActionButton: 'tree-node-action-button',
     treeItemLabel: 'tree-item-label',
     projectNode: 'project-node',
     editorRoot: 'metagen-editor',
@@ -37,6 +45,7 @@ export const UI_CONFIG = {
   },
 
   text: {
-    untitled: 'Без имени'
+    untitled: 'Без имени',
+    dirtyMarker: '●'
   }
 };

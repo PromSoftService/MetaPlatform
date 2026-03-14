@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   TREE_NODE_TYPES,
+  TREE_ACTION_IDS,
   buildProjectTreeNodes,
   createTreeBehaviorConfig,
   createTreeInteractionController,
@@ -101,7 +102,7 @@ test('module nodes expose create action and route callback with moduleId and nod
   };
 
   const actions = getNodeActions(nodeData);
-  assert.equal(actions.some((action) => action.id === 'create-component'), true);
+  assert.equal(actions.some((action) => action.id === TREE_ACTION_IDS.createComponent), true);
 
   const controller = createTreeInteractionController({
     tabs: { openOrActivateDocument: async () => {} },
@@ -110,7 +111,7 @@ test('module nodes expose create action and route callback with moduleId and nod
     }
   });
 
-  await controller.onNodeActionClick({ actionId: 'create-component', nodeData });
+  await controller.onNodeActionClick({ actionId: TREE_ACTION_IDS.createComponent, nodeData });
   assert.equal(createCalls.length, 1);
   assert.equal(createCalls[0].moduleId, 'metagen');
   assert.equal(createCalls[0].nodePayload, nodeData);
@@ -125,7 +126,7 @@ test('document nodes expose delete action and route callback with document paylo
   };
 
   const actions = getNodeActions(nodeData);
-  assert.equal(actions.some((action) => action.id === 'delete-component'), true);
+  assert.equal(actions.some((action) => action.id === TREE_ACTION_IDS.deleteComponent), true);
 
   const controller = createTreeInteractionController({
     tabs: { openOrActivateDocument: async () => {} },
@@ -134,7 +135,7 @@ test('document nodes expose delete action and route callback with document paylo
     }
   });
 
-  await controller.onNodeActionClick({ actionId: 'delete-component', nodeData });
+  await controller.onNodeActionClick({ actionId: TREE_ACTION_IDS.deleteComponent, nodeData });
   assert.equal(deleteCalls.length, 1);
   assert.equal(deleteCalls[0].record, documentRecord);
   assert.equal(deleteCalls[0].nodePayload, nodeData);
@@ -155,7 +156,7 @@ test('action button click isolates DOM event and does not trigger node activatio
   });
 
   await controller.onNodeActionClick({
-    actionId: 'delete-component',
+    actionId: TREE_ACTION_IDS.deleteComponent,
     nodeData: {
       nodeType: TREE_NODE_TYPES.document,
       documentRecord: { path: '/tmp/metagen/a.yaml' }
@@ -197,4 +198,30 @@ test('tree node mapping keeps node typing and metadata for future context menu s
   assert.equal(moduleNode.children.length, 1);
   assert.equal(moduleNode.children[0].nodeType, TREE_NODE_TYPES.document);
   assert.equal(moduleNode.children[0].path, '/tmp/metagen/a.yaml');
+});
+
+
+test('unsupported action returns no-op result and does not call handlers', async () => {
+  let createCalls = 0;
+  let deleteCalls = 0;
+
+  const controller = createTreeInteractionController({
+    tabs: { openOrActivateDocument: async () => {} },
+    onCreateComponentRequest: async () => {
+      createCalls += 1;
+    },
+    onDeleteComponentRequest: async () => {
+      deleteCalls += 1;
+    }
+  });
+
+  const result = await controller.onNodeActionClick({
+    actionId: 'unknown-action',
+    nodeData: { nodeType: TREE_NODE_TYPES.module, moduleId: 'metagen' }
+  });
+
+  assert.equal(result.handled, false);
+  assert.equal(result.reason, 'unsupported-action');
+  assert.equal(createCalls, 0);
+  assert.equal(deleteCalls, 0);
 });

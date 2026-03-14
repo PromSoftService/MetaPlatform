@@ -10,6 +10,8 @@ import {
   getNodeActions
 } from './projectTree/treeAdapter.js';
 
+const TREE_CLASSNAMES = APP_CONFIG.ui.classNames;
+
 function normalizeClassNames(classNames = []) {
   const normalizedClassNames = Array.isArray(classNames) ? classNames : [classNames];
 
@@ -39,7 +41,6 @@ export function createProjectTree({
 }) {
   const treeRoot = document.getElementById(APP_CONFIG.ui.dom.projectTreeId);
   const projectPanelTitleNode = document.querySelector(APP_CONFIG.ui.dom.projectPanelTitleSelector);
-  const unsavedMarker = '●';
 
   const moduleSections = [
     {
@@ -66,11 +67,11 @@ export function createProjectTree({
 
   function getProjectPanelTitle(project) {
     if (!project) {
-      return APP_CONFIG.ui.panelHeaders.project;
+      return '';
     }
 
     const projectName = String(project.project?.name || APP_CONFIG.ui.text.untitled).trim() || APP_CONFIG.ui.text.untitled;
-    return project.isUnsaved ? `${projectName} ${unsavedMarker}` : projectName;
+    return project.isDirty ? `${projectName} ${APP_CONFIG.ui.text.dirtyMarker}` : projectName;
   }
 
   async function startDocumentCreation(sectionConfig) {
@@ -104,12 +105,12 @@ export function createProjectTree({
     })
   });
 
-  function renderNodeRow(nodeData, rowClassNames = ['tree-node-row']) {
+  function renderNodeRow(nodeData, rowClassNames = [TREE_CLASSNAMES.treeNodeRow]) {
     const row = createElement('div', rowClassNames);
     row.dataset.nodeType = nodeData.nodeType;
     row.dataset.nodeId = nodeData.id;
 
-    const label = createElement('button', ['tree-node-label']);
+    const label = createElement('button', [TREE_CLASSNAMES.treeNodeLabel]);
     label.type = 'button';
     label.textContent = nodeData.label;
 
@@ -126,14 +127,14 @@ export function createProjectTree({
     const actions = getNodeActions(nodeData);
 
     if (actions.length > 0) {
-      const actionsContainer = createElement('div', ['tree-node-actions']);
+      const actionsContainer = createElement('div', [TREE_CLASSNAMES.treeNodeActions]);
 
       for (const action of actions) {
         if (!action.visible) {
           continue;
         }
 
-        const actionButton = createElement('button', ['tree-node-action-button']);
+        const actionButton = createElement('button', [TREE_CLASSNAMES.treeNodeActionButton]);
         actionButton.type = 'button';
         actionButton.title = action.title;
         actionButton.setAttribute('aria-label', action.title);
@@ -181,14 +182,18 @@ export function createProjectTree({
 
     for (const nodeData of treeNodes) {
       if (nodeData.nodeType === TREE_NODE_TYPES.module) {
-        const moduleBlock = createElement('div', ['tree-module-block']);
-        moduleBlock.appendChild(renderNodeRow(nodeData, ['tree-section-header', 'tree-node-row']));
+        const moduleBlock = createElement('div', [TREE_CLASSNAMES.treeModuleBlock]);
+        moduleBlock.appendChild(
+          renderNodeRow(nodeData, [TREE_CLASSNAMES.treeSectionHeader, TREE_CLASSNAMES.treeNodeRow])
+        );
 
-        const documentsContainer = createElement('div', ['tree-module-children']);
+        const documentsContainer = createElement('div', [TREE_CLASSNAMES.treeModuleChildren]);
 
         for (const documentNode of nodeData.children || []) {
-          const item = createElement('div', [APP_CONFIG.ui.classNames.treeItem]);
-          item.appendChild(renderNodeRow(documentNode));
+          const item = createElement('div', [TREE_CLASSNAMES.treeItem]);
+          item.appendChild(
+            renderNodeRow(documentNode, [TREE_CLASSNAMES.treeNodeRow, TREE_CLASSNAMES.treeNodeDocumentRow])
+          );
           documentsContainer.appendChild(item);
         }
 

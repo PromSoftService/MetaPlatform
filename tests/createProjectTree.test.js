@@ -142,7 +142,7 @@ test('tree row render accepts multiple classes as separate tokens', async () => 
   }
 });
 
-test('module node render path does not pass combined class token with spaces', async () => {
+test('module and component nodes get distinct row classes and hierarchy markers', async () => {
   const originalDocument = global.document;
   const { document, treeRoot } = createFakeDocument();
   global.document = document;
@@ -151,7 +151,7 @@ test('module node render path does not pass combined class token with spaces', a
     const tree = createProjectTree({
       logger: createLoggerFixture(),
       projectManager: createProjectManagerFixture({
-        project: { name: 'Demo Project' },
+        project: { project: { name: 'Demo Project' }, isDirty: false },
         documentsByModule: {
           metagen: [
             {
@@ -171,17 +171,16 @@ test('module node render path does not pass combined class token with spaces', a
       }
     });
 
-    await assert.doesNotReject(async () => {
-      await tree.render();
-    });
+    await tree.render();
 
     const metagenModuleBlock = treeRoot.children[0];
-    assert.ok(metagenModuleBlock, 'module block should be rendered');
-
     const sectionHeaderRow = metagenModuleBlock.children[0];
+    const documentRow = metagenModuleBlock.children[1].children[0].children[0];
+
     assert.equal(sectionHeaderRow.dataset.nodeType, 'module');
     assert.equal(sectionHeaderRow.classList.contains('tree-section-header'), true);
-    assert.equal(sectionHeaderRow.classList.contains('tree-node-row'), true);
+    assert.equal(documentRow.dataset.nodeType, 'document');
+    assert.equal(documentRow.classList.contains('tree-node-document-row'), true);
   } finally {
     global.document = originalDocument;
   }
@@ -220,6 +219,35 @@ test('rendering project tree for new project no longer crashes', async () => {
   }
 });
 
+test('project panel title stays empty when no project is opened', async () => {
+  const originalDocument = global.document;
+  const { document, projectPanelTitle } = createFakeDocument();
+  global.document = document;
+
+  try {
+    const tree = createProjectTree({
+      logger: createLoggerFixture(),
+      projectManager: createProjectManagerFixture({
+        project: null,
+        documentsByModule: {
+          metagen: [],
+          metalab: [],
+          metaview: []
+        }
+      }),
+      tabs: {
+        startTemporaryDocumentCreation: async () => {},
+        closeTab: () => {},
+        openOrActivateDocument: async () => {}
+      }
+    });
+
+    await tree.render();
+    assert.equal(projectPanelTitle.textContent, '');
+  } finally {
+    global.document = originalDocument;
+  }
+});
 
 test('project panel title reflects current project name', async () => {
   const originalDocument = global.document;
@@ -230,7 +258,7 @@ test('project panel title reflects current project name', async () => {
     const tree = createProjectTree({
       logger: createLoggerFixture(),
       projectManager: createProjectManagerFixture({
-        project: { project: { name: 'Demo Project' }, isUnsaved: false },
+        project: { project: { name: 'Demo Project' }, isDirty: false },
         documentsByModule: {
           metagen: [],
           metalab: [],
@@ -251,7 +279,7 @@ test('project panel title reflects current project name', async () => {
   }
 });
 
-test('project panel title marks unsaved state with marker', async () => {
+test('project panel title marks dirty state with marker', async () => {
   const originalDocument = global.document;
   const { document, projectPanelTitle } = createFakeDocument();
   global.document = document;
@@ -260,7 +288,7 @@ test('project panel title marks unsaved state with marker', async () => {
     const tree = createProjectTree({
       logger: createLoggerFixture(),
       projectManager: createProjectManagerFixture({
-        project: { project: { name: 'Dirty Project' }, isUnsaved: true },
+        project: { project: { name: 'Dirty Project' }, isDirty: true, isUnsaved: false },
         documentsByModule: {
           metagen: [],
           metalab: [],
@@ -276,6 +304,36 @@ test('project panel title marks unsaved state with marker', async () => {
 
     await tree.render();
     assert.equal(projectPanelTitle.textContent, 'Dirty Project ●');
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
+test('project panel title does not show marker for clean opened project', async () => {
+  const originalDocument = global.document;
+  const { document, projectPanelTitle } = createFakeDocument();
+  global.document = document;
+
+  try {
+    const tree = createProjectTree({
+      logger: createLoggerFixture(),
+      projectManager: createProjectManagerFixture({
+        project: { project: { name: 'Clean Project' }, isDirty: false, isUnsaved: false },
+        documentsByModule: {
+          metagen: [],
+          metalab: [],
+          metaview: []
+        }
+      }),
+      tabs: {
+        startTemporaryDocumentCreation: async () => {},
+        closeTab: () => {},
+        openOrActivateDocument: async () => {}
+      }
+    });
+
+    await tree.render();
+    assert.equal(projectPanelTitle.textContent, 'Clean Project');
   } finally {
     global.document = originalDocument;
   }

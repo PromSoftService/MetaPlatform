@@ -6,6 +6,12 @@ export const TREE_NODE_TYPES = {
   document: 'document'
 };
 
+
+export const TREE_ACTION_IDS = {
+  createComponent: 'create-component',
+  deleteComponent: 'delete-component'
+};
+
 export function getDocumentLabel(documentRecord) {
   return (
     documentRecord.document?.component?.name ||
@@ -58,7 +64,7 @@ export function getNodeActions(nodeData) {
   if (nodeData?.nodeType === TREE_NODE_TYPES.module) {
     return [
       {
-        id: 'create-component',
+        id: TREE_ACTION_IDS.createComponent,
         title: 'Добавить компонент',
         icon: '+',
         visible: true
@@ -69,7 +75,7 @@ export function getNodeActions(nodeData) {
   if (nodeData?.nodeType === TREE_NODE_TYPES.document) {
     return [
       {
-        id: 'delete-component',
+        id: TREE_ACTION_IDS.deleteComponent,
         title: 'Удалить компонент',
         icon: '🗑',
         visible: true
@@ -100,12 +106,12 @@ export function createTreeInteractionController({
       event.stopPropagation();
     }
 
-    if (actionId === 'create-component' && nodeData?.nodeType === TREE_NODE_TYPES.module) {
+    if (actionId === TREE_ACTION_IDS.createComponent && nodeData?.nodeType === TREE_NODE_TYPES.module) {
       await onCreateComponentRequest?.(nodeData.moduleId, nodeData);
       return { handled: true, reason: 'create-component' };
     }
 
-    if (actionId === 'delete-component' && nodeData?.nodeType === TREE_NODE_TYPES.document) {
+    if (actionId === TREE_ACTION_IDS.deleteComponent && nodeData?.nodeType === TREE_NODE_TYPES.document) {
       await onDeleteComponentRequest?.(nodeData.documentRecord, nodeData);
       return { handled: true, reason: 'delete-component' };
     }

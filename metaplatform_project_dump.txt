@@ -122,6 +122,14 @@ export const UI_CONFIG = {
     page: 'workbench-page',
     pageActive: 'is-active',
     treeItem: 'tree-item',
+    treeModuleBlock: 'tree-module-block',
+    treeModuleChildren: 'tree-module-children',
+    treeNodeRow: 'tree-node-row',
+    treeSectionHeader: 'tree-section-header',
+    treeNodeDocumentRow: 'tree-node-document-row',
+    treeNodeLabel: 'tree-node-label',
+    treeNodeActions: 'tree-node-actions',
+    treeNodeActionButton: 'tree-node-action-button',
     treeItemLabel: 'tree-item-label',
     projectNode: 'project-node',
     editorRoot: 'metagen-editor',
@@ -140,9 +148,11 @@ export const UI_CONFIG = {
   },
 
   text: {
-    untitled: 'Без имени'
+    untitled: 'Без имени',
+    dirtyMarker: '●'
   }
 };
+
 
 ==================================================
 FILE: create_project_structure.py
@@ -4547,7 +4557,15 @@ FILE: renderer/styles/styles.css
   --tab-close-size: 18px;
   --panel-padding-x: 12px;
   --gutter-size: 4px;
+
+  --tree-row-border-radius: 6px;
+  --tree-row-padding-x: 10px;
+  --tree-row-padding-y: 8px;
+  --tree-module-row-font-size: 12px;
+  --tree-module-row-letter-spacing: 0.04em;
+  --tree-component-indent: 16px;
 }
+
 
 html,
 body {
@@ -4757,21 +4775,40 @@ body {
   margin-top: 12px;
 }
 
+.tree-module-children {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .tree-section-header {
   margin: 0 0 8px;
+  font-size: var(--tree-module-row-font-size);
+  font-weight: 700;
+  letter-spacing: var(--tree-module-row-letter-spacing);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
 }
 
 .tree-item {
-  margin-bottom: 6px;
+  margin-bottom: 0;
 }
 
 .tree-node-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
   border: 1px solid transparent;
+  border-radius: var(--tree-row-border-radius);
   background: transparent;
   transition: background-color 120ms ease-in-out, border-color 120ms ease-in-out;
+}
+
+.tree-node-document-row {
+  padding-left: var(--tree-component-indent);
 }
 
 .tree-node-row:hover {
@@ -4791,7 +4828,7 @@ body {
   background: transparent;
   color: var(--color-text);
   text-align: left;
-  padding: 8px 10px;
+  padding: var(--tree-row-padding-y) var(--tree-row-padding-x);
   cursor: pointer;
   font: inherit;
   overflow: hidden;
@@ -5031,12 +5068,6 @@ body {
 }
 
 
-.tree-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .tree-item-delete {
   border: 1px solid var(--color-border);
   background: var(--color-bg-app);
@@ -5137,6 +5168,8 @@ import {
   getNodeActions
 } from './projectTree/treeAdapter.js';
 
+const TREE_CLASSNAMES = APP_CONFIG.ui.classNames;
+
 function normalizeClassNames(classNames = []) {
   const normalizedClassNames = Array.isArray(classNames) ? classNames : [classNames];
 
@@ -5166,7 +5199,6 @@ export function createProjectTree({
 }) {
   const treeRoot = document.getElementById(APP_CONFIG.ui.dom.projectTreeId);
   const projectPanelTitleNode = document.querySelector(APP_CONFIG.ui.dom.projectPanelTitleSelector);
-  const unsavedMarker = '●';
 
   const moduleSections = [
     {
@@ -5193,11 +5225,11 @@ export function createProjectTree({
 
   function getProjectPanelTitle(project) {
     if (!project) {
-      return APP_CONFIG.ui.panelHeaders.project;
+      return '';
     }
 
     const projectName = String(project.project?.name || APP_CONFIG.ui.text.untitled).trim() || APP_CONFIG.ui.text.untitled;
-    return project.isUnsaved ? `${projectName} ${unsavedMarker}` : projectName;
+    return project.isDirty ? `${projectName} ${APP_CONFIG.ui.text.dirtyMarker}` : projectName;
   }
 
   async function startDocumentCreation(sectionConfig) {
@@ -5231,12 +5263,12 @@ export function createProjectTree({
     })
   });
 
-  function renderNodeRow(nodeData, rowClassNames = ['tree-node-row']) {
+  function renderNodeRow(nodeData, rowClassNames = [TREE_CLASSNAMES.treeNodeRow]) {
     const row = createElement('div', rowClassNames);
     row.dataset.nodeType = nodeData.nodeType;
     row.dataset.nodeId = nodeData.id;
 
-    const label = createElement('button', ['tree-node-label']);
+    const label = createElement('button', [TREE_CLASSNAMES.treeNodeLabel]);
     label.type = 'button';
     label.textContent = nodeData.label;
 
@@ -5253,14 +5285,14 @@ export function createProjectTree({
     const actions = getNodeActions(nodeData);
 
     if (actions.length > 0) {
-      const actionsContainer = createElement('div', ['tree-node-actions']);
+      const actionsContainer = createElement('div', [TREE_CLASSNAMES.treeNodeActions]);
 
       for (const action of actions) {
         if (!action.visible) {
           continue;
         }
 
-        const actionButton = createElement('button', ['tree-node-action-button']);
+        const actionButton = createElement('button', [TREE_CLASSNAMES.treeNodeActionButton]);
         actionButton.type = 'button';
         actionButton.title = action.title;
         actionButton.setAttribute('aria-label', action.title);
@@ -5308,14 +5340,18 @@ export function createProjectTree({
 
     for (const nodeData of treeNodes) {
       if (nodeData.nodeType === TREE_NODE_TYPES.module) {
-        const moduleBlock = createElement('div', ['tree-module-block']);
-        moduleBlock.appendChild(renderNodeRow(nodeData, ['tree-section-header', 'tree-node-row']));
+        const moduleBlock = createElement('div', [TREE_CLASSNAMES.treeModuleBlock]);
+        moduleBlock.appendChild(
+          renderNodeRow(nodeData, [TREE_CLASSNAMES.treeSectionHeader, TREE_CLASSNAMES.treeNodeRow])
+        );
 
-        const documentsContainer = createElement('div', ['tree-module-children']);
+        const documentsContainer = createElement('div', [TREE_CLASSNAMES.treeModuleChildren]);
 
         for (const documentNode of nodeData.children || []) {
-          const item = createElement('div', [APP_CONFIG.ui.classNames.treeItem]);
-          item.appendChild(renderNodeRow(documentNode));
+          const item = createElement('div', [TREE_CLASSNAMES.treeItem]);
+          item.appendChild(
+            renderNodeRow(documentNode, [TREE_CLASSNAMES.treeNodeRow, TREE_CLASSNAMES.treeNodeDocumentRow])
+          );
           documentsContainer.appendChild(item);
         }
 
@@ -5352,6 +5388,12 @@ export const TREE_NODE_TYPES = {
   project: 'project',
   module: 'module',
   document: 'document'
+};
+
+
+export const TREE_ACTION_IDS = {
+  createComponent: 'create-component',
+  deleteComponent: 'delete-component'
 };
 
 export function getDocumentLabel(documentRecord) {
@@ -5406,7 +5448,7 @@ export function getNodeActions(nodeData) {
   if (nodeData?.nodeType === TREE_NODE_TYPES.module) {
     return [
       {
-        id: 'create-component',
+        id: TREE_ACTION_IDS.createComponent,
         title: 'Добавить компонент',
         icon: '+',
         visible: true
@@ -5417,7 +5459,7 @@ export function getNodeActions(nodeData) {
   if (nodeData?.nodeType === TREE_NODE_TYPES.document) {
     return [
       {
-        id: 'delete-component',
+        id: TREE_ACTION_IDS.deleteComponent,
         title: 'Удалить компонент',
         icon: '🗑',
         visible: true
@@ -5448,12 +5490,12 @@ export function createTreeInteractionController({
       event.stopPropagation();
     }
 
-    if (actionId === 'create-component' && nodeData?.nodeType === TREE_NODE_TYPES.module) {
+    if (actionId === TREE_ACTION_IDS.createComponent && nodeData?.nodeType === TREE_NODE_TYPES.module) {
       await onCreateComponentRequest?.(nodeData.moduleId, nodeData);
       return { handled: true, reason: 'create-component' };
     }
 
-    if (actionId === 'delete-component' && nodeData?.nodeType === TREE_NODE_TYPES.document) {
+    if (actionId === TREE_ACTION_IDS.deleteComponent && nodeData?.nodeType === TREE_NODE_TYPES.document) {
       await onDeleteComponentRequest?.(nodeData.documentRecord, nodeData);
       return { handled: true, reason: 'delete-component' };
     }
@@ -6534,7 +6576,7 @@ test('tree row render accepts multiple classes as separate tokens', async () => 
   }
 });
 
-test('module node render path does not pass combined class token with spaces', async () => {
+test('module and component nodes get distinct row classes and hierarchy markers', async () => {
   const originalDocument = global.document;
   const { document, treeRoot } = createFakeDocument();
   global.document = document;
@@ -6543,7 +6585,7 @@ test('module node render path does not pass combined class token with spaces', a
     const tree = createProjectTree({
       logger: createLoggerFixture(),
       projectManager: createProjectManagerFixture({
-        project: { name: 'Demo Project' },
+        project: { project: { name: 'Demo Project' }, isDirty: false },
         documentsByModule: {
           metagen: [
             {
@@ -6563,17 +6605,16 @@ test('module node render path does not pass combined class token with spaces', a
       }
     });
 
-    await assert.doesNotReject(async () => {
-      await tree.render();
-    });
+    await tree.render();
 
     const metagenModuleBlock = treeRoot.children[0];
-    assert.ok(metagenModuleBlock, 'module block should be rendered');
-
     const sectionHeaderRow = metagenModuleBlock.children[0];
+    const documentRow = metagenModuleBlock.children[1].children[0].children[0];
+
     assert.equal(sectionHeaderRow.dataset.nodeType, 'module');
     assert.equal(sectionHeaderRow.classList.contains('tree-section-header'), true);
-    assert.equal(sectionHeaderRow.classList.contains('tree-node-row'), true);
+    assert.equal(documentRow.dataset.nodeType, 'document');
+    assert.equal(documentRow.classList.contains('tree-node-document-row'), true);
   } finally {
     global.document = originalDocument;
   }
@@ -6612,6 +6653,35 @@ test('rendering project tree for new project no longer crashes', async () => {
   }
 });
 
+test('project panel title stays empty when no project is opened', async () => {
+  const originalDocument = global.document;
+  const { document, projectPanelTitle } = createFakeDocument();
+  global.document = document;
+
+  try {
+    const tree = createProjectTree({
+      logger: createLoggerFixture(),
+      projectManager: createProjectManagerFixture({
+        project: null,
+        documentsByModule: {
+          metagen: [],
+          metalab: [],
+          metaview: []
+        }
+      }),
+      tabs: {
+        startTemporaryDocumentCreation: async () => {},
+        closeTab: () => {},
+        openOrActivateDocument: async () => {}
+      }
+    });
+
+    await tree.render();
+    assert.equal(projectPanelTitle.textContent, '');
+  } finally {
+    global.document = originalDocument;
+  }
+});
 
 test('project panel title reflects current project name', async () => {
   const originalDocument = global.document;
@@ -6622,7 +6692,7 @@ test('project panel title reflects current project name', async () => {
     const tree = createProjectTree({
       logger: createLoggerFixture(),
       projectManager: createProjectManagerFixture({
-        project: { project: { name: 'Demo Project' }, isUnsaved: false },
+        project: { project: { name: 'Demo Project' }, isDirty: false },
         documentsByModule: {
           metagen: [],
           metalab: [],
@@ -6643,7 +6713,7 @@ test('project panel title reflects current project name', async () => {
   }
 });
 
-test('project panel title marks unsaved state with marker', async () => {
+test('project panel title marks dirty state with marker', async () => {
   const originalDocument = global.document;
   const { document, projectPanelTitle } = createFakeDocument();
   global.document = document;
@@ -6652,7 +6722,7 @@ test('project panel title marks unsaved state with marker', async () => {
     const tree = createProjectTree({
       logger: createLoggerFixture(),
       projectManager: createProjectManagerFixture({
-        project: { project: { name: 'Dirty Project' }, isUnsaved: true },
+        project: { project: { name: 'Dirty Project' }, isDirty: true, isUnsaved: false },
         documentsByModule: {
           metagen: [],
           metalab: [],
@@ -6668,6 +6738,36 @@ test('project panel title marks unsaved state with marker', async () => {
 
     await tree.render();
     assert.equal(projectPanelTitle.textContent, 'Dirty Project ●');
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
+test('project panel title does not show marker for clean opened project', async () => {
+  const originalDocument = global.document;
+  const { document, projectPanelTitle } = createFakeDocument();
+  global.document = document;
+
+  try {
+    const tree = createProjectTree({
+      logger: createLoggerFixture(),
+      projectManager: createProjectManagerFixture({
+        project: { project: { name: 'Clean Project' }, isDirty: false, isUnsaved: false },
+        documentsByModule: {
+          metagen: [],
+          metalab: [],
+          metaview: []
+        }
+      }),
+      tabs: {
+        startTemporaryDocumentCreation: async () => {},
+        closeTab: () => {},
+        openOrActivateDocument: async () => {}
+      }
+    });
+
+    await tree.render();
+    assert.equal(projectPanelTitle.textContent, 'Clean Project');
   } finally {
     global.document = originalDocument;
   }
@@ -7803,6 +7903,7 @@ import assert from 'node:assert/strict';
 
 import {
   TREE_NODE_TYPES,
+  TREE_ACTION_IDS,
   buildProjectTreeNodes,
   createTreeBehaviorConfig,
   createTreeInteractionController,
@@ -7901,7 +8002,7 @@ test('module nodes expose create action and route callback with moduleId and nod
   };
 
   const actions = getNodeActions(nodeData);
-  assert.equal(actions.some((action) => action.id === 'create-component'), true);
+  assert.equal(actions.some((action) => action.id === TREE_ACTION_IDS.createComponent), true);
 
   const controller = createTreeInteractionController({
     tabs: { openOrActivateDocument: async () => {} },
@@ -7910,7 +8011,7 @@ test('module nodes expose create action and route callback with moduleId and nod
     }
   });
 
-  await controller.onNodeActionClick({ actionId: 'create-component', nodeData });
+  await controller.onNodeActionClick({ actionId: TREE_ACTION_IDS.createComponent, nodeData });
   assert.equal(createCalls.length, 1);
   assert.equal(createCalls[0].moduleId, 'metagen');
   assert.equal(createCalls[0].nodePayload, nodeData);
@@ -7925,7 +8026,7 @@ test('document nodes expose delete action and route callback with document paylo
   };
 
   const actions = getNodeActions(nodeData);
-  assert.equal(actions.some((action) => action.id === 'delete-component'), true);
+  assert.equal(actions.some((action) => action.id === TREE_ACTION_IDS.deleteComponent), true);
 
   const controller = createTreeInteractionController({
     tabs: { openOrActivateDocument: async () => {} },
@@ -7934,7 +8035,7 @@ test('document nodes expose delete action and route callback with document paylo
     }
   });
 
-  await controller.onNodeActionClick({ actionId: 'delete-component', nodeData });
+  await controller.onNodeActionClick({ actionId: TREE_ACTION_IDS.deleteComponent, nodeData });
   assert.equal(deleteCalls.length, 1);
   assert.equal(deleteCalls[0].record, documentRecord);
   assert.equal(deleteCalls[0].nodePayload, nodeData);
@@ -7955,7 +8056,7 @@ test('action button click isolates DOM event and does not trigger node activatio
   });
 
   await controller.onNodeActionClick({
-    actionId: 'delete-component',
+    actionId: TREE_ACTION_IDS.deleteComponent,
     nodeData: {
       nodeType: TREE_NODE_TYPES.document,
       documentRecord: { path: '/tmp/metagen/a.yaml' }
@@ -7997,6 +8098,32 @@ test('tree node mapping keeps node typing and metadata for future context menu s
   assert.equal(moduleNode.children.length, 1);
   assert.equal(moduleNode.children[0].nodeType, TREE_NODE_TYPES.document);
   assert.equal(moduleNode.children[0].path, '/tmp/metagen/a.yaml');
+});
+
+
+test('unsupported action returns no-op result and does not call handlers', async () => {
+  let createCalls = 0;
+  let deleteCalls = 0;
+
+  const controller = createTreeInteractionController({
+    tabs: { openOrActivateDocument: async () => {} },
+    onCreateComponentRequest: async () => {
+      createCalls += 1;
+    },
+    onDeleteComponentRequest: async () => {
+      deleteCalls += 1;
+    }
+  });
+
+  const result = await controller.onNodeActionClick({
+    actionId: 'unknown-action',
+    nodeData: { nodeType: TREE_NODE_TYPES.module, moduleId: 'metagen' }
+  });
+
+  assert.equal(result.handled, false);
+  assert.equal(result.reason, 'unsupported-action');
+  assert.equal(createCalls, 0);
+  assert.equal(deleteCalls, 0);
 });
 
 
