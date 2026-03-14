@@ -10,9 +10,23 @@ import {
   getNodeActions
 } from './projectTree/treeAdapter.js';
 
+function normalizeClassNames(classNames = []) {
+  const normalizedClassNames = Array.isArray(classNames) ? classNames : [classNames];
+
+  return normalizedClassNames.filter(Boolean).map((className) => {
+    if (/\s/.test(className)) {
+      throw new TypeError(
+        `Invalid class token "${className}". Pass class names as separate tokens.`
+      );
+    }
+
+    return className;
+  });
+}
+
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
-  classNames.forEach((className) => node.classList.add(className));
+  normalizeClassNames(classNames).forEach((className) => node.classList.add(className));
   return node;
 }
 
@@ -80,8 +94,8 @@ export function createProjectTree({
     })
   });
 
-  function renderNodeRow(nodeData, rowClassName = 'tree-node-row') {
-    const row = createElement('div', [rowClassName]);
+  function renderNodeRow(nodeData, rowClassNames = ['tree-node-row']) {
+    const row = createElement('div', rowClassNames);
     row.dataset.nodeType = nodeData.nodeType;
     row.dataset.nodeId = nodeData.id;
 
@@ -165,7 +179,7 @@ export function createProjectTree({
 
       if (nodeData.nodeType === TREE_NODE_TYPES.module) {
         const moduleBlock = createElement('div', ['tree-module-block']);
-        moduleBlock.appendChild(renderNodeRow(nodeData, 'tree-section-header tree-node-row'));
+        moduleBlock.appendChild(renderNodeRow(nodeData, ['tree-section-header', 'tree-node-row']));
 
         const documentsContainer = createElement('div', ['tree-module-children']);
 

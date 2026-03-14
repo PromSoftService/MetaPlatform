@@ -71,6 +71,7 @@ PROJECT_FILES = [
   'renderer/ui/tabEditLifecycle.js',
   'renderer/ui/workbenchShell.js',
   'tests/appCloseCoordinator.test.js',
+  'tests/createProjectTree.test.js',
   'tests/projectManager.save.integration.test.js',
   'tests/finalizeActiveTableEditing.test.js',
   'tests/finalizeEditingOnContextLeave.test.js',
