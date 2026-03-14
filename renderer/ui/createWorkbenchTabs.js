@@ -1,5 +1,6 @@
 import { APP_CONFIG } from '../../config/app-config.js';
 import { finalizeEditingBeforeTabSwitch } from './tabEditLifecycle.js';
+import { finalizeEditingBeforeContextTransition } from './editorContextLifecycle.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -63,6 +64,20 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   const tabs = new Map();
   let activeTabId = null;
   let temporaryCounter = 0;
+
+
+  async function finalizeActiveEditorContextBeforeTransition({ reason, blockOnFailure = true } = {}) {
+    const currentEntry = activeTabId && tabs.has(activeTabId) ? tabs.get(activeTabId) : null;
+    const result = await finalizeEditingBeforeContextTransition({
+      activeEntry: currentEntry,
+      logger,
+      source: 'tabs',
+      reason,
+      blockOnFailure
+    });
+
+    return result;
+  }
 
   async function activateTab(tabId) {
     const currentEntry = activeTabId && tabs.has(activeTabId) ? tabs.get(activeTabId) : null;
@@ -495,6 +510,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     collectOpenDocumentRecords,
     startRename,
     updateTabPaths,
-    startTemporaryDocumentCreation
+    startTemporaryDocumentCreation,
+    finalizeActiveEditorContextBeforeTransition
   };
 }

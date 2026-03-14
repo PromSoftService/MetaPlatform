@@ -236,6 +236,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   fileSystem.onMenuAction(async (action) => {
     try {
+      const transitionResult = await tabs.finalizeActiveEditorContextBeforeTransition({
+        reason: `menu-action:${action}`,
+        blockOnFailure: true
+      });
+
+      if (!transitionResult.continued) {
+        logger.error('menu', 'Действие меню заблокировано: не удалось завершить редактирование перед сменой контекста', {
+          action,
+          outcome: transitionResult.outcome,
+          reason: transitionResult.reason
+        });
+        return;
+      }
+
       if (action === 'new-project') await newProjectFlow();
       if (action === 'open-project') await openProjectFlow();
       if (action === 'close-project') await closeProjectFlow();

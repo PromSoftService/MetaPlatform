@@ -16,9 +16,9 @@ import { clearMountElement } from '../shared/editorHost.js';
 import { createMetaGenParamsSheet } from '../../modules/metagen/tables/createMetaGenParamsSheet.js';
 import { createMetaGenDataSheet } from '../../modules/metagen/tables/createMetaGenDataSheet.js';
 import {
-  finalizeActiveTableEditing,
-  TABLE_EDIT_FINALIZE_RESULT
-} from '../../modules/metagen/tables/finalizeActiveTableEditing.js';
+  finalizeEditingOnContextLeave,
+  TABLE_CONTEXT_FINALIZE_FLOW
+} from '../../modules/metagen/tables/finalizeEditingOnContextLeave.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -237,36 +237,116 @@ export async function createMetaGenEditor({ documentRecord, mountElement, logger
   tableDirtyDisposables.push(bindTableDirtyTracker(paramsTable, () => paramsTable?.extractDocumentValue?.(), markDirty));
   tableDirtyDisposables.push(bindTableDirtyTracker(dataTable, () => dataTable?.extractDocumentValue?.(), markDirty));
 
-  async function finishActiveTableEditing() {
-    const results = await Promise.all([
-      finalizeActiveTableEditing({
-        tableRuntime: paramsTable?.workbook,
-        logger,
-        source: `${lifecycleSource}.params`
-      }),
-      finalizeActiveTableEditing({
-        tableRuntime: dataTable?.workbook,
-        logger,
-        source: `${lifecycleSource}.data`
-      })
-    ]);
+  function buildTableContexts() {
+    return [
+      {
+        contextId: 'params',
+        tableRuntime: paramsTable?.workbook
+      },
+      {
+        contextId: 'data',
+        tableRuntime: dataTable?.workbook
+      }
+    ];
+  }
 
-    if (results.includes(TABLE_EDIT_FINALIZE_RESULT.FAILED)) {
-      logger?.warn?.(lifecycleSource, 'Не удалось завершить редактирование в одной из таблиц MetaGen', {
-        results
+  let contextFinalizeInFlight = null;
+
+  async function runContextLeaveFinalization({ reason, blockOnFailure = true } = {}) {
+    if (contextFinalizeInFlight) {
+      return contextFinalizeInFlight;
+    }
+
+    contextFinalizeInFlight = finalizeEditingOnContextLeave({
+      tables: buildTableContexts(),
+      logger,
+      source: lifecycleSource,
+      reason,
+      blockOnFailure
+    }).finally(() => {
+      contextFinalizeInFlight = null;
+    });
+
+    return contextFinalizeInFlight;
+  }
+
+  function getEditingTableContextId() {
+    if (paramsTable?.workbook?.isCellEditing?.()) {
+      return 'params';
+    }
+
+    if (dataTable?.workbook?.isCellEditing?.()) {
+      return 'data';
+    }
+
+    return null;
+  }
+
+  function getTargetTableContextId(target) {
+    if (!(target instanceof Node)) {
+      return null;
+    }
+
+    if (paramsContainer.contains(target)) {
+      return 'params';
+    }
+
+    if (dataContainer.contains(target)) {
+      return 'data';
+    }
+
+    return null;
+  }
+
+  function shouldFinalizeForContextTransfer(target) {
+    const editingContextId = getEditingTableContextId();
+
+    if (!editingContextId) {
+      return false;
+    }
+
+    const targetContextId = getTargetTableContextId(target);
+    return targetContextId !== editingContextId;
+  }
+
+  function bindContextLossFinalizer() {
+    const handleContextTransfer = (event, reason) => {
+      if (!shouldFinalizeForContextTransfer(event.target)) {
+        return;
+      }
+
+      void runContextLeaveFinalization({
+        reason,
+        blockOnFailure: false
       });
-      return TABLE_EDIT_FINALIZE_RESULT.FAILED;
-    }
+    };
 
-    if (results.includes(TABLE_EDIT_FINALIZE_RESULT.COMMITTED)) {
-      return TABLE_EDIT_FINALIZE_RESULT.COMMITTED;
-    }
+    const onPointerDownCapture = (event) => {
+      handleContextTransfer(event, 'metagen-pointer-context-switch');
+    };
 
-    if (results.includes(TABLE_EDIT_FINALIZE_RESULT.CANCELLED)) {
-      return TABLE_EDIT_FINALIZE_RESULT.CANCELLED;
-    }
+    const onFocusInCapture = (event) => {
+      handleContextTransfer(event, 'metagen-focus-context-switch');
+    };
 
-    return TABLE_EDIT_FINALIZE_RESULT.NO_OP;
+    root.addEventListener('pointerdown', onPointerDownCapture, true);
+    root.addEventListener('focusin', onFocusInCapture, true);
+
+    return () => {
+      root.removeEventListener('pointerdown', onPointerDownCapture, true);
+      root.removeEventListener('focusin', onFocusInCapture, true);
+    };
+  }
+
+  const disposeContextLossFinalizer = bindContextLossFinalizer();
+
+  async function finishActiveTableEditing() {
+    const result = await runContextLeaveFinalization({
+      reason: 'metagen-finish-active-editing',
+      blockOnFailure: false
+    });
+
+    return result.outcome;
   }
 
   async function trySave() {
@@ -289,11 +369,20 @@ export async function createMetaGenEditor({ documentRecord, mountElement, logger
     dataTable,
     isDirty: () => runtimeDirty,
     finishActiveTableEditing,
+    async finalizeEditingBeforeContextLeave({ reason, blockOnFailure = true } = {}) {
+      const result = await runContextLeaveFinalization({ reason, blockOnFailure });
+      return {
+        continued: result.flow !== TABLE_CONTEXT_FINALIZE_FLOW.BLOCKED,
+        outcome: result.outcome,
+        reason: result.reason
+      };
+    },
     async collectDocumentRecord() {
       await extractValue();
       return documentRecord;
     },
     dispose() {
+      disposeContextLossFinalizer?.();
       tableDirtyDisposables.forEach((disposable) => disposable?.dispose?.());
       paramsTable?.dispose?.();
       dataTable?.dispose?.();

@@ -83,5 +83,5 @@ test('failed finalization is handled predictably by blocking tab switch and logg
 
   assert.equal(result, false);
   assert.equal(logger.calls.length, 1);
-  assert.match(logger.calls[0].message, /Ошибка завершения редактирования перед переключением вкладки/);
+  assert.match(logger.calls[0].message, /Ошибка завершения редактирования перед сменой контекста/);
 });

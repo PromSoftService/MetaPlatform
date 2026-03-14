@@ -661,3 +661,49 @@ test('collectOpenDocumentRecords uses runtime collectDocumentRecord and syncs pr
     globalThis.document = previousDocument;
   }
 });
+
+
+test('menu/focus-triggered transition path on tabs uses shared finalize contract for active runtime', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-tabs-menu-finalize-'));
+  await createFixtureProject(root);
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+  const record = manager.getDocumentsByModule('metagen')[0];
+
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  const calls = [];
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async () => null,
+        replaceDocumentRecord: async () => null
+      },
+      openEditor: async () => ({
+        finalizeEditingBeforeContextLeave: async ({ reason, blockOnFailure }) => {
+          calls.push({ reason, blockOnFailure });
+          return { continued: true, outcome: 'committed', reason };
+        },
+        dispose: () => {}
+      })
+    });
+
+    await tabs.openDocument(record);
+
+    const result = await tabs.finalizeActiveEditorContextBeforeTransition({
+      reason: 'menu-action:open-project',
+      blockOnFailure: true
+    });
+
+    assert.equal(result.continued, true);
+    assert.equal(result.outcome, 'committed');
+    assert.deepEqual(calls, [{ reason: 'menu-action:open-project', blockOnFailure: true }]);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
