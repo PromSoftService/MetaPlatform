@@ -91,6 +91,8 @@ export const PROJECT_CONFIG = {
     yaml: ['.yaml', '.yml']
   },
 
+  unsavedDocumentPathPrefix: 'unsaved://',
+
   projectKinds: {
     root: 'metaplatform.project'
   }
@@ -216,6 +218,8 @@ PROJECT_FILES = [
   'renderer/modules/metaview/metaviewDocumentFactory.js',
   'renderer/modules/metaview/metaviewModule.js',
   'renderer/runtime/documentLoader.js',
+  'renderer/runtime/documentRecordIdentity.js',
+  'renderer/runtime/documentSnapshot.js',
   'renderer/runtime/appCloseCoordinator.js',
   'renderer/runtime/fileSystemBridge.js',
   'renderer/runtime/idFactory.js',
@@ -341,6 +345,8 @@ PROJECT_FILES = [
   'renderer/modules/metaview/metaviewDocumentFactory.js',
   'renderer/modules/metaview/metaviewModule.js',
   'renderer/runtime/documentLoader.js',
+  'renderer/runtime/documentRecordIdentity.js',
+  'renderer/runtime/documentSnapshot.js',
   'renderer/runtime/appCloseCoordinator.js',
   'renderer/runtime/fileSystemBridge.js',
   'renderer/runtime/idFactory.js',
@@ -1420,7 +1426,14 @@ FILE: renderer/core/projectManager.js
 
 import { APP_CONFIG } from '../../config/app-config.js';
 import { createDocumentLoader } from '../runtime/documentLoader.js';
-import { slugifyDocumentName } from '../runtime/naming.js';
+import {
+  getDocumentName,
+  normalizeDocumentName,
+  setDocumentName,
+  getDocumentSemanticKey,
+  isUnsavedDocumentPath
+} from '../runtime/documentRecordIdentity.js';
+import { areDocumentSnapshotsSemanticallyEqual } from '../runtime/documentSnapshot.js';
 
 function joinPaths(...parts) {
   return parts
@@ -1530,86 +1543,10 @@ function getModuleFolder(moduleId) {
   return folderMap[moduleId] || null;
 }
 
-function normalizeDocumentName(name) {
-  return String(name ?? '').trim();
-}
-
 function getProjectDisplayNameFromFilePath(projectFilePath) {
   const normalized = normalizeProjectFilePath(projectFilePath);
   const baseName = normalized.split('/').pop() || '';
   return normalizeDocumentName(stripFileExtension(baseName));
-}
-
-function getDocumentName(documentRecord) {
-  return normalizeDocumentName(
-    documentRecord?.document?.component?.name
-    || documentRecord?.document?.scenario?.name
-    || documentRecord?.document?.screen?.name
-    || documentRecord?.document?.name
-    || ''
-  );
-}
-
-function getDocumentIdentityKey(documentRecord) {
-  if (!documentRecord?.document) {
-    return '';
-  }
-
-  const moduleId = String(documentRecord.moduleId || '');
-  const kind = String(documentRecord.document.kind || '');
-
-  const componentId = String(documentRecord.document?.component?.id || '').trim();
-  const scenarioId = String(documentRecord.document?.scenario?.id || '').trim();
-  const screenId = String(documentRecord.document?.screen?.id || '').trim();
-
-  // Для Save As идентичность документа определяется логическим id сущности, а не path.
-  // Для новых документов id должен быть уникальным уже на этапе factory, иначе разные документы могут схлопнуться.
-  const name = getDocumentName(documentRecord);
-  const entityId = componentId || scenarioId || screenId || name;
-
-  return `${moduleId}::${kind}::${entityId}`;
-}
-
-function syncDocumentIdentityFromName(documentRecord, nextName) {
-  const value = normalizeDocumentName(nextName);
-  const slug = slugifyDocumentName(value);
-
-  if (documentRecord?.document?.component) {
-    const nextId = slug || 'new_component';
-    documentRecord.document.component.name = value;
-
-    if ('id' in documentRecord.document.component) {
-      documentRecord.document.component.id = nextId;
-    }
-
-    if (documentRecord.document?.generation?.output) {
-      documentRecord.document.generation.output.fileName = `${nextId}.st`;
-    }
-
-    return;
-  }
-
-  if (documentRecord?.document?.scenario) {
-    const nextId = slug || 'new_scenario';
-    documentRecord.document.scenario.name = value;
-    documentRecord.document.scenario.id = nextId;
-    return;
-  }
-
-  if (documentRecord?.document?.screen) {
-    const nextId = slug || 'new_screen';
-    documentRecord.document.screen.name = value;
-    documentRecord.document.screen.id = nextId;
-    return;
-  }
-
-  if (documentRecord?.document) {
-    documentRecord.document.name = value;
-  }
-}
-
-function setDocumentName(documentRecord, nextName) {
-  syncDocumentIdentityFromName(documentRecord, nextName);
 }
 
 function cloneDocumentPayload(document) {
@@ -1644,7 +1581,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   let currentProject = null;
   const listeners = new Set();
   let unsavedCounter = 0;
-  let deletedDocumentIdentities = new Set();
 
   function emitChange() {
     for (const listener of listeners) {
@@ -1911,7 +1847,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       isDirty: false
     });
 
-    deletedDocumentIdentities = new Set();
     onProjectLoaded?.({ projectRuntime: currentProject });
     emitChange();
     return currentProject;
@@ -1945,7 +1880,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   async function openProject(projectFilePath) {
     const normalizedProjectFilePath = normalizeProjectFilePath(projectFilePath);
     currentProject = await hydrateProjectRuntimeFromDisk(normalizedProjectFilePath);
-    deletedDocumentIdentities = new Set();
 
     onProjectLoaded?.({ projectRuntime: currentProject });
     emitChange();
@@ -1954,7 +1888,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
   async function closeProject() {
     currentProject = null;
-    deletedDocumentIdentities = new Set();
     emitChange();
     onProjectClosed?.();
   }
@@ -1966,7 +1899,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     const hydrated = await hydrateProjectRuntimeFromDisk(currentProject.projectFilePath);
-    deletedDocumentIdentities = new Set();
     currentProject.documents = hydrated.documents;
     currentProject.raw = hydrated.raw;
     currentProject.project = hydrated.project;
@@ -1999,30 +1931,26 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     const moduleDocuments = currentProject.documents[nextRecord.moduleId];
 
-    const nextIdentityKey = getDocumentIdentityKey(nextRecord);
-
-    if (nextIdentityKey && deletedDocumentIdentities.has(nextIdentityKey)) {
-      return null;
-    }
-
     if (!Array.isArray(moduleDocuments)) {
       return null;
     }
 
     let index = moduleDocuments.findIndex((entry) => entry.path === nextRecord.path);
 
-    if (index < 0 && nextIdentityKey) {
-      index = moduleDocuments.findIndex((entry) => getDocumentIdentityKey(entry) === nextIdentityKey);
-    }
 
     if (index < 0) {
       return null;
     }
 
+    const previousRecord = moduleDocuments[index];
     moduleDocuments[index] = nextRecord;
     moduleDocuments.sort((a, b) => getDocumentName(a).localeCompare(getDocumentName(b)));
-    setDirty(true);
-    return moduleDocuments.find((entry) => getDocumentIdentityKey(entry) === getDocumentIdentityKey(nextRecord) || entry.path === nextRecord.path) || null;
+
+    if (!areDocumentSnapshotsSemanticallyEqual(previousRecord, nextRecord) || previousRecord?.path !== nextRecord?.path) {
+      setDirty(true);
+    }
+
+    return moduleDocuments.find((entry) => entry.path === nextRecord.path) || null;
   }
 
   function isDocumentNameTaken(moduleId, name, excludePath = null) {
@@ -2092,7 +2020,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const document = module.createDefaultDocument({ name: resolvedName });
     const virtualPath = currentProject.rootPath
       ? joinPaths(currentProject.rootPath, getModuleFolder(moduleId), module.getFileName(document))
-      : `unsaved://${moduleId}/${++unsavedCounter}.yaml`;
+      : `${APP_CONFIG.project.unsavedDocumentPathPrefix}${moduleId}/${++unsavedCounter}.yaml`;
 
     const record = { moduleId, path: virtualPath, document };
     currentProject.documents[moduleId].push(record);
@@ -2128,7 +2056,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const previousPath = record.path;
     let nextPath = previousPath;
 
-    if (currentProject.rootPath && !String(previousPath).startsWith('unsaved://')) {
+    if (currentProject.rootPath && !isUnsavedDocumentPath(previousPath)) {
       const module = moduleRegistry.getModule(record.moduleId);
       const moduleFolder = getModuleFolder(record.moduleId);
       const renamedDocument = cloneDocumentPayload(record.document);
@@ -2207,15 +2135,9 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return false;
     }
 
-    const identityKey = getDocumentIdentityKey(record);
-
     currentProject.documents[record.moduleId] = currentProject.documents[record.moduleId].filter((entry) => entry.path !== targetPath);
 
-    if (identityKey) {
-      deletedDocumentIdentities.add(identityKey);
-    }
-
-    if (currentProject.rootPath && !String(targetPath).startsWith('unsaved://')) {
+    if (currentProject.rootPath && !isUnsavedDocumentPath(targetPath)) {
       await fileSystem.deleteFile(targetPath);
     }
 
@@ -2241,16 +2163,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     // collect documents: openDocuments имеет приоритет над snapshot в currentProject.documents.
     const recordsByIdentity = new Map();
 
-    const isDeletedRecord = (record) => {
-      const identityKey = getDocumentIdentityKey(record);
-      return Boolean(identityKey && deletedDocumentIdentities.has(identityKey));
-    };
-
     for (const record of getAllDocuments()) {
-      if (isDeletedRecord(record)) {
-        continue;
-      }
-      const identityKey = getDocumentIdentityKey(record);
+      const identityKey = getDocumentSemanticKey(record);
 
       if (!identityKey) {
         continue;
@@ -2260,13 +2174,13 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     for (const record of openDocuments) {
-      if (!record?.document || isDeletedRecord(record)) {
+      if (!record?.document) {
         continue;
       }
 
-      const identityKey = getDocumentIdentityKey(record);
+      const identityKey = getDocumentSemanticKey(record);
 
-      if (!identityKey) {
+      if (!identityKey || !recordsByIdentity.has(identityKey)) {
         continue;
       }
 
@@ -2380,7 +2294,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     // hydrate runtime
     const hydrated = await hydrateProjectRuntimeFromDisk(normalizedTargetProjectFilePath);
     currentProject = hydrated;
-    deletedDocumentIdentities = new Set();
 
     emitChange();
     return {
@@ -4598,6 +4511,127 @@ export function createDocumentLoader({ fileSystem }) {
 }
 
 ==================================================
+FILE: renderer/runtime/documentRecordIdentity.js
+==================================================
+
+import { APP_CONFIG } from '../../config/app-config.js';
+import { slugifyDocumentName } from './naming.js';
+
+export function normalizeDocumentName(name) {
+  return String(name ?? '').trim();
+}
+
+export function getDocumentName(documentRecord) {
+  return normalizeDocumentName(
+    documentRecord?.document?.component?.name
+    || documentRecord?.document?.scenario?.name
+    || documentRecord?.document?.screen?.name
+    || documentRecord?.document?.name
+    || ''
+  );
+}
+
+export function setDocumentName(documentRecord, nextName) {
+  const value = normalizeDocumentName(nextName);
+  const slug = slugifyDocumentName(value);
+
+  if (documentRecord?.document?.component) {
+    documentRecord.document.component.name = value;
+
+    if ('id' in documentRecord.document.component) {
+      documentRecord.document.component.id = slug || 'new_component';
+    }
+
+    if (documentRecord.document?.generation?.output) {
+      documentRecord.document.generation.output.fileName = `${slug || 'new_component'}.st`;
+    }
+
+    return value;
+  }
+
+  if (documentRecord?.document?.scenario) {
+    documentRecord.document.scenario.name = value;
+
+    if ('id' in documentRecord.document.scenario) {
+      documentRecord.document.scenario.id = slug || 'new_scenario';
+    }
+
+    return value;
+  }
+
+  if (documentRecord?.document?.screen) {
+    documentRecord.document.screen.name = value;
+
+    if ('id' in documentRecord.document.screen) {
+      documentRecord.document.screen.id = slug || 'new_screen';
+    }
+
+    return value;
+  }
+
+  if (documentRecord?.document) {
+    documentRecord.document.name = value;
+  }
+
+  return value;
+}
+
+export function getDocumentLabel(documentRecord) {
+  return getDocumentName(documentRecord) || APP_CONFIG.ui.text.untitled;
+}
+
+export function isUnsavedDocumentPath(targetPath) {
+  return String(targetPath || '').startsWith(APP_CONFIG.project.unsavedDocumentPathPrefix);
+}
+
+export function getDocumentSemanticKey(documentRecord) {
+  const moduleId = String(documentRecord?.moduleId || '').trim();
+  const documentName = getDocumentName(documentRecord);
+
+  if (!moduleId || !documentName) {
+    return '';
+  }
+
+  return `${moduleId}::${documentName}`;
+}
+
+
+==================================================
+FILE: renderer/runtime/documentSnapshot.js
+==================================================
+
+function stableSortObject(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => stableSortObject(entry));
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value)
+      .filter(([, nested]) => nested !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+
+    return entries.reduce((accumulator, [key, nested]) => {
+      accumulator[key] = stableSortObject(nested);
+      return accumulator;
+    }, {});
+  }
+
+  return value;
+}
+
+export function normalizeDocumentSnapshot(documentRecord) {
+  return stableSortObject({
+    moduleId: documentRecord?.moduleId || '',
+    document: documentRecord?.document || null
+  });
+}
+
+export function areDocumentSnapshotsSemanticallyEqual(leftRecord, rightRecord) {
+  return JSON.stringify(normalizeDocumentSnapshot(leftRecord)) === JSON.stringify(normalizeDocumentSnapshot(rightRecord));
+}
+
+
+==================================================
 FILE: renderer/runtime/appCloseCoordinator.js
 ==================================================
 
@@ -5557,6 +5591,7 @@ FILE: renderer/ui/projectTree/treeAdapter.js
 ==================================================
 
 import { APP_CONFIG } from '../../../config/app-config.js';
+import { getDocumentLabel } from '../../runtime/documentRecordIdentity.js';
 
 export const TREE_NODE_TYPES = {
   project: 'project',
@@ -5569,16 +5604,6 @@ export const TREE_ACTION_IDS = {
   createComponent: 'create-component',
   deleteComponent: 'delete-component'
 };
-
-export function getDocumentLabel(documentRecord) {
-  return (
-    documentRecord.document?.component?.name ||
-    documentRecord.document?.scenario?.name ||
-    documentRecord.document?.screen?.name ||
-    documentRecord.document?.name ||
-    APP_CONFIG.ui.text.untitled
-  );
-}
 
 export function createTreeBehaviorConfig() {
   return {
@@ -5691,6 +5716,7 @@ FILE: renderer/ui/createWorkbenchTabs.js
 import { APP_CONFIG } from '../../config/app-config.js';
 import { finalizeEditingBeforeTabSwitch } from './tabEditLifecycle.js';
 import { finalizeEditingBeforeContextTransition } from './editorContextLifecycle.js';
+import { getDocumentLabel } from '../runtime/documentRecordIdentity.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -5700,37 +5726,6 @@ function createElement(tagName, classNames = []) {
 
 function normalizeName(name) {
   return String(name ?? '').trim();
-}
-
-function getDocumentLabel(documentRecord) {
-  return (
-    documentRecord.document?.component?.name ||
-    documentRecord.document?.scenario?.name ||
-    documentRecord.document?.screen?.name ||
-    documentRecord.document?.name ||
-    APP_CONFIG.ui.text.untitled
-  );
-}
-
-function setDocumentLabel(documentRecord, title) {
-  if (documentRecord?.document?.component) {
-    documentRecord.document.component.name = title;
-    return;
-  }
-
-  if (documentRecord?.document?.scenario) {
-    documentRecord.document.scenario.name = title;
-    return;
-  }
-
-  if (documentRecord?.document?.screen) {
-    documentRecord.document.screen.name = title;
-    return;
-  }
-
-  if (documentRecord?.document) {
-    documentRecord.document.name = title;
-  }
 }
 
 function buildTabTitleNode(title) {
@@ -6046,8 +6041,6 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
           if (!renamed) {
             logger.warn('tabs', 'Переименование отклонено', { name: nextName });
           } else {
-            setDocumentLabel(entry.documentRecord, nextName);
-
             if (renamed.nextPath !== renamed.previousPath) {
               tabs.delete(renamed.previousPath);
               entry.tabId = renamed.nextPath;
@@ -7971,6 +7964,119 @@ test('menu/focus-triggered transition path on tabs uses shared finalize contract
     assert.equal(result.continued, true);
     assert.equal(result.outcome, 'committed');
     assert.deepEqual(calls, [{ reason: 'menu-action:open-project', blockOnFailure: true }]);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
+
+test('opening and closing saved document without effective changes keeps project clean', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-open-close-clean-'));
+  await createFixtureProject(root, { metagenDescription: 'clean-baseline' });
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const record = manager.getDocumentsByModule('metagen')[0];
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async (...args) => manager.renameDocument(...args),
+        replaceDocumentRecord: async (...args) => manager.replaceDocumentRecord(...args)
+      },
+      openEditor: async ({ documentRecord }) => ({
+        collectDocumentRecord: async () => documentRecord,
+        dispose: () => {}
+      })
+    });
+
+    assert.equal(manager.hasDirtyProject(), false);
+    await tabs.openDocument(record);
+    await tabs.closeTab(record.path);
+    assert.equal(manager.hasDirtyProject(), false);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
+
+test('collectOpenDocumentRecords with semantic no-op records keeps project clean', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-collect-clean-noop-'));
+  await createFixtureProject(root);
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const record = manager.getDocumentsByModule('metagen')[0];
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async (...args) => manager.renameDocument(...args),
+        replaceDocumentRecord: async (...args) => manager.replaceDocumentRecord(...args)
+      },
+      openEditor: async ({ documentRecord }) => ({
+        collectDocumentRecord: async () => ({
+          ...documentRecord,
+          document: structuredClone(documentRecord.document)
+        }),
+        dispose: () => {}
+      })
+    });
+
+    await tabs.openDocument(record);
+    await tabs.collectOpenDocumentRecords();
+
+    assert.equal(manager.hasDirtyProject(), false);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
+
+test('save-as path remap keeps active tab closable and document renameable', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-remap-close-'));
+  const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-remap-close-target-'));
+  await createFixtureProject(root, { projectFileName: 'source.yaml' });
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root, 'source.yaml'));
+
+  const record = manager.getDocumentsByModule('metagen')[0];
+
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async (...args) => manager.renameDocument(...args),
+        replaceDocumentRecord: async (...args) => manager.replaceDocumentRecord(...args)
+      },
+      openEditor: async ({ documentRecord }) => ({
+        collectDocumentRecord: async () => documentRecord,
+        dispose: () => {}
+      })
+    });
+
+    await tabs.openDocument(record);
+    const saveResult = await manager.saveProjectAs(getProjectFilePath(targetRoot, 'target.yaml'), await tabs.collectOpenDocumentRecords());
+    tabs.updateTabPaths(saveResult.pathMap);
+
+    const remappedActiveRecord = tabs.getActiveDocumentRecord();
+    assert.ok(remappedActiveRecord);
+
+    await tabs.closeTab(remappedActiveRecord.path);
+    assert.equal(tabs.getActiveDocumentRecord(), null);
+
+    const reopened = manager.getDocumentsByModule('metagen')[0];
+    const renamed = await manager.renameDocument(reopened.path, 'Pump After Save As');
+    assert.ok(renamed);
   } finally {
     globalThis.document = previousDocument;
   }

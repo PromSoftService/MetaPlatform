@@ -975,3 +975,116 @@ test('menu/focus-triggered transition path on tabs uses shared finalize contract
     globalThis.document = previousDocument;
   }
 });
+
+test('opening and closing saved document without effective changes keeps project clean', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-open-close-clean-'));
+  await createFixtureProject(root, { metagenDescription: 'clean-baseline' });
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const record = manager.getDocumentsByModule('metagen')[0];
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async (...args) => manager.renameDocument(...args),
+        replaceDocumentRecord: async (...args) => manager.replaceDocumentRecord(...args)
+      },
+      openEditor: async ({ documentRecord }) => ({
+        collectDocumentRecord: async () => documentRecord,
+        dispose: () => {}
+      })
+    });
+
+    assert.equal(manager.hasDirtyProject(), false);
+    await tabs.openDocument(record);
+    await tabs.closeTab(record.path);
+    assert.equal(manager.hasDirtyProject(), false);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
+
+test('collectOpenDocumentRecords with semantic no-op records keeps project clean', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-collect-clean-noop-'));
+  await createFixtureProject(root);
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const record = manager.getDocumentsByModule('metagen')[0];
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async (...args) => manager.renameDocument(...args),
+        replaceDocumentRecord: async (...args) => manager.replaceDocumentRecord(...args)
+      },
+      openEditor: async ({ documentRecord }) => ({
+        collectDocumentRecord: async () => ({
+          ...documentRecord,
+          document: structuredClone(documentRecord.document)
+        }),
+        dispose: () => {}
+      })
+    });
+
+    await tabs.openDocument(record);
+    await tabs.collectOpenDocumentRecords();
+
+    assert.equal(manager.hasDirtyProject(), false);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
+
+test('save-as path remap keeps active tab closable and document renameable', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-remap-close-'));
+  const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-remap-close-target-'));
+  await createFixtureProject(root, { projectFileName: 'source.yaml' });
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root, 'source.yaml'));
+
+  const record = manager.getDocumentsByModule('metagen')[0];
+
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async (...args) => manager.renameDocument(...args),
+        replaceDocumentRecord: async (...args) => manager.replaceDocumentRecord(...args)
+      },
+      openEditor: async ({ documentRecord }) => ({
+        collectDocumentRecord: async () => documentRecord,
+        dispose: () => {}
+      })
+    });
+
+    await tabs.openDocument(record);
+    const saveResult = await manager.saveProjectAs(getProjectFilePath(targetRoot, 'target.yaml'), await tabs.collectOpenDocumentRecords());
+    tabs.updateTabPaths(saveResult.pathMap);
+
+    const remappedActiveRecord = tabs.getActiveDocumentRecord();
+    assert.ok(remappedActiveRecord);
+
+    await tabs.closeTab(remappedActiveRecord.path);
+    assert.equal(tabs.getActiveDocumentRecord(), null);
+
+    const reopened = manager.getDocumentsByModule('metagen')[0];
+    const renamed = await manager.renameDocument(reopened.path, 'Pump After Save As');
+    assert.ok(renamed);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});

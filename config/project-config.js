@@ -14,6 +14,8 @@ export const PROJECT_CONFIG = {
     yaml: ['.yaml', '.yml']
   },
 
+  unsavedDocumentPathPrefix: 'unsaved://',
+
   projectKinds: {
     root: 'metaplatform.project'
   }

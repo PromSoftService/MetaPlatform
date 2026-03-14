@@ -56,6 +56,8 @@ PROJECT_FILES = [
   'renderer/modules/metaview/metaviewDocumentFactory.js',
   'renderer/modules/metaview/metaviewModule.js',
   'renderer/runtime/documentLoader.js',
+  'renderer/runtime/documentRecordIdentity.js',
+  'renderer/runtime/documentSnapshot.js',
   'renderer/runtime/appCloseCoordinator.js',
   'renderer/runtime/fileSystemBridge.js',
   'renderer/runtime/idFactory.js',

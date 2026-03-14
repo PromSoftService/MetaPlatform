@@ -1,6 +1,7 @@
 import { APP_CONFIG } from '../../config/app-config.js';
 import { finalizeEditingBeforeTabSwitch } from './tabEditLifecycle.js';
 import { finalizeEditingBeforeContextTransition } from './editorContextLifecycle.js';
+import { getDocumentLabel } from '../runtime/documentRecordIdentity.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -10,37 +11,6 @@ function createElement(tagName, classNames = []) {
 
 function normalizeName(name) {
   return String(name ?? '').trim();
-}
-
-function getDocumentLabel(documentRecord) {
-  return (
-    documentRecord.document?.component?.name ||
-    documentRecord.document?.scenario?.name ||
-    documentRecord.document?.screen?.name ||
-    documentRecord.document?.name ||
-    APP_CONFIG.ui.text.untitled
-  );
-}
-
-function setDocumentLabel(documentRecord, title) {
-  if (documentRecord?.document?.component) {
-    documentRecord.document.component.name = title;
-    return;
-  }
-
-  if (documentRecord?.document?.scenario) {
-    documentRecord.document.scenario.name = title;
-    return;
-  }
-
-  if (documentRecord?.document?.screen) {
-    documentRecord.document.screen.name = title;
-    return;
-  }
-
-  if (documentRecord?.document) {
-    documentRecord.document.name = title;
-  }
 }
 
 function buildTabTitleNode(title) {
@@ -356,8 +326,6 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
           if (!renamed) {
             logger.warn('tabs', 'Переименование отклонено', { name: nextName });
           } else {
-            setDocumentLabel(entry.documentRecord, nextName);
-
             if (renamed.nextPath !== renamed.previousPath) {
               tabs.delete(renamed.previousPath);
               entry.tabId = renamed.nextPath;

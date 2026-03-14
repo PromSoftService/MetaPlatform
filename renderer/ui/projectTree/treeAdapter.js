@@ -1,4 +1,5 @@
 import { APP_CONFIG } from '../../../config/app-config.js';
+import { getDocumentLabel } from '../../runtime/documentRecordIdentity.js';
 
 export const TREE_NODE_TYPES = {
   project: 'project',
@@ -11,16 +12,6 @@ export const TREE_ACTION_IDS = {
   createComponent: 'create-component',
   deleteComponent: 'delete-component'
 };
-
-export function getDocumentLabel(documentRecord) {
-  return (
-    documentRecord.document?.component?.name ||
-    documentRecord.document?.scenario?.name ||
-    documentRecord.document?.screen?.name ||
-    documentRecord.document?.name ||
-    APP_CONFIG.ui.text.untitled
-  );
-}
 
 export function createTreeBehaviorConfig() {
   return {

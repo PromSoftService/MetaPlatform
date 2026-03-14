@@ -1,6 +1,13 @@
 import { APP_CONFIG } from '../../config/app-config.js';
 import { createDocumentLoader } from '../runtime/documentLoader.js';
-import { slugifyDocumentName } from '../runtime/naming.js';
+import {
+  getDocumentName,
+  normalizeDocumentName,
+  setDocumentName,
+  getDocumentSemanticKey,
+  isUnsavedDocumentPath
+} from '../runtime/documentRecordIdentity.js';
+import { areDocumentSnapshotsSemanticallyEqual } from '../runtime/documentSnapshot.js';
 
 function joinPaths(...parts) {
   return parts
@@ -110,86 +117,10 @@ function getModuleFolder(moduleId) {
   return folderMap[moduleId] || null;
 }
 
-function normalizeDocumentName(name) {
-  return String(name ?? '').trim();
-}
-
 function getProjectDisplayNameFromFilePath(projectFilePath) {
   const normalized = normalizeProjectFilePath(projectFilePath);
   const baseName = normalized.split('/').pop() || '';
   return normalizeDocumentName(stripFileExtension(baseName));
-}
-
-function getDocumentName(documentRecord) {
-  return normalizeDocumentName(
-    documentRecord?.document?.component?.name
-    || documentRecord?.document?.scenario?.name
-    || documentRecord?.document?.screen?.name
-    || documentRecord?.document?.name
-    || ''
-  );
-}
-
-function getDocumentIdentityKey(documentRecord) {
-  if (!documentRecord?.document) {
-    return '';
-  }
-
-  const moduleId = String(documentRecord.moduleId || '');
-  const kind = String(documentRecord.document.kind || '');
-
-  const componentId = String(documentRecord.document?.component?.id || '').trim();
-  const scenarioId = String(documentRecord.document?.scenario?.id || '').trim();
-  const screenId = String(documentRecord.document?.screen?.id || '').trim();
-
-  // Для Save As идентичность документа определяется логическим id сущности, а не path.
-  // Для новых документов id должен быть уникальным уже на этапе factory, иначе разные документы могут схлопнуться.
-  const name = getDocumentName(documentRecord);
-  const entityId = componentId || scenarioId || screenId || name;
-
-  return `${moduleId}::${kind}::${entityId}`;
-}
-
-function syncDocumentIdentityFromName(documentRecord, nextName) {
-  const value = normalizeDocumentName(nextName);
-  const slug = slugifyDocumentName(value);
-
-  if (documentRecord?.document?.component) {
-    const nextId = slug || 'new_component';
-    documentRecord.document.component.name = value;
-
-    if ('id' in documentRecord.document.component) {
-      documentRecord.document.component.id = nextId;
-    }
-
-    if (documentRecord.document?.generation?.output) {
-      documentRecord.document.generation.output.fileName = `${nextId}.st`;
-    }
-
-    return;
-  }
-
-  if (documentRecord?.document?.scenario) {
-    const nextId = slug || 'new_scenario';
-    documentRecord.document.scenario.name = value;
-    documentRecord.document.scenario.id = nextId;
-    return;
-  }
-
-  if (documentRecord?.document?.screen) {
-    const nextId = slug || 'new_screen';
-    documentRecord.document.screen.name = value;
-    documentRecord.document.screen.id = nextId;
-    return;
-  }
-
-  if (documentRecord?.document) {
-    documentRecord.document.name = value;
-  }
-}
-
-function setDocumentName(documentRecord, nextName) {
-  syncDocumentIdentityFromName(documentRecord, nextName);
 }
 
 function cloneDocumentPayload(document) {
@@ -224,7 +155,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   let currentProject = null;
   const listeners = new Set();
   let unsavedCounter = 0;
-  let deletedDocumentIdentities = new Set();
 
   function emitChange() {
     for (const listener of listeners) {
@@ -491,7 +421,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       isDirty: false
     });
 
-    deletedDocumentIdentities = new Set();
     onProjectLoaded?.({ projectRuntime: currentProject });
     emitChange();
     return currentProject;
@@ -525,7 +454,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   async function openProject(projectFilePath) {
     const normalizedProjectFilePath = normalizeProjectFilePath(projectFilePath);
     currentProject = await hydrateProjectRuntimeFromDisk(normalizedProjectFilePath);
-    deletedDocumentIdentities = new Set();
 
     onProjectLoaded?.({ projectRuntime: currentProject });
     emitChange();
@@ -534,7 +462,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
   async function closeProject() {
     currentProject = null;
-    deletedDocumentIdentities = new Set();
     emitChange();
     onProjectClosed?.();
   }
@@ -546,7 +473,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     const hydrated = await hydrateProjectRuntimeFromDisk(currentProject.projectFilePath);
-    deletedDocumentIdentities = new Set();
     currentProject.documents = hydrated.documents;
     currentProject.raw = hydrated.raw;
     currentProject.project = hydrated.project;
@@ -579,30 +505,26 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     const moduleDocuments = currentProject.documents[nextRecord.moduleId];
 
-    const nextIdentityKey = getDocumentIdentityKey(nextRecord);
-
-    if (nextIdentityKey && deletedDocumentIdentities.has(nextIdentityKey)) {
-      return null;
-    }
-
     if (!Array.isArray(moduleDocuments)) {
       return null;
     }
 
     let index = moduleDocuments.findIndex((entry) => entry.path === nextRecord.path);
 
-    if (index < 0 && nextIdentityKey) {
-      index = moduleDocuments.findIndex((entry) => getDocumentIdentityKey(entry) === nextIdentityKey);
-    }
 
     if (index < 0) {
       return null;
     }
 
+    const previousRecord = moduleDocuments[index];
     moduleDocuments[index] = nextRecord;
     moduleDocuments.sort((a, b) => getDocumentName(a).localeCompare(getDocumentName(b)));
-    setDirty(true);
-    return moduleDocuments.find((entry) => getDocumentIdentityKey(entry) === getDocumentIdentityKey(nextRecord) || entry.path === nextRecord.path) || null;
+
+    if (!areDocumentSnapshotsSemanticallyEqual(previousRecord, nextRecord) || previousRecord?.path !== nextRecord?.path) {
+      setDirty(true);
+    }
+
+    return moduleDocuments.find((entry) => entry.path === nextRecord.path) || null;
   }
 
   function isDocumentNameTaken(moduleId, name, excludePath = null) {
@@ -672,7 +594,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const document = module.createDefaultDocument({ name: resolvedName });
     const virtualPath = currentProject.rootPath
       ? joinPaths(currentProject.rootPath, getModuleFolder(moduleId), module.getFileName(document))
-      : `unsaved://${moduleId}/${++unsavedCounter}.yaml`;
+      : `${APP_CONFIG.project.unsavedDocumentPathPrefix}${moduleId}/${++unsavedCounter}.yaml`;
 
     const record = { moduleId, path: virtualPath, document };
     currentProject.documents[moduleId].push(record);
@@ -708,7 +630,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const previousPath = record.path;
     let nextPath = previousPath;
 
-    if (currentProject.rootPath && !String(previousPath).startsWith('unsaved://')) {
+    if (currentProject.rootPath && !isUnsavedDocumentPath(previousPath)) {
       const module = moduleRegistry.getModule(record.moduleId);
       const moduleFolder = getModuleFolder(record.moduleId);
       const renamedDocument = cloneDocumentPayload(record.document);
@@ -787,15 +709,9 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return false;
     }
 
-    const identityKey = getDocumentIdentityKey(record);
-
     currentProject.documents[record.moduleId] = currentProject.documents[record.moduleId].filter((entry) => entry.path !== targetPath);
 
-    if (identityKey) {
-      deletedDocumentIdentities.add(identityKey);
-    }
-
-    if (currentProject.rootPath && !String(targetPath).startsWith('unsaved://')) {
+    if (currentProject.rootPath && !isUnsavedDocumentPath(targetPath)) {
       await fileSystem.deleteFile(targetPath);
     }
 
@@ -821,16 +737,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     // collect documents: openDocuments имеет приоритет над snapshot в currentProject.documents.
     const recordsByIdentity = new Map();
 
-    const isDeletedRecord = (record) => {
-      const identityKey = getDocumentIdentityKey(record);
-      return Boolean(identityKey && deletedDocumentIdentities.has(identityKey));
-    };
-
     for (const record of getAllDocuments()) {
-      if (isDeletedRecord(record)) {
-        continue;
-      }
-      const identityKey = getDocumentIdentityKey(record);
+      const identityKey = getDocumentSemanticKey(record);
 
       if (!identityKey) {
         continue;
@@ -840,13 +748,13 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     for (const record of openDocuments) {
-      if (!record?.document || isDeletedRecord(record)) {
+      if (!record?.document) {
         continue;
       }
 
-      const identityKey = getDocumentIdentityKey(record);
+      const identityKey = getDocumentSemanticKey(record);
 
-      if (!identityKey) {
+      if (!identityKey || !recordsByIdentity.has(identityKey)) {
         continue;
       }
 
@@ -960,7 +868,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     // hydrate runtime
     const hydrated = await hydrateProjectRuntimeFromDisk(normalizedTargetProjectFilePath);
     currentProject = hydrated;
-    deletedDocumentIdentities = new Set();
 
     emitChange();
     return {
