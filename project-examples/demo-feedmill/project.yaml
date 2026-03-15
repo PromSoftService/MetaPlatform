@@ -2,7 +2,7 @@ kind: metaplatform.project
 version: 1
 
 project:
-  id: demo_feedmill
+  id: 5e2f0a19-6a27-4ae5-a476-c66f74628ed5
   name: Demo Feedmill
   description: Demo project for MetaPlatform
 

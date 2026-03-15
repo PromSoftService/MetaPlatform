@@ -1,2 +1,6 @@
 kind: metaview.screen
 version: 1
+
+screen:
+  id: c8d5f4d2-61c5-418f-a08d-85f3fef6d1b9
+  name: Main screen

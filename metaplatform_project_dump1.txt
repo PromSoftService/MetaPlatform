@@ -63,6 +63,15 @@ export const PLATFORM_CONFIG = {
     topPanelTitle: '⚡ MetaPlatform',
     menu: {
       fileLabel: 'Файл',
+      menuEventChannel: 'menu:action',
+      items: {
+        newProject: '🆕 Создать проект',
+        openProject: '📂 Открыть проект',
+        closeProject: '📁 Закрыть проект',
+        save: '💾 Сохранить',
+        saveAs: '📝 Сохранить как',
+        exit: '🚪 Выход'
+      },
       actionIds: {
         newProject: 'new-project',
         openProject: 'open-project',
@@ -71,6 +80,14 @@ export const PLATFORM_CONFIG = {
         saveAs: 'save-as',
         exit: 'exit'
       }
+    },
+    dialogs: {
+      openProjectTitle: 'Открыть проект',
+      saveProjectAsTitle: 'Сохранить проект как',
+      saveButtonLabel: 'Сохранить',
+      projectFilterName: 'Project YAML',
+      yamlFilterName: 'YAML',
+      yamlFilterExtensions: ['yaml', 'yml']
     }
   },
 
@@ -137,6 +154,9 @@ export const PROJECT_CONFIG = {
     treeModulePrefix: 'module:'
   },
 
+  defaults: {
+    unnamedProject: 'unnamed'
+  }
 };
 
 
@@ -191,6 +211,26 @@ export const UI_CONFIG = {
     dialogPrimaryButton: 'meta-dialog-button-primary'
   },
 
+
+  layout: {
+    split: {
+      horizontal: {
+        direction: 'horizontal',
+        sizes: [18, 82],
+        minSize: [240, 420],
+        gutterSize: 4,
+        cursor: 'col-resize'
+      },
+      vertical: {
+        direction: 'vertical',
+        sizes: [74, 26],
+        minSize: [250, 150],
+        gutterSize: 4,
+        cursor: 'row-resize'
+      }
+    }
+  },
+
   panelHeaders: {
     logs: '📋 Логи',
     project: '📁 Проект',
@@ -200,6 +240,19 @@ export const UI_CONFIG = {
   },
 
 
+
+  tree: {
+    actions: {
+      createComponent: {
+        title: 'Добавить компонент',
+        icon: '+'
+      },
+      deleteComponent: {
+        title: 'Удалить компонент',
+        icon: '🗑'
+      }
+    }
+  },
 
   runtime: {
     transitionReasons: {
@@ -216,7 +269,9 @@ export const UI_CONFIG = {
       tabs: 'tabs',
       menu: 'menu',
       projectTree: 'project-tree',
-      windowClose: 'window-close'
+      windowClose: 'window-close',
+      project: 'project',
+      platform: 'platform'
     }
   },
 
@@ -500,7 +555,7 @@ import { createWindowCloseGuard } from './main/runtime/windowCloseGuard.js';
 function createAppMenu(mainWindow) {
   const sendAction = (action) => {
     if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('menu:action', action);
+      mainWindow.webContents.send(APP_CONFIG.platform.app.menu.menuEventChannel, action);
     }
   };
 
@@ -508,14 +563,14 @@ function createAppMenu(mainWindow) {
     {
       label: APP_CONFIG.platform.app.menu.fileLabel,
       submenu: [
-        { label: '🆕 Создать проект', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.newProject) },
-        { label: '📂 Открыть проект', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.openProject) },
-        { label: '📁 Закрыть проект', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.closeProject) },
+        { label: APP_CONFIG.platform.app.menu.items.newProject, click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.newProject) },
+        { label: APP_CONFIG.platform.app.menu.items.openProject, click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.openProject) },
+        { label: APP_CONFIG.platform.app.menu.items.closeProject, click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.closeProject) },
         { type: 'separator' },
-        { label: '💾 Сохранить', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.save) },
-        { label: '📝 Сохранить как', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.saveAs) },
+        { label: APP_CONFIG.platform.app.menu.items.save, click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.save) },
+        { label: APP_CONFIG.platform.app.menu.items.saveAs, click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.saveAs) },
         { type: 'separator' },
-        { label: '🚪 Выход', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.exit) }
+        { label: APP_CONFIG.platform.app.menu.items.exit, click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.exit) }
       ]
     }
   ];
@@ -580,10 +635,13 @@ function createWindow() {
 app.whenReady().then(() => {
   ipcMain.handle('dialog:open-project', async () => {
     const result = await dialog.showOpenDialog({
-      title: 'Открыть проект',
+      title: APP_CONFIG.platform.app.dialogs.openProjectTitle,
       properties: ['openFile'],
       filters: [
-        { name: 'Project YAML', extensions: ['yaml', 'yml'] }
+        {
+          name: APP_CONFIG.platform.app.dialogs.projectFilterName,
+          extensions: APP_CONFIG.platform.app.dialogs.yamlFilterExtensions
+        }
       ]
     });
 
@@ -596,11 +654,14 @@ app.whenReady().then(() => {
 
   ipcMain.handle('dialog:save-project-as', async (_event, defaultPath) => {
     const result = await dialog.showSaveDialog({
-      title: 'Сохранить проект как',
+      title: APP_CONFIG.platform.app.dialogs.saveProjectAsTitle,
       defaultPath,
-      buttonLabel: 'Сохранить',
+      buttonLabel: APP_CONFIG.platform.app.dialogs.saveButtonLabel,
       filters: [
-        { name: 'YAML', extensions: ['yaml', 'yml'] }
+        {
+          name: APP_CONFIG.platform.app.dialogs.yamlFilterName,
+          extensions: APP_CONFIG.platform.app.dialogs.yamlFilterExtensions
+        }
       ]
     });
 
@@ -779,8 +840,9 @@ contextBridge.exposeInMainWorld('MetaPlatformFS', {
   },
   onMenuAction: (listener) => {
     const wrapped = (_event, action) => listener(action);
-    ipcRenderer.on('menu:action', wrapped);
-    return () => ipcRenderer.off('menu:action', wrapped);
+    const menuEventChannel = 'menu:action';
+    ipcRenderer.on(menuEventChannel, wrapped);
+    return () => ipcRenderer.off(menuEventChannel, wrapped);
   }
 });
 
@@ -793,7 +855,7 @@ kind: metagen.component
 version: 1
 
 component:
-  id: conveyors
+  id: 03da27f7-98ff-4bcc-90fa-2e6934afbc33
   name: Conveyors
   type: template
   module: MetaGen
@@ -827,6 +889,7 @@ generation:
     language: st
     fileName: conveyors.st
 
+
 ==================================================
 FILE: project-examples/demo-feedmill/metagen/pumps.yaml
 ==================================================
@@ -835,7 +898,7 @@ kind: metagen.component
 version: 1
 
 component:
-  id: pumps
+  id: b1372c6b-45dc-4a6d-9d88-4d91cb6e60a8
   name: Pumps
   type: template
   module: MetaGen
@@ -869,6 +932,7 @@ generation:
     language: st
     fileName: pumps.st
 
+
 ==================================================
 FILE: project-examples/demo-feedmill/metagen/новый_компонент.yaml
 ==================================================
@@ -876,7 +940,7 @@ FILE: project-examples/demo-feedmill/metagen/новый_компонент.yaml
 kind: metagen.component
 version: 1
 component:
-  id: новый_компонент
+  id: 64131f22-4fb3-4094-8f7c-3aaecf9a2475
   name: Новый компонент
   type: template
   module: MetaGen
@@ -916,12 +980,22 @@ FILE: project-examples/demo-feedmill/metalab/startup_scenario.yaml
 kind: metalab.scenario
 version: 1
 
+scenario:
+  id: 4578e5f2-b41f-45de-b4f8-cfd764978055
+  name: Startup scenario
+
+
 ==================================================
 FILE: project-examples/demo-feedmill/metaview/main_screen.yaml
 ==================================================
 
 kind: metaview.screen
 version: 1
+
+screen:
+  id: c8d5f4d2-61c5-418f-a08d-85f3fef6d1b9
+  name: Main screen
+
 
 ==================================================
 FILE: project-examples/demo-feedmill/project.yaml
@@ -931,7 +1005,7 @@ kind: metaplatform.project
 version: 1
 
 project:
-  id: demo_feedmill
+  id: 5e2f0a19-6a27-4ae5-a476-c66f74628ed5
   name: Demo Feedmill
   description: Demo project for MetaPlatform
 
@@ -945,6 +1019,7 @@ paths:
   metalab: metalab
   metaview: metaview
   generated: generated
+
 
 ==================================================
 FILE: renderer/app.js
@@ -1072,7 +1147,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const project = projectManager.getCurrentProject();
 
     if (!project) {
-      logger.warn('project', 'Нет открытого проекта для сохранения');
+      logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Нет открытого проекта для сохранения');
       return false;
     }
 
@@ -1228,7 +1303,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  logger.info('platform', 'Инициализация MetaPlatform...');
+  logger.info(APP_CONFIG.ui.runtime.loggerSources.platform, 'Инициализация MetaPlatform...');
   await tree.render();
 
   window.MetaPlatformRuntime = {
@@ -1293,6 +1368,7 @@ export function createCommandBus({ logger }) {
 FILE: renderer/core/layout.js
 ==================================================
 
+import { APP_CONFIG } from '../../config/app-config.js';
 import Split from 'split.js';
 
 function getSplitSharedOptions() {
@@ -1308,20 +1384,12 @@ function getSplitSharedOptions() {
 
 export function initWorkbenchLayout() {
   const horizontalSplit = Split(['#project-tree-column', '#workbench-right-column'], {
-    direction: 'horizontal',
-    sizes: [18, 82],
-    minSize: [240, 420],
-    gutterSize: 4,
-    cursor: 'col-resize',
+    ...APP_CONFIG.ui.layout.split.horizontal,
     ...getSplitSharedOptions()
   });
 
   const verticalSplit = Split(['#editor-host-container', '#bottom-panel'], {
-    direction: 'vertical',
-    sizes: [74, 26],
-    minSize: [250, 150],
-    gutterSize: 4,
-    cursor: 'row-resize',
+    ...APP_CONFIG.ui.layout.split.vertical,
     ...getSplitSharedOptions()
   });
 
@@ -1515,6 +1583,7 @@ import {
   getDocumentIdentityKey
 } from '../runtime/documentRecordIdentity.js';
 import { areDocumentSnapshotsSemanticallyEqual } from '../runtime/documentSnapshot.js';
+import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
 
 function joinPaths(...parts) {
   return parts
@@ -1724,7 +1793,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
         ensureDocumentId(record);
         output.push(record);
       } catch (error) {
-        logger.warn('project', 'Ошибка чтения документа, файл пропущен', {
+        logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Ошибка чтения документа, файл пропущен', {
           path: filePath,
           message: error?.message || String(error)
         });
@@ -2052,7 +2121,13 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return recordByIdentityKey;
     }
 
-    return getDocumentById(normalizedIdentity) || getDocumentByPath(normalizedIdentity);
+    const recordById = getDocumentById(normalizedIdentity);
+
+    if (recordById) {
+      return recordById;
+    }
+
+    return getDocumentByPath(normalizedIdentity);
   }
 
   function replaceDocumentRecord(nextRecord) {
@@ -2116,7 +2191,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     let index = 1;
 
     while (true) {
-      const candidate = `Новый компонент ${index}`;
+      const candidate = `${METAGEN_CONFIG.defaults.newDocumentName} ${index}`;
 
       if (!isMetaGenNameTaken(candidate)) {
         return candidate;
@@ -2143,12 +2218,12 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const resolvedName = normalizeDocumentName(name || fallbackName);
 
     if (!resolvedName) {
-      logger.warn('project', 'Пустое имя документа отклонено', { moduleId });
+      logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Пустое имя документа отклонено', { moduleId });
       return null;
     }
 
     if (isDocumentNameTaken(moduleId, resolvedName)) {
-      logger.warn('project', 'Имя документа уже занято', { moduleId, name: resolvedName });
+      logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Имя документа уже занято', { moduleId, name: resolvedName });
       return null;
     }
 
@@ -2163,7 +2238,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     currentProject.documents[moduleId].sort((a, b) => getDocumentName(a).localeCompare(getDocumentName(b)));
 
     setDirty(true);
-    logger.info('project', 'Создан документ', { moduleId, path: virtualPath, name: resolvedName });
+    logger.info(APP_CONFIG.ui.runtime.loggerSources.project, 'Создан документ', { moduleId, path: virtualPath, name: resolvedName });
     return record;
   }
 
@@ -2185,7 +2260,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     if (isDocumentNameTaken(record.moduleId, resolvedName, getDocumentIdentityKey(record))) {
-      logger.warn('project', 'Имя документа уже занято', { moduleId: record.moduleId, name: resolvedName });
+      logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Имя документа уже занято', { moduleId: record.moduleId, name: resolvedName });
       return null;
     }
 
@@ -5804,7 +5879,7 @@ export function buildProjectTreeNodes({ project, moduleSections, getDocumentsByM
   return [
     {
       nodeType: TREE_NODE_TYPES.project,
-      id: `${APP_CONFIG.project.identity.treeProjectPrefix}${project.project?.name || 'unnamed'}`,
+      id: `${APP_CONFIG.project.identity.treeProjectPrefix}${project.project?.name || APP_CONFIG.project.defaults.unnamedProject}`,
       label: project.project?.name || APP_CONFIG.ui.text.untitled,
       project
     },
@@ -5829,11 +5904,21 @@ export function buildProjectTreeNodes({ project, moduleSections, getDocumentsByM
 
 export function getNodeActions(nodeData) {
   if (nodeData?.nodeType === TREE_NODE_TYPES.module) {
-    return [{ id: TREE_ACTION_IDS.createComponent, title: 'Добавить компонент', icon: '+', visible: true }];
+    return [{
+      id: TREE_ACTION_IDS.createComponent,
+      title: APP_CONFIG.ui.tree.actions.createComponent.title,
+      icon: APP_CONFIG.ui.tree.actions.createComponent.icon,
+      visible: true
+    }];
   }
 
   if (nodeData?.nodeType === TREE_NODE_TYPES.document) {
-    return [{ id: TREE_ACTION_IDS.deleteComponent, title: 'Удалить компонент', icon: '🗑', visible: true }];
+    return [{
+      id: TREE_ACTION_IDS.deleteComponent,
+      title: APP_CONFIG.ui.tree.actions.deleteComponent.title,
+      icon: APP_CONFIG.ui.tree.actions.deleteComponent.icon,
+      visible: true
+    }];
   }
 
   return [];
@@ -6004,9 +6089,6 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
         return candidateTabId;
       }
 
-      if (candidateEntry.documentRecord?.path === targetIdentity) {
-        return candidateTabId;
-      }
     }
 
     return null;
@@ -7925,7 +8007,7 @@ test('close tab syncs runtime snapshot to project and reopen reads fresh record'
     });
 
     await tabs.openDocument(baseRecord);
-    await tabs.closeTab(baseRecord.path);
+    await tabs.closeTab(getDocumentIdentityKey(baseRecord));
 
     assert.equal(disposed, true);
 
@@ -8191,7 +8273,7 @@ test('opening and closing saved document without effective changes keeps project
 
     assert.equal(manager.hasDirtyProject(), false);
     await tabs.openDocument(record);
-    await tabs.closeTab(record.path);
+    await tabs.closeTab(getDocumentIdentityKey(record));
     assert.equal(manager.hasDirtyProject(), false);
   } finally {
     globalThis.document = previousDocument;
@@ -8345,6 +8427,41 @@ test('close tab keeps id-first binding across rename and save-as remap', async (
 });
 
 const UUID_LIKE_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+test('migrated demo-feedmill examples keep GUID ids stable across open/save/reopen', async () => {
+  const manager = createManager();
+  const fixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-demo-feedmill-'));
+  const sourceRoot = path.resolve('project-examples/demo-feedmill');
+  await fs.cp(sourceRoot, fixtureRoot, { recursive: true });
+  const sourceProjectPath = path.join(fixtureRoot, 'project.yaml');
+
+  await manager.openProject(sourceProjectPath);
+
+  const initialProjectId = manager.getCurrentProject().project.id;
+  const initialMetaGenIds = manager.getDocumentsByModule('metagen').map((entry) => entry.document.component.id);
+  const initialMetaLabIds = manager.getDocumentsByModule('metalab').map((entry) => entry.document.scenario.id);
+  const initialMetaViewIds = manager.getDocumentsByModule('metaview').map((entry) => entry.document.screen.id);
+
+  assert.match(initialProjectId, UUID_LIKE_REGEX);
+  initialMetaGenIds.forEach((id) => assert.match(id, UUID_LIKE_REGEX));
+  initialMetaLabIds.forEach((id) => assert.match(id, UUID_LIKE_REGEX));
+  initialMetaViewIds.forEach((id) => assert.match(id, UUID_LIKE_REGEX));
+
+  await manager.saveProject();
+  await manager.closeProject();
+  await manager.openProject(sourceProjectPath);
+
+  const reopenedProjectId = manager.getCurrentProject().project.id;
+  const reopenedMetaGenIds = manager.getDocumentsByModule('metagen').map((entry) => entry.document.component.id);
+  const reopenedMetaLabIds = manager.getDocumentsByModule('metalab').map((entry) => entry.document.scenario.id);
+  const reopenedMetaViewIds = manager.getDocumentsByModule('metaview').map((entry) => entry.document.screen.id);
+
+  assert.equal(reopenedProjectId, initialProjectId);
+  assert.deepEqual(reopenedMetaGenIds, initialMetaGenIds);
+  assert.deepEqual(reopenedMetaLabIds, initialMetaLabIds);
+  assert.deepEqual(reopenedMetaViewIds, initialMetaViewIds);
+});
+
 
 test('new MetaGen document gets GUID id on create', async () => {
   const manager = createManager();
@@ -9127,6 +9244,17 @@ test('tree document node identity is based on document GUID and remains stable f
   const secondDocumentNode = secondNodes.find((node) => node.moduleId === 'metagen').children[0];
 
   assert.equal(firstDocumentNode.id, secondDocumentNode.id);
+});
+
+
+test('tree node action metadata stays wired to config-backed labels and icons', () => {
+  const moduleActions = getNodeActions({ nodeType: TREE_NODE_TYPES.module });
+  const documentActions = getNodeActions({ nodeType: TREE_NODE_TYPES.document });
+
+  assert.equal(moduleActions[0].title, APP_CONFIG.ui.tree.actions.createComponent.title);
+  assert.equal(moduleActions[0].icon, APP_CONFIG.ui.tree.actions.createComponent.icon);
+  assert.equal(documentActions[0].title, APP_CONFIG.ui.tree.actions.deleteComponent.title);
+  assert.equal(documentActions[0].icon, APP_CONFIG.ui.tree.actions.deleteComponent.icon);
 });
 
 

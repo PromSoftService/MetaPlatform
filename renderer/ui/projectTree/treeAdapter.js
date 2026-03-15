@@ -19,7 +19,7 @@ export function buildProjectTreeNodes({ project, moduleSections, getDocumentsByM
   return [
     {
       nodeType: TREE_NODE_TYPES.project,
-      id: `${APP_CONFIG.project.identity.treeProjectPrefix}${project.project?.name || 'unnamed'}`,
+      id: `${APP_CONFIG.project.identity.treeProjectPrefix}${project.project?.name || APP_CONFIG.project.defaults.unnamedProject}`,
       label: project.project?.name || APP_CONFIG.ui.text.untitled,
       project
     },
@@ -44,11 +44,21 @@ export function buildProjectTreeNodes({ project, moduleSections, getDocumentsByM
 
 export function getNodeActions(nodeData) {
   if (nodeData?.nodeType === TREE_NODE_TYPES.module) {
-    return [{ id: TREE_ACTION_IDS.createComponent, title: 'Добавить компонент', icon: '+', visible: true }];
+    return [{
+      id: TREE_ACTION_IDS.createComponent,
+      title: APP_CONFIG.ui.tree.actions.createComponent.title,
+      icon: APP_CONFIG.ui.tree.actions.createComponent.icon,
+      visible: true
+    }];
   }
 
   if (nodeData?.nodeType === TREE_NODE_TYPES.document) {
-    return [{ id: TREE_ACTION_IDS.deleteComponent, title: 'Удалить компонент', icon: '🗑', visible: true }];
+    return [{
+      id: TREE_ACTION_IDS.deleteComponent,
+      title: APP_CONFIG.ui.tree.actions.deleteComponent.title,
+      icon: APP_CONFIG.ui.tree.actions.deleteComponent.icon,
+      visible: true
+    }];
   }
 
   return [];

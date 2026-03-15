@@ -7,7 +7,7 @@ import { createWindowCloseGuard } from './main/runtime/windowCloseGuard.js';
 function createAppMenu(mainWindow) {
   const sendAction = (action) => {
     if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('menu:action', action);
+      mainWindow.webContents.send(APP_CONFIG.platform.app.menu.menuEventChannel, action);
     }
   };
 
@@ -15,14 +15,14 @@ function createAppMenu(mainWindow) {
     {
       label: APP_CONFIG.platform.app.menu.fileLabel,
       submenu: [
-        { label: '🆕 Создать проект', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.newProject) },
-        { label: '📂 Открыть проект', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.openProject) },
-        { label: '📁 Закрыть проект', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.closeProject) },
+        { label: APP_CONFIG.platform.app.menu.items.newProject, click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.newProject) },
+        { label: APP_CONFIG.platform.app.menu.items.openProject, click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.openProject) },
+        { label: APP_CONFIG.platform.app.menu.items.closeProject, click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.closeProject) },
         { type: 'separator' },
-        { label: '💾 Сохранить', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.save) },
-        { label: '📝 Сохранить как', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.saveAs) },
+        { label: APP_CONFIG.platform.app.menu.items.save, click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.save) },
+        { label: APP_CONFIG.platform.app.menu.items.saveAs, click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.saveAs) },
         { type: 'separator' },
-        { label: '🚪 Выход', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.exit) }
+        { label: APP_CONFIG.platform.app.menu.items.exit, click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.exit) }
       ]
     }
   ];
@@ -87,10 +87,13 @@ function createWindow() {
 app.whenReady().then(() => {
   ipcMain.handle('dialog:open-project', async () => {
     const result = await dialog.showOpenDialog({
-      title: 'Открыть проект',
+      title: APP_CONFIG.platform.app.dialogs.openProjectTitle,
       properties: ['openFile'],
       filters: [
-        { name: 'Project YAML', extensions: ['yaml', 'yml'] }
+        {
+          name: APP_CONFIG.platform.app.dialogs.projectFilterName,
+          extensions: APP_CONFIG.platform.app.dialogs.yamlFilterExtensions
+        }
       ]
     });
 
@@ -103,11 +106,14 @@ app.whenReady().then(() => {
 
   ipcMain.handle('dialog:save-project-as', async (_event, defaultPath) => {
     const result = await dialog.showSaveDialog({
-      title: 'Сохранить проект как',
+      title: APP_CONFIG.platform.app.dialogs.saveProjectAsTitle,
       defaultPath,
-      buttonLabel: 'Сохранить',
+      buttonLabel: APP_CONFIG.platform.app.dialogs.saveButtonLabel,
       filters: [
-        { name: 'YAML', extensions: ['yaml', 'yml'] }
+        {
+          name: APP_CONFIG.platform.app.dialogs.yamlFilterName,
+          extensions: APP_CONFIG.platform.app.dialogs.yamlFilterExtensions
+        }
       ]
     });
 

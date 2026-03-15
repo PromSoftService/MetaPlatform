@@ -2,7 +2,7 @@ kind: metagen.component
 version: 1
 
 component:
-  id: conveyors
+  id: 03da27f7-98ff-4bcc-90fa-2e6934afbc33
   name: Conveyors
   type: template
   module: MetaGen

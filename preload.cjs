@@ -21,7 +21,8 @@ contextBridge.exposeInMainWorld('MetaPlatformFS', {
   },
   onMenuAction: (listener) => {
     const wrapped = (_event, action) => listener(action);
-    ipcRenderer.on('menu:action', wrapped);
-    return () => ipcRenderer.off('menu:action', wrapped);
+    const menuEventChannel = 'menu:action';
+    ipcRenderer.on(menuEventChannel, wrapped);
+    return () => ipcRenderer.off(menuEventChannel, wrapped);
   }
 });

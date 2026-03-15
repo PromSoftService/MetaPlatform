@@ -738,7 +738,7 @@ test('close tab syncs runtime snapshot to project and reopen reads fresh record'
     });
 
     await tabs.openDocument(baseRecord);
-    await tabs.closeTab(baseRecord.path);
+    await tabs.closeTab(getDocumentIdentityKey(baseRecord));
 
     assert.equal(disposed, true);
 
@@ -1004,7 +1004,7 @@ test('opening and closing saved document without effective changes keeps project
 
     assert.equal(manager.hasDirtyProject(), false);
     await tabs.openDocument(record);
-    await tabs.closeTab(record.path);
+    await tabs.closeTab(getDocumentIdentityKey(record));
     assert.equal(manager.hasDirtyProject(), false);
   } finally {
     globalThis.document = previousDocument;
@@ -1158,6 +1158,41 @@ test('close tab keeps id-first binding across rename and save-as remap', async (
 });
 
 const UUID_LIKE_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+test('migrated demo-feedmill examples keep GUID ids stable across open/save/reopen', async () => {
+  const manager = createManager();
+  const fixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-demo-feedmill-'));
+  const sourceRoot = path.resolve('project-examples/demo-feedmill');
+  await fs.cp(sourceRoot, fixtureRoot, { recursive: true });
+  const sourceProjectPath = path.join(fixtureRoot, 'project.yaml');
+
+  await manager.openProject(sourceProjectPath);
+
+  const initialProjectId = manager.getCurrentProject().project.id;
+  const initialMetaGenIds = manager.getDocumentsByModule('metagen').map((entry) => entry.document.component.id);
+  const initialMetaLabIds = manager.getDocumentsByModule('metalab').map((entry) => entry.document.scenario.id);
+  const initialMetaViewIds = manager.getDocumentsByModule('metaview').map((entry) => entry.document.screen.id);
+
+  assert.match(initialProjectId, UUID_LIKE_REGEX);
+  initialMetaGenIds.forEach((id) => assert.match(id, UUID_LIKE_REGEX));
+  initialMetaLabIds.forEach((id) => assert.match(id, UUID_LIKE_REGEX));
+  initialMetaViewIds.forEach((id) => assert.match(id, UUID_LIKE_REGEX));
+
+  await manager.saveProject();
+  await manager.closeProject();
+  await manager.openProject(sourceProjectPath);
+
+  const reopenedProjectId = manager.getCurrentProject().project.id;
+  const reopenedMetaGenIds = manager.getDocumentsByModule('metagen').map((entry) => entry.document.component.id);
+  const reopenedMetaLabIds = manager.getDocumentsByModule('metalab').map((entry) => entry.document.scenario.id);
+  const reopenedMetaViewIds = manager.getDocumentsByModule('metaview').map((entry) => entry.document.screen.id);
+
+  assert.equal(reopenedProjectId, initialProjectId);
+  assert.deepEqual(reopenedMetaGenIds, initialMetaGenIds);
+  assert.deepEqual(reopenedMetaLabIds, initialMetaLabIds);
+  assert.deepEqual(reopenedMetaViewIds, initialMetaViewIds);
+});
+
 
 test('new MetaGen document gets GUID id on create', async () => {
   const manager = createManager();

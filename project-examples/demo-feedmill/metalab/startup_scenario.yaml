@@ -1,2 +1,6 @@
 kind: metalab.scenario
 version: 1
+
+scenario:
+  id: 4578e5f2-b41f-45de-b4f8-cfd764978055
+  name: Startup scenario

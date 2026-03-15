@@ -16,6 +16,15 @@ export const PLATFORM_CONFIG = {
     topPanelTitle: '⚡ MetaPlatform',
     menu: {
       fileLabel: 'Файл',
+      menuEventChannel: 'menu:action',
+      items: {
+        newProject: '🆕 Создать проект',
+        openProject: '📂 Открыть проект',
+        closeProject: '📁 Закрыть проект',
+        save: '💾 Сохранить',
+        saveAs: '📝 Сохранить как',
+        exit: '🚪 Выход'
+      },
       actionIds: {
         newProject: 'new-project',
         openProject: 'open-project',
@@ -24,6 +33,14 @@ export const PLATFORM_CONFIG = {
         saveAs: 'save-as',
         exit: 'exit'
       }
+    },
+    dialogs: {
+      openProjectTitle: 'Открыть проект',
+      saveProjectAsTitle: 'Сохранить проект как',
+      saveButtonLabel: 'Сохранить',
+      projectFilterName: 'Project YAML',
+      yamlFilterName: 'YAML',
+      yamlFilterExtensions: ['yaml', 'yml']
     }
   },
 

@@ -2,7 +2,7 @@ kind: metagen.component
 version: 1
 
 component:
-  id: pumps
+  id: b1372c6b-45dc-4a6d-9d88-4d91cb6e60a8
   name: Pumps
   type: template
   module: MetaGen

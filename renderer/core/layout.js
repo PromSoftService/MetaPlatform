@@ -1,3 +1,4 @@
+import { APP_CONFIG } from '../../config/app-config.js';
 import Split from 'split.js';
 
 function getSplitSharedOptions() {
@@ -13,20 +14,12 @@ function getSplitSharedOptions() {
 
 export function initWorkbenchLayout() {
   const horizontalSplit = Split(['#project-tree-column', '#workbench-right-column'], {
-    direction: 'horizontal',
-    sizes: [18, 82],
-    minSize: [240, 420],
-    gutterSize: 4,
-    cursor: 'col-resize',
+    ...APP_CONFIG.ui.layout.split.horizontal,
     ...getSplitSharedOptions()
   });
 
   const verticalSplit = Split(['#editor-host-container', '#bottom-panel'], {
-    direction: 'vertical',
-    sizes: [74, 26],
-    minSize: [250, 150],
-    gutterSize: 4,
-    cursor: 'row-resize',
+    ...APP_CONFIG.ui.layout.split.vertical,
     ...getSplitSharedOptions()
   });
 

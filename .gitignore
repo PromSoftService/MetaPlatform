@@ -18,3 +18,5 @@ Thumbs.db
 !.vscode/settings.json
 codex.patch
 package-lock.json
+tech_spec.txt
+todo.txt

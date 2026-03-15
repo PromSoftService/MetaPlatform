@@ -262,3 +262,14 @@ test('tree document node identity is based on document GUID and remains stable f
 
   assert.equal(firstDocumentNode.id, secondDocumentNode.id);
 });
+
+
+test('tree node action metadata stays wired to config-backed labels and icons', () => {
+  const moduleActions = getNodeActions({ nodeType: TREE_NODE_TYPES.module });
+  const documentActions = getNodeActions({ nodeType: TREE_NODE_TYPES.document });
+
+  assert.equal(moduleActions[0].title, APP_CONFIG.ui.tree.actions.createComponent.title);
+  assert.equal(moduleActions[0].icon, APP_CONFIG.ui.tree.actions.createComponent.icon);
+  assert.equal(documentActions[0].title, APP_CONFIG.ui.tree.actions.deleteComponent.title);
+  assert.equal(documentActions[0].icon, APP_CONFIG.ui.tree.actions.deleteComponent.icon);
+});

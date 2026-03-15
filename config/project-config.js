@@ -48,4 +48,7 @@ export const PROJECT_CONFIG = {
     treeModulePrefix: 'module:'
   },
 
+  defaults: {
+    unnamedProject: 'unnamed'
+  }
 };

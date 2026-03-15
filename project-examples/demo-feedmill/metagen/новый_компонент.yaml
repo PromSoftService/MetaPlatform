@@ -1,7 +1,7 @@
 kind: metagen.component
 version: 1
 component:
-  id: новый_компонент
+  id: 64131f22-4fb3-4094-8f7c-3aaecf9a2475
   name: Новый компонент
   type: template
   module: MetaGen

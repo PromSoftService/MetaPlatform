@@ -10,6 +10,7 @@ import {
   getDocumentIdentityKey
 } from '../runtime/documentRecordIdentity.js';
 import { areDocumentSnapshotsSemanticallyEqual } from '../runtime/documentSnapshot.js';
+import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
 
 function joinPaths(...parts) {
   return parts
@@ -219,7 +220,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
         ensureDocumentId(record);
         output.push(record);
       } catch (error) {
-        logger.warn('project', 'Ошибка чтения документа, файл пропущен', {
+        logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Ошибка чтения документа, файл пропущен', {
           path: filePath,
           message: error?.message || String(error)
         });
@@ -547,7 +548,13 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return recordByIdentityKey;
     }
 
-    return getDocumentById(normalizedIdentity) || getDocumentByPath(normalizedIdentity);
+    const recordById = getDocumentById(normalizedIdentity);
+
+    if (recordById) {
+      return recordById;
+    }
+
+    return getDocumentByPath(normalizedIdentity);
   }
 
   function replaceDocumentRecord(nextRecord) {
@@ -611,7 +618,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     let index = 1;
 
     while (true) {
-      const candidate = `Новый компонент ${index}`;
+      const candidate = `${METAGEN_CONFIG.defaults.newDocumentName} ${index}`;
 
       if (!isMetaGenNameTaken(candidate)) {
         return candidate;
@@ -638,12 +645,12 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const resolvedName = normalizeDocumentName(name || fallbackName);
 
     if (!resolvedName) {
-      logger.warn('project', 'Пустое имя документа отклонено', { moduleId });
+      logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Пустое имя документа отклонено', { moduleId });
       return null;
     }
 
     if (isDocumentNameTaken(moduleId, resolvedName)) {
-      logger.warn('project', 'Имя документа уже занято', { moduleId, name: resolvedName });
+      logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Имя документа уже занято', { moduleId, name: resolvedName });
       return null;
     }
 
@@ -658,7 +665,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     currentProject.documents[moduleId].sort((a, b) => getDocumentName(a).localeCompare(getDocumentName(b)));
 
     setDirty(true);
-    logger.info('project', 'Создан документ', { moduleId, path: virtualPath, name: resolvedName });
+    logger.info(APP_CONFIG.ui.runtime.loggerSources.project, 'Создан документ', { moduleId, path: virtualPath, name: resolvedName });
     return record;
   }
 
@@ -680,7 +687,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     if (isDocumentNameTaken(record.moduleId, resolvedName, getDocumentIdentityKey(record))) {
-      logger.warn('project', 'Имя документа уже занято', { moduleId: record.moduleId, name: resolvedName });
+      logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Имя документа уже занято', { moduleId: record.moduleId, name: resolvedName });
       return null;
     }
 

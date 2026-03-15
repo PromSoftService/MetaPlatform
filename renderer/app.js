@@ -120,7 +120,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const project = projectManager.getCurrentProject();
 
     if (!project) {
-      logger.warn('project', 'Нет открытого проекта для сохранения');
+      logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Нет открытого проекта для сохранения');
       return false;
     }
 
@@ -276,7 +276,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  logger.info('platform', 'Инициализация MetaPlatform...');
+  logger.info(APP_CONFIG.ui.runtime.loggerSources.platform, 'Инициализация MetaPlatform...');
   await tree.render();
 
   window.MetaPlatformRuntime = {

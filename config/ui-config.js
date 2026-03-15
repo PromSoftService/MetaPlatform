@@ -45,6 +45,26 @@ export const UI_CONFIG = {
     dialogPrimaryButton: 'meta-dialog-button-primary'
   },
 
+
+  layout: {
+    split: {
+      horizontal: {
+        direction: 'horizontal',
+        sizes: [18, 82],
+        minSize: [240, 420],
+        gutterSize: 4,
+        cursor: 'col-resize'
+      },
+      vertical: {
+        direction: 'vertical',
+        sizes: [74, 26],
+        minSize: [250, 150],
+        gutterSize: 4,
+        cursor: 'row-resize'
+      }
+    }
+  },
+
   panelHeaders: {
     logs: '📋 Логи',
     project: '📁 Проект',
@@ -54,6 +74,19 @@ export const UI_CONFIG = {
   },
 
 
+
+  tree: {
+    actions: {
+      createComponent: {
+        title: 'Добавить компонент',
+        icon: '+'
+      },
+      deleteComponent: {
+        title: 'Удалить компонент',
+        icon: '🗑'
+      }
+    }
+  },
 
   runtime: {
     transitionReasons: {
@@ -70,7 +103,9 @@ export const UI_CONFIG = {
       tabs: 'tabs',
       menu: 'menu',
       projectTree: 'project-tree',
-      windowClose: 'window-close'
+      windowClose: 'window-close',
+      project: 'project',
+      platform: 'platform'
     }
   },
 

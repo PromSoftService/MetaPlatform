@@ -126,9 +126,6 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
         return candidateTabId;
       }
 
-      if (candidateEntry.documentRecord?.path === targetIdentity) {
-        return candidateTabId;
-      }
     }
 
     return null;
