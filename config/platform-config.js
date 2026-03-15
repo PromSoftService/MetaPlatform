@@ -1,6 +1,4 @@
-import ipcConfigModule from './ipc-config.cjs';
-
-const { IPC_CONFIG } = ipcConfigModule;
+import IPC_CONFIG from './ipc-config.json' with { type: 'json' };
 
 export const PLATFORM_CONFIG = {
   locale: 'ru-RU',

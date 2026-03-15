@@ -3,13 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 
 import { APP_CONFIG } from '../config/app-config.js';
-import ipcConfigModule from '../config/ipc-config.cjs';
+import IPC_CONFIG from '../config/ipc-config.json' with { type: 'json' };
 
 const MAIN_FILE = 'main.js';
 const PRELOAD_FILE = 'preload.cjs';
-const IPC_CONFIG_FILE = 'config/ipc-config.cjs';
-
-const { IPC_CONFIG } = ipcConfigModule;
+const IPC_CONFIG_FILE = 'config/ipc-config.json';
 
 const EXPECTED_IPC = IPC_CONFIG;
 
@@ -23,17 +21,16 @@ test('platform IPC config and preload IPC object stay aligned for main/preload w
   assert.match(mainSource, /APP_CONFIG\.platform\.ipc\.channels\.windowCloseRequested/);
   assert.match(mainSource, /APP_CONFIG\.platform\.ipc\.handlers\.fsListFiles/);
 
-  assert.match(preloadSource, /const \{ IPC_CONFIG \} = require\('\.\/config\/ipc-config\.cjs'\);/);
-  assert.match(preloadSource, /const IPC = IPC_CONFIG;/);
+  assert.match(preloadSource, /const IPC = require\('\.\/config\/ipc-config\.json'\);/);
   assert.match(preloadSource, /IPC\.channels\.menuAction/);
   assert.match(preloadSource, /IPC\.channels\.windowCloseRequested/);
   assert.match(preloadSource, /IPC\.handlers\.fsListFiles/);
 
   for (const [key, value] of Object.entries(EXPECTED_IPC.channels)) {
-    assert.ok(ipcConfigSource.includes(`${key}: '${value}'`));
+    assert.ok(ipcConfigSource.includes(`"${key}": "${value}"`));
   }
 
   for (const [key, value] of Object.entries(EXPECTED_IPC.handlers)) {
-    assert.ok(ipcConfigSource.includes(`${key}: '${value}'`));
+    assert.ok(ipcConfigSource.includes(`"${key}": "${value}"`));
   }
 });

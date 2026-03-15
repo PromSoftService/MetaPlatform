@@ -45,43 +45,37 @@ export const APP_CONFIG = {
 };
 
 ==================================================
-FILE: config/ipc-config.cjs
+FILE: config/ipc-config.json
 ==================================================
 
-const IPC_CONFIG = {
-  channels: {
-    menuAction: 'menu:action',
-    windowCloseRequested: 'window:close-requested'
+{
+  "channels": {
+    "menuAction": "menu:action",
+    "windowCloseRequested": "window:close-requested"
   },
-  handlers: {
-    openProjectDialog: 'dialog:open-project',
-    saveProjectAsDialog: 'dialog:save-project-as',
-    appQuit: 'app:quit',
-    windowCloseApproved: 'window:close-approved',
-    windowCloseCancelled: 'window:close-cancelled',
-    fsEnsureDir: 'fs:ensure-dir',
-    fsExists: 'fs:exists',
-    fsReadText: 'fs:read-text',
-    fsWriteText: 'fs:write-text',
-    fsRename: 'fs:rename',
-    fsDeleteFile: 'fs:delete-file',
-    fsDeleteDir: 'fs:delete-dir',
-    fsListFiles: 'fs:list-files'
+  "handlers": {
+    "openProjectDialog": "dialog:open-project",
+    "saveProjectAsDialog": "dialog:save-project-as",
+    "appQuit": "app:quit",
+    "windowCloseApproved": "window:close-approved",
+    "windowCloseCancelled": "window:close-cancelled",
+    "fsEnsureDir": "fs:ensure-dir",
+    "fsExists": "fs:exists",
+    "fsReadText": "fs:read-text",
+    "fsWriteText": "fs:write-text",
+    "fsRename": "fs:rename",
+    "fsDeleteFile": "fs:delete-file",
+    "fsDeleteDir": "fs:delete-dir",
+    "fsListFiles": "fs:list-files"
   }
-};
-
-module.exports = {
-  IPC_CONFIG
-};
+}
 
 
 ==================================================
 FILE: config/platform-config.js
 ==================================================
 
-import ipcConfigModule from './ipc-config.cjs';
-
-const { IPC_CONFIG } = ipcConfigModule;
+import IPC_CONFIG from './ipc-config.json' with { type: 'json' };
 
 export const PLATFORM_CONFIG = {
   locale: 'ru-RU',
@@ -389,7 +383,7 @@ ROOT = Path(__file__).resolve().parent
 PROJECT_FILES = [
   '.gitignore',
   'config/app-config.js',
-  'config/ipc-config.cjs',
+  'config/ipc-config.json',
   'config/platform-config.js',
   'config/project-config.js',
   'config/ui-config.js',
@@ -526,7 +520,7 @@ OUTPUT_FILE = ROOT / 'metaplatform_project_dump.txt'
 PROJECT_FILES = [
   '.gitignore',
   'config/app-config.js',
-  'config/ipc-config.cjs',
+  'config/ipc-config.json',
   'config/platform-config.js',
   'config/project-config.js',
   'config/ui-config.js',
@@ -921,9 +915,7 @@ FILE: preload.cjs
 ==================================================
 
 const { contextBridge, ipcRenderer } = require('electron');
-const { IPC_CONFIG } = require('./config/ipc-config.cjs');
-
-const IPC = IPC_CONFIG;
+const IPC = require('./config/ipc-config.json');
 
 contextBridge.exposeInMainWorld('MetaPlatformFS', {
   openProjectFileDialog: () => ipcRenderer.invoke(IPC.handlers.openProjectDialog),
@@ -9806,13 +9798,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 
 import { APP_CONFIG } from '../config/app-config.js';
-import ipcConfigModule from '../config/ipc-config.cjs';
+import IPC_CONFIG from '../config/ipc-config.json' with { type: 'json' };
 
 const MAIN_FILE = 'main.js';
 const PRELOAD_FILE = 'preload.cjs';
-const IPC_CONFIG_FILE = 'config/ipc-config.cjs';
-
-const { IPC_CONFIG } = ipcConfigModule;
+const IPC_CONFIG_FILE = 'config/ipc-config.json';
 
 const EXPECTED_IPC = IPC_CONFIG;
 
@@ -9826,18 +9816,17 @@ test('platform IPC config and preload IPC object stay aligned for main/preload w
   assert.match(mainSource, /APP_CONFIG\.platform\.ipc\.channels\.windowCloseRequested/);
   assert.match(mainSource, /APP_CONFIG\.platform\.ipc\.handlers\.fsListFiles/);
 
-  assert.match(preloadSource, /const \{ IPC_CONFIG \} = require\('\.\/config\/ipc-config\.cjs'\);/);
-  assert.match(preloadSource, /const IPC = IPC_CONFIG;/);
+  assert.match(preloadSource, /const IPC = require\('\.\/config\/ipc-config\.json'\);/);
   assert.match(preloadSource, /IPC\.channels\.menuAction/);
   assert.match(preloadSource, /IPC\.channels\.windowCloseRequested/);
   assert.match(preloadSource, /IPC\.handlers\.fsListFiles/);
 
   for (const [key, value] of Object.entries(EXPECTED_IPC.channels)) {
-    assert.ok(ipcConfigSource.includes(`${key}: '${value}'`));
+    assert.ok(ipcConfigSource.includes(`"${key}": "${value}"`));
   }
 
   for (const [key, value] of Object.entries(EXPECTED_IPC.handlers)) {
-    assert.ok(ipcConfigSource.includes(`${key}: '${value}'`));
+    assert.ok(ipcConfigSource.includes(`"${key}": "${value}"`));
   }
 });
 

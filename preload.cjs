@@ -1,7 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const { IPC_CONFIG } = require('./config/ipc-config.cjs');
-
-const IPC = IPC_CONFIG;
+const IPC = require('./config/ipc-config.json');
 
 contextBridge.exposeInMainWorld('MetaPlatformFS', {
   openProjectFileDialog: () => ipcRenderer.invoke(IPC.handlers.openProjectDialog),
