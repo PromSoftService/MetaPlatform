@@ -1,26 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { IPC_CONFIG } = require('./config/ipc-config.cjs');
 
-const IPC = {
-  channels: {
-    menuAction: 'menu:action',
-    windowCloseRequested: 'window:close-requested'
-  },
-  handlers: {
-    openProjectDialog: 'dialog:open-project',
-    saveProjectAsDialog: 'dialog:save-project-as',
-    appQuit: 'app:quit',
-    windowCloseApproved: 'window:close-approved',
-    windowCloseCancelled: 'window:close-cancelled',
-    fsEnsureDir: 'fs:ensure-dir',
-    fsExists: 'fs:exists',
-    fsReadText: 'fs:read-text',
-    fsWriteText: 'fs:write-text',
-    fsRename: 'fs:rename',
-    fsDeleteFile: 'fs:delete-file',
-    fsDeleteDir: 'fs:delete-dir',
-    fsListFiles: 'fs:list-files'
-  }
-};
+const IPC = IPC_CONFIG;
 
 contextBridge.exposeInMainWorld('MetaPlatformFS', {
   openProjectFileDialog: () => ipcRenderer.invoke(IPC.handlers.openProjectDialog),

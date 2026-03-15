@@ -101,13 +101,13 @@ export function showSaveChangesDialog({
       resolve(value);
     };
 
-    cancelButton.addEventListener('click', () => close('cancel'));
-    discardButton.addEventListener('click', () => close('discard'));
-    saveButton.addEventListener('click', () => close('save'));
+    cancelButton.addEventListener('click', () => close(APP_CONFIG.ui.runtime.dialogResults.cancel));
+    discardButton.addEventListener('click', () => close(APP_CONFIG.ui.runtime.dialogResults.discard));
+    saveButton.addEventListener('click', () => close(APP_CONFIG.ui.runtime.dialogResults.save));
 
     overlay.addEventListener('click', (event) => {
       if (event.target === overlay) {
-        close('cancel');
+        close(APP_CONFIG.ui.runtime.dialogResults.cancel);
       }
     });
 

@@ -45,10 +45,10 @@ export const APP_CONFIG = {
 };
 
 ==================================================
-FILE: config/platform-config.js
+FILE: config/ipc-config.cjs
 ==================================================
 
-const IPC = {
+const IPC_CONFIG = {
   channels: {
     menuAction: 'menu:action',
     windowCloseRequested: 'window:close-requested'
@@ -70,6 +70,19 @@ const IPC = {
   }
 };
 
+module.exports = {
+  IPC_CONFIG
+};
+
+
+==================================================
+FILE: config/platform-config.js
+==================================================
+
+import ipcConfigModule from './ipc-config.cjs';
+
+const { IPC_CONFIG } = ipcConfigModule;
+
 export const PLATFORM_CONFIG = {
   locale: 'ru-RU',
 
@@ -88,7 +101,7 @@ export const PLATFORM_CONFIG = {
     topPanelTitle: '⚡ MetaPlatform',
     menu: {
       fileLabel: 'Файл',
-      menuEventChannel: IPC.channels.menuAction,
+      menuEventChannel: IPC_CONFIG.channels.menuAction,
       items: {
         newProject: '🆕 Создать проект',
         openProject: '📂 Открыть проект',
@@ -116,7 +129,7 @@ export const PLATFORM_CONFIG = {
     }
   },
 
-  ipc: IPC,
+  ipc: IPC_CONFIG,
 
   logging: {
     defaultSource: 'app',
@@ -211,7 +224,11 @@ export const UI_CONFIG = {
     tabsListId: 'tabs-list',
     editorHostId: 'editor-host',
     logContainerId: 'log-output',
-    projectTreeId: 'project-tree'
+    projectTreeId: 'project-tree',
+    projectTreeColumnId: 'project-tree-column',
+    workbenchRightColumnId: 'workbench-right-column',
+    editorHostContainerId: 'editor-host-container',
+    bottomPanelId: 'bottom-panel'
   },
 
   classNames: {
@@ -328,6 +345,10 @@ export const UI_CONFIG = {
       discard: 'discard',
       cancel: 'cancel'
     },
+    closeFlowDecisions: {
+      continue: 'continue',
+      cancel: 'cancel'
+    },
     loggerSources: {
       tabs: 'tabs',
       menu: 'menu',
@@ -344,6 +365,7 @@ export const UI_CONFIG = {
     untitled: 'Без имени',
     dirtyMarker: '●',
     closeAriaPrefix: 'Закрыть',
+    closeTabSymbol: '×',
     saveChangesTitle: 'Сохранить изменения в текущем проекте?',
     save: 'Сохранить',
     discard: 'Не сохранять',
@@ -367,6 +389,7 @@ ROOT = Path(__file__).resolve().parent
 PROJECT_FILES = [
   '.gitignore',
   'config/app-config.js',
+  'config/ipc-config.cjs',
   'config/platform-config.js',
   'config/project-config.js',
   'config/ui-config.js',
@@ -503,6 +526,7 @@ OUTPUT_FILE = ROOT / 'metaplatform_project_dump.txt'
 PROJECT_FILES = [
   '.gitignore',
   'config/app-config.js',
+  'config/ipc-config.cjs',
   'config/platform-config.js',
   'config/project-config.js',
   'config/ui-config.js',
@@ -897,28 +921,9 @@ FILE: preload.cjs
 ==================================================
 
 const { contextBridge, ipcRenderer } = require('electron');
+const { IPC_CONFIG } = require('./config/ipc-config.cjs');
 
-const IPC = {
-  channels: {
-    menuAction: 'menu:action',
-    windowCloseRequested: 'window:close-requested'
-  },
-  handlers: {
-    openProjectDialog: 'dialog:open-project',
-    saveProjectAsDialog: 'dialog:save-project-as',
-    appQuit: 'app:quit',
-    windowCloseApproved: 'window:close-approved',
-    windowCloseCancelled: 'window:close-cancelled',
-    fsEnsureDir: 'fs:ensure-dir',
-    fsExists: 'fs:exists',
-    fsReadText: 'fs:read-text',
-    fsWriteText: 'fs:write-text',
-    fsRename: 'fs:rename',
-    fsDeleteFile: 'fs:delete-file',
-    fsDeleteDir: 'fs:delete-dir',
-    fsListFiles: 'fs:list-files'
-  }
-};
+const IPC = IPC_CONFIG;
 
 contextBridge.exposeInMainWorld('MetaPlatformFS', {
   openProjectFileDialog: () => ipcRenderer.invoke(IPC.handlers.openProjectDialog),
@@ -1269,7 +1274,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function confirmSaveIfDirty() {
     if (!projectManager.hasDirtyProject()) {
-      return 'continue';
+      return APP_CONFIG.ui.runtime.closeFlowDecisions.continue;
     }
 
     const decision = await showSaveChangesDialog({
@@ -1277,21 +1282,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     if (decision === APP_CONFIG.ui.runtime.dialogResults.cancel) {
-      return 'cancel';
+      return APP_CONFIG.ui.runtime.closeFlowDecisions.cancel;
     }
 
     if (decision === APP_CONFIG.ui.runtime.dialogResults.discard) {
-      return 'continue';
+      return APP_CONFIG.ui.runtime.closeFlowDecisions.continue;
     }
 
     const saved = await saveProjectFlow();
-    return saved ? 'continue' : 'cancel';
+    return saved
+      ? APP_CONFIG.ui.runtime.closeFlowDecisions.continue
+      : APP_CONFIG.ui.runtime.closeFlowDecisions.cancel;
   }
 
   async function newProjectFlow() {
     const canContinue = await confirmSaveIfDirty();
 
-    if (canContinue === 'cancel') {
+    if (canContinue === APP_CONFIG.ui.runtime.closeFlowDecisions.cancel) {
       return;
     }
 
@@ -1303,7 +1310,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function openProjectFlow() {
     const canContinue = await confirmSaveIfDirty();
 
-    if (canContinue === 'cancel') {
+    if (canContinue === APP_CONFIG.ui.runtime.closeFlowDecisions.cancel) {
       return;
     }
 
@@ -1325,7 +1332,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const canContinue = await confirmSaveIfDirty();
 
-    if (canContinue === 'cancel') {
+    if (canContinue === APP_CONFIG.ui.runtime.closeFlowDecisions.cancel) {
       return;
     }
 
@@ -1478,12 +1485,12 @@ function getSplitSharedOptions() {
 }
 
 export function initWorkbenchLayout() {
-  const horizontalSplit = Split(['#project-tree-column', '#workbench-right-column'], {
+  const horizontalSplit = Split([`#${APP_CONFIG.ui.dom.projectTreeColumnId}`, `#${APP_CONFIG.ui.dom.workbenchRightColumnId}`], {
     ...APP_CONFIG.ui.layout.split.horizontal,
     ...getSplitSharedOptions()
   });
 
-  const verticalSplit = Split(['#editor-host-container', '#bottom-panel'], {
+  const verticalSplit = Split([`#${APP_CONFIG.ui.dom.editorHostContainerId}`, `#${APP_CONFIG.ui.dom.bottomPanelId}`], {
     ...APP_CONFIG.ui.layout.split.vertical,
     ...getSplitSharedOptions()
   });
@@ -4884,6 +4891,8 @@ export function areDocumentSnapshotsSemanticallyEqual(leftRecord, rightRecord) {
 FILE: renderer/runtime/appCloseCoordinator.js
 ==================================================
 
+import { APP_CONFIG } from '../../config/app-config.js';
+
 export function createAppCloseCoordinator({
   confirmSaveIfDirty,
   requestAppQuit,
@@ -4892,7 +4901,7 @@ export function createAppCloseCoordinator({
 }) {
   async function canCloseApp() {
     const decision = await confirmSaveIfDirty();
-    return decision === 'continue';
+    return decision === APP_CONFIG.ui.runtime.closeFlowDecisions.continue;
   }
 
   async function requestExit() {
@@ -6036,7 +6045,7 @@ function buildTabTitleNode(title) {
 function buildCloseButtonNode(label) {
   const closeButtonNode = createElement('button', [APP_CONFIG.ui.classNames.tabClose]);
   closeButtonNode.type = 'button';
-  closeButtonNode.textContent = '×';
+  closeButtonNode.textContent = APP_CONFIG.ui.text.closeTabSymbol;
   closeButtonNode.tabIndex = -1;
   closeButtonNode.setAttribute('aria-label', `${APP_CONFIG.ui.text.closeAriaPrefix} ${label}`);
   return closeButtonNode;
@@ -6667,13 +6676,13 @@ export function showSaveChangesDialog({
       resolve(value);
     };
 
-    cancelButton.addEventListener('click', () => close('cancel'));
-    discardButton.addEventListener('click', () => close('discard'));
-    saveButton.addEventListener('click', () => close('save'));
+    cancelButton.addEventListener('click', () => close(APP_CONFIG.ui.runtime.dialogResults.cancel));
+    discardButton.addEventListener('click', () => close(APP_CONFIG.ui.runtime.dialogResults.discard));
+    saveButton.addEventListener('click', () => close(APP_CONFIG.ui.runtime.dialogResults.save));
 
     overlay.addEventListener('click', (event) => {
       if (event.target === overlay) {
-        close('cancel');
+        close(APP_CONFIG.ui.runtime.dialogResults.cancel);
       }
     });
 
@@ -6788,6 +6797,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createAppCloseCoordinator } from '../renderer/runtime/appCloseCoordinator.js';
+import { APP_CONFIG } from '../config/app-config.js';
 
 function createDeferred() {
   let resolve;
@@ -6811,7 +6821,7 @@ function createHarness({ confirmResults = [] } = {}) {
   const coordinator = createAppCloseCoordinator({
     confirmSaveIfDirty: async () => {
       calls.confirmSaveIfDirty += 1;
-      return decisions.shift() ?? 'continue';
+      return decisions.shift() ?? APP_CONFIG.ui.runtime.closeFlowDecisions.continue;
     },
     requestAppQuit: async () => {
       calls.requestAppQuit += 1;
@@ -6831,7 +6841,7 @@ function createHarness({ confirmResults = [] } = {}) {
 }
 
 test('window close request uses the same dirty confirmation flow as exit', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['continue', 'continue'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.continue, APP_CONFIG.ui.runtime.closeFlowDecisions.continue] });
 
   await coordinator.requestExit();
   await coordinator.handleWindowCloseRequested();
@@ -6843,7 +6853,7 @@ test('window close request uses the same dirty confirmation flow as exit', async
 });
 
 test('close approved after successful save flow', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['continue'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.continue] });
 
   const approved = await coordinator.handleWindowCloseRequested();
 
@@ -6853,7 +6863,7 @@ test('close approved after successful save flow', async () => {
 });
 
 test('close cancelled when save flow is cancelled', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['cancel'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.cancel] });
 
   const approved = await coordinator.handleWindowCloseRequested();
 
@@ -6863,7 +6873,7 @@ test('close cancelled when save flow is cancelled', async () => {
 });
 
 test('close cancelled when user cancels save-changes dialog', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['cancel'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.cancel] });
 
   await coordinator.handleWindowCloseRequested();
 
@@ -6872,7 +6882,7 @@ test('close cancelled when user cancels save-changes dialog', async () => {
 });
 
 test('close approved when user discards unsaved changes', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['continue'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.continue] });
 
   await coordinator.handleWindowCloseRequested();
 
@@ -6881,7 +6891,7 @@ test('close approved when user discards unsaved changes', async () => {
 });
 
 test('clean project close request is approved without extra branching', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['continue'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.continue] });
 
   await coordinator.handleWindowCloseRequested();
 
@@ -6918,15 +6928,15 @@ test('window close waits for confirm/save lifecycle before approve signal', asyn
   await Promise.resolve();
   assert.deepEqual(calls, ['confirm-start']);
 
-  gate.resolve('continue');
+  gate.resolve(APP_CONFIG.ui.runtime.closeFlowDecisions.continue);
   const approved = await pending;
 
   assert.equal(approved, true);
-  assert.deepEqual(calls, ['confirm-start', 'confirm-end:continue', 'approve-close']);
+  assert.deepEqual(calls, ['confirm-start', `confirm-end:${APP_CONFIG.ui.runtime.closeFlowDecisions.continue}`, 'approve-close']);
 });
 
 test('approved close does not trigger repeated confirm calls inside one close request', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['continue'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.continue] });
 
   const approved = await coordinator.handleWindowCloseRequested();
 
@@ -8251,7 +8261,7 @@ test('collectOpenDocumentRecords finalizes active editing before collectDocument
     await tabs.openDocument(record);
     await tabs.collectOpenDocumentRecords();
 
-    assert.deepEqual(calls, ['finalize:collect-open-document-records', 'collect']);
+    assert.deepEqual(calls, [`finalize:${APP_CONFIG.ui.runtime.transitionReasons.collectOpenDocumentRecords}`, 'collect']);
   } finally {
     globalThis.document = previousDocument;
   }
@@ -8289,13 +8299,13 @@ test('menu/focus-triggered transition path on tabs uses shared finalize contract
     await tabs.openDocument(record);
 
     const result = await tabs.finalizeActiveEditorContextBeforeTransition({
-      reason: 'menu-action:open-project',
+      reason: `${APP_CONFIG.ui.runtime.transitionReasons.menuActionPrefix}${APP_CONFIG.platform.app.menu.actionIds.openProject}`,
       blockOnFailure: true
     });
 
     assert.equal(result.continued, true);
     assert.equal(result.outcome, 'committed');
-    assert.deepEqual(calls, [{ reason: 'menu-action:open-project', blockOnFailure: true }]);
+    assert.deepEqual(calls, [{ reason: `${APP_CONFIG.ui.runtime.transitionReasons.menuActionPrefix}${APP_CONFIG.platform.app.menu.actionIds.openProject}`, blockOnFailure: true }]);
   } finally {
     globalThis.document = previousDocument;
   }
@@ -8781,6 +8791,7 @@ import {
   TABLE_CONTEXT_FINALIZE_FLOW
 } from '../renderer/modules/metagen/tables/finalizeEditingOnContextLeave.js';
 import { TABLE_EDIT_FINALIZE_RESULT } from '../renderer/modules/metagen/tables/finalizeActiveTableEditing.js';
+import { APP_CONFIG } from '../config/app-config.js';
 
 function createLogger() {
   const calls = [];
@@ -8854,7 +8865,7 @@ test('failed finalize blocks transition predictably and logs error', async () =>
     ],
     logger,
     source: 'metagen.lifecycle',
-    reason: 'menu-action:open-project',
+    reason: `${APP_CONFIG.ui.runtime.transitionReasons.menuActionPrefix}${APP_CONFIG.platform.app.menu.actionIds.openProject}`,
     blockOnFailure: true
   });
 
@@ -8983,6 +8994,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { finalizeEditingBeforeContextTransition } from '../renderer/ui/editorContextLifecycle.js';
+import { APP_CONFIG } from '../config/app-config.js';
 
 function createLogger() {
   const calls = [];
@@ -9031,7 +9043,7 @@ test('context transition falls back to legacy finishActiveTableEditing runtime h
     },
     logger: createLogger(),
     source: 'tabs',
-    reason: 'menu-action:save',
+    reason: `${APP_CONFIG.ui.runtime.transitionReasons.menuActionPrefix}${APP_CONFIG.platform.app.menu.actionIds.save}`,
     blockOnFailure: true
   });
 
@@ -9053,7 +9065,7 @@ test('failed context finalization reports failed outcome and logs once', async (
     },
     logger,
     source: 'tabs',
-    reason: 'menu-action:open-project',
+    reason: `${APP_CONFIG.ui.runtime.transitionReasons.menuActionPrefix}${APP_CONFIG.platform.app.menu.actionIds.openProject}`,
     blockOnFailure: true
   });
 
@@ -9794,56 +9806,39 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 
 import { APP_CONFIG } from '../config/app-config.js';
+import ipcConfigModule from '../config/ipc-config.cjs';
 
 const MAIN_FILE = 'main.js';
 const PRELOAD_FILE = 'preload.cjs';
+const IPC_CONFIG_FILE = 'config/ipc-config.cjs';
 
-const EXPECTED_IPC = {
-  channels: {
-    menuAction: 'menu:action',
-    windowCloseRequested: 'window:close-requested'
-  },
-  handlers: {
-    openProjectDialog: 'dialog:open-project',
-    saveProjectAsDialog: 'dialog:save-project-as',
-    appQuit: 'app:quit',
-    windowCloseApproved: 'window:close-approved',
-    windowCloseCancelled: 'window:close-cancelled',
-    fsEnsureDir: 'fs:ensure-dir',
-    fsExists: 'fs:exists',
-    fsReadText: 'fs:read-text',
-    fsWriteText: 'fs:write-text',
-    fsRename: 'fs:rename',
-    fsDeleteFile: 'fs:delete-file',
-    fsDeleteDir: 'fs:delete-dir',
-    fsListFiles: 'fs:list-files'
-  }
-};
+const { IPC_CONFIG } = ipcConfigModule;
+
+const EXPECTED_IPC = IPC_CONFIG;
 
 test('platform IPC config and preload IPC object stay aligned for main/preload wiring', async () => {
   const mainSource = await fs.readFile(MAIN_FILE, 'utf-8');
   const preloadSource = await fs.readFile(PRELOAD_FILE, 'utf-8');
+  const ipcConfigSource = await fs.readFile(IPC_CONFIG_FILE, 'utf-8');
 
   assert.deepEqual(APP_CONFIG.platform.ipc, EXPECTED_IPC);
 
   assert.match(mainSource, /APP_CONFIG\.platform\.ipc\.channels\.windowCloseRequested/);
   assert.match(mainSource, /APP_CONFIG\.platform\.ipc\.handlers\.fsListFiles/);
 
-  assert.match(preloadSource, /const IPC = \{/);
+  assert.match(preloadSource, /const \{ IPC_CONFIG \} = require\('\.\/config\/ipc-config\.cjs'\);/);
+  assert.match(preloadSource, /const IPC = IPC_CONFIG;/);
   assert.match(preloadSource, /IPC\.channels\.menuAction/);
   assert.match(preloadSource, /IPC\.channels\.windowCloseRequested/);
   assert.match(preloadSource, /IPC\.handlers\.fsListFiles/);
 
   for (const [key, value] of Object.entries(EXPECTED_IPC.channels)) {
-    assert.match(preloadSource, new RegExp(`\\b${key}: ['\"]${value}['\"]`));
+    assert.ok(ipcConfigSource.includes(`${key}: '${value}'`));
   }
 
   for (const [key, value] of Object.entries(EXPECTED_IPC.handlers)) {
-    assert.match(preloadSource, new RegExp(`\\b${key}: ['\"]${value}['\"]`));
+    assert.ok(ipcConfigSource.includes(`${key}: '${value}'`));
   }
-
-  assert.doesNotMatch(preloadSource, /IPC_CONFIG/);
-  assert.doesNotMatch(preloadSource, /require\(\s*['\"]\.\/config\//);
 });
 
 

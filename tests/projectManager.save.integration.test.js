@@ -928,7 +928,7 @@ test('collectOpenDocumentRecords finalizes active editing before collectDocument
     await tabs.openDocument(record);
     await tabs.collectOpenDocumentRecords();
 
-    assert.deepEqual(calls, ['finalize:collect-open-document-records', 'collect']);
+    assert.deepEqual(calls, [`finalize:${APP_CONFIG.ui.runtime.transitionReasons.collectOpenDocumentRecords}`, 'collect']);
   } finally {
     globalThis.document = previousDocument;
   }
@@ -966,13 +966,13 @@ test('menu/focus-triggered transition path on tabs uses shared finalize contract
     await tabs.openDocument(record);
 
     const result = await tabs.finalizeActiveEditorContextBeforeTransition({
-      reason: 'menu-action:open-project',
+      reason: `${APP_CONFIG.ui.runtime.transitionReasons.menuActionPrefix}${APP_CONFIG.platform.app.menu.actionIds.openProject}`,
       blockOnFailure: true
     });
 
     assert.equal(result.continued, true);
     assert.equal(result.outcome, 'committed');
-    assert.deepEqual(calls, [{ reason: 'menu-action:open-project', blockOnFailure: true }]);
+    assert.deepEqual(calls, [{ reason: `${APP_CONFIG.ui.runtime.transitionReasons.menuActionPrefix}${APP_CONFIG.platform.app.menu.actionIds.openProject}`, blockOnFailure: true }]);
   } finally {
     globalThis.document = previousDocument;
   }

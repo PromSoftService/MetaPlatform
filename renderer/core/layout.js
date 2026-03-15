@@ -13,12 +13,12 @@ function getSplitSharedOptions() {
 }
 
 export function initWorkbenchLayout() {
-  const horizontalSplit = Split(['#project-tree-column', '#workbench-right-column'], {
+  const horizontalSplit = Split([`#${APP_CONFIG.ui.dom.projectTreeColumnId}`, `#${APP_CONFIG.ui.dom.workbenchRightColumnId}`], {
     ...APP_CONFIG.ui.layout.split.horizontal,
     ...getSplitSharedOptions()
   });
 
-  const verticalSplit = Split(['#editor-host-container', '#bottom-panel'], {
+  const verticalSplit = Split([`#${APP_CONFIG.ui.dom.editorHostContainerId}`, `#${APP_CONFIG.ui.dom.bottomPanelId}`], {
     ...APP_CONFIG.ui.layout.split.vertical,
     ...getSplitSharedOptions()
   });

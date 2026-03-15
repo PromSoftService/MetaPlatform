@@ -22,7 +22,7 @@ function buildTabTitleNode(title) {
 function buildCloseButtonNode(label) {
   const closeButtonNode = createElement('button', [APP_CONFIG.ui.classNames.tabClose]);
   closeButtonNode.type = 'button';
-  closeButtonNode.textContent = '×';
+  closeButtonNode.textContent = APP_CONFIG.ui.text.closeTabSymbol;
   closeButtonNode.tabIndex = -1;
   closeButtonNode.setAttribute('aria-label', `${APP_CONFIG.ui.text.closeAriaPrefix} ${label}`);
   return closeButtonNode;

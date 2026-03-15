@@ -6,6 +6,7 @@ import {
   TABLE_CONTEXT_FINALIZE_FLOW
 } from '../renderer/modules/metagen/tables/finalizeEditingOnContextLeave.js';
 import { TABLE_EDIT_FINALIZE_RESULT } from '../renderer/modules/metagen/tables/finalizeActiveTableEditing.js';
+import { APP_CONFIG } from '../config/app-config.js';
 
 function createLogger() {
   const calls = [];
@@ -79,7 +80,7 @@ test('failed finalize blocks transition predictably and logs error', async () =>
     ],
     logger,
     source: 'metagen.lifecycle',
-    reason: 'menu-action:open-project',
+    reason: `${APP_CONFIG.ui.runtime.transitionReasons.menuActionPrefix}${APP_CONFIG.platform.app.menu.actionIds.openProject}`,
     blockOnFailure: true
   });
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createAppCloseCoordinator } from '../renderer/runtime/appCloseCoordinator.js';
+import { APP_CONFIG } from '../config/app-config.js';
 
 function createDeferred() {
   let resolve;
@@ -25,7 +26,7 @@ function createHarness({ confirmResults = [] } = {}) {
   const coordinator = createAppCloseCoordinator({
     confirmSaveIfDirty: async () => {
       calls.confirmSaveIfDirty += 1;
-      return decisions.shift() ?? 'continue';
+      return decisions.shift() ?? APP_CONFIG.ui.runtime.closeFlowDecisions.continue;
     },
     requestAppQuit: async () => {
       calls.requestAppQuit += 1;
@@ -45,7 +46,7 @@ function createHarness({ confirmResults = [] } = {}) {
 }
 
 test('window close request uses the same dirty confirmation flow as exit', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['continue', 'continue'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.continue, APP_CONFIG.ui.runtime.closeFlowDecisions.continue] });
 
   await coordinator.requestExit();
   await coordinator.handleWindowCloseRequested();
@@ -57,7 +58,7 @@ test('window close request uses the same dirty confirmation flow as exit', async
 });
 
 test('close approved after successful save flow', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['continue'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.continue] });
 
   const approved = await coordinator.handleWindowCloseRequested();
 
@@ -67,7 +68,7 @@ test('close approved after successful save flow', async () => {
 });
 
 test('close cancelled when save flow is cancelled', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['cancel'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.cancel] });
 
   const approved = await coordinator.handleWindowCloseRequested();
 
@@ -77,7 +78,7 @@ test('close cancelled when save flow is cancelled', async () => {
 });
 
 test('close cancelled when user cancels save-changes dialog', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['cancel'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.cancel] });
 
   await coordinator.handleWindowCloseRequested();
 
@@ -86,7 +87,7 @@ test('close cancelled when user cancels save-changes dialog', async () => {
 });
 
 test('close approved when user discards unsaved changes', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['continue'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.continue] });
 
   await coordinator.handleWindowCloseRequested();
 
@@ -95,7 +96,7 @@ test('close approved when user discards unsaved changes', async () => {
 });
 
 test('clean project close request is approved without extra branching', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['continue'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.continue] });
 
   await coordinator.handleWindowCloseRequested();
 
@@ -132,15 +133,15 @@ test('window close waits for confirm/save lifecycle before approve signal', asyn
   await Promise.resolve();
   assert.deepEqual(calls, ['confirm-start']);
 
-  gate.resolve('continue');
+  gate.resolve(APP_CONFIG.ui.runtime.closeFlowDecisions.continue);
   const approved = await pending;
 
   assert.equal(approved, true);
-  assert.deepEqual(calls, ['confirm-start', 'confirm-end:continue', 'approve-close']);
+  assert.deepEqual(calls, ['confirm-start', `confirm-end:${APP_CONFIG.ui.runtime.closeFlowDecisions.continue}`, 'approve-close']);
 });
 
 test('approved close does not trigger repeated confirm calls inside one close request', async () => {
-  const { coordinator, calls } = createHarness({ confirmResults: ['continue'] });
+  const { coordinator, calls } = createHarness({ confirmResults: [APP_CONFIG.ui.runtime.closeFlowDecisions.continue] });
 
   const approved = await coordinator.handleWindowCloseRequested();
 

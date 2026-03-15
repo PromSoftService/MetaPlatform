@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { finalizeEditingBeforeContextTransition } from '../renderer/ui/editorContextLifecycle.js';
+import { APP_CONFIG } from '../config/app-config.js';
 
 function createLogger() {
   const calls = [];
@@ -50,7 +51,7 @@ test('context transition falls back to legacy finishActiveTableEditing runtime h
     },
     logger: createLogger(),
     source: 'tabs',
-    reason: 'menu-action:save',
+    reason: `${APP_CONFIG.ui.runtime.transitionReasons.menuActionPrefix}${APP_CONFIG.platform.app.menu.actionIds.save}`,
     blockOnFailure: true
   });
 
@@ -72,7 +73,7 @@ test('failed context finalization reports failed outcome and logs once', async (
     },
     logger,
     source: 'tabs',
-    reason: 'menu-action:open-project',
+    reason: `${APP_CONFIG.ui.runtime.transitionReasons.menuActionPrefix}${APP_CONFIG.platform.app.menu.actionIds.openProject}`,
     blockOnFailure: true
   });
 

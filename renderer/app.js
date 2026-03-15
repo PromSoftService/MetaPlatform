@@ -141,7 +141,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function confirmSaveIfDirty() {
     if (!projectManager.hasDirtyProject()) {
-      return 'continue';
+      return APP_CONFIG.ui.runtime.closeFlowDecisions.continue;
     }
 
     const decision = await showSaveChangesDialog({
@@ -149,21 +149,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     if (decision === APP_CONFIG.ui.runtime.dialogResults.cancel) {
-      return 'cancel';
+      return APP_CONFIG.ui.runtime.closeFlowDecisions.cancel;
     }
 
     if (decision === APP_CONFIG.ui.runtime.dialogResults.discard) {
-      return 'continue';
+      return APP_CONFIG.ui.runtime.closeFlowDecisions.continue;
     }
 
     const saved = await saveProjectFlow();
-    return saved ? 'continue' : 'cancel';
+    return saved
+      ? APP_CONFIG.ui.runtime.closeFlowDecisions.continue
+      : APP_CONFIG.ui.runtime.closeFlowDecisions.cancel;
   }
 
   async function newProjectFlow() {
     const canContinue = await confirmSaveIfDirty();
 
-    if (canContinue === 'cancel') {
+    if (canContinue === APP_CONFIG.ui.runtime.closeFlowDecisions.cancel) {
       return;
     }
 
@@ -175,7 +177,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function openProjectFlow() {
     const canContinue = await confirmSaveIfDirty();
 
-    if (canContinue === 'cancel') {
+    if (canContinue === APP_CONFIG.ui.runtime.closeFlowDecisions.cancel) {
       return;
     }
 
@@ -197,7 +199,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const canContinue = await confirmSaveIfDirty();
 
-    if (canContinue === 'cancel') {
+    if (canContinue === APP_CONFIG.ui.runtime.closeFlowDecisions.cancel) {
       return;
     }
 

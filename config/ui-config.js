@@ -8,7 +8,11 @@ export const UI_CONFIG = {
     tabsListId: 'tabs-list',
     editorHostId: 'editor-host',
     logContainerId: 'log-output',
-    projectTreeId: 'project-tree'
+    projectTreeId: 'project-tree',
+    projectTreeColumnId: 'project-tree-column',
+    workbenchRightColumnId: 'workbench-right-column',
+    editorHostContainerId: 'editor-host-container',
+    bottomPanelId: 'bottom-panel'
   },
 
   classNames: {
@@ -125,6 +129,10 @@ export const UI_CONFIG = {
       discard: 'discard',
       cancel: 'cancel'
     },
+    closeFlowDecisions: {
+      continue: 'continue',
+      cancel: 'cancel'
+    },
     loggerSources: {
       tabs: 'tabs',
       menu: 'menu',
@@ -141,6 +149,7 @@ export const UI_CONFIG = {
     untitled: 'Без имени',
     dirtyMarker: '●',
     closeAriaPrefix: 'Закрыть',
+    closeTabSymbol: '×',
     saveChangesTitle: 'Сохранить изменения в текущем проекте?',
     save: 'Сохранить',
     discard: 'Не сохранять',
