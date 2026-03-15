@@ -1,7 +1,7 @@
 import { APP_CONFIG } from '../../config/app-config.js';
 import { finalizeEditingBeforeTabSwitch } from './tabEditLifecycle.js';
 import { finalizeEditingBeforeContextTransition } from './editorContextLifecycle.js';
-import { getDocumentLabel } from '../runtime/documentRecordIdentity.js';
+import { getDocumentLabel, getDocumentIdentityKey } from '../runtime/documentRecordIdentity.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -24,7 +24,7 @@ function buildCloseButtonNode(label) {
   closeButtonNode.type = 'button';
   closeButtonNode.textContent = '×';
   closeButtonNode.tabIndex = -1;
-  closeButtonNode.setAttribute('aria-label', `Закрыть ${label}`);
+  closeButtonNode.setAttribute('aria-label', `${APP_CONFIG.ui.text.closeAriaPrefix} ${label}`);
   return closeButtonNode;
 }
 
@@ -103,14 +103,25 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   }
 
   async function closeTab(tabId, options = {}) {
-    const entry = tabs.get(tabId);
+    let resolvedTabId = tabId;
+    let entry = tabs.get(resolvedTabId);
+
+    if (!entry) {
+      for (const [candidateTabId, candidateEntry] of tabs.entries()) {
+        if (candidateEntry.documentRecord?.path === tabId || candidateEntry.documentRecord === tabId) {
+          resolvedTabId = candidateTabId;
+          entry = candidateEntry;
+          break;
+        }
+      }
+    }
 
     if (!entry) {
       return;
     }
 
     const orderedEntries = Array.from(tabs.values());
-    const index = orderedEntries.findIndex((tabEntry) => tabEntry.tabId === tabId);
+    const index = orderedEntries.findIndex((tabEntry) => tabEntry.tabId === resolvedTabId);
 
     await finalizeEditingBeforeContextTransition({
       activeEntry: entry,
@@ -125,7 +136,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
         await syncEntryDocumentRecordToProject(entry);
       } catch (error) {
         logger.error('tabs', 'Ошибка синхронизации snapshot перед закрытием вкладки', {
-          tabId,
+          tabId: resolvedTabId,
           message: error?.message || String(error)
         });
       }
@@ -134,9 +145,9 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     entry.runtime?.dispose?.();
     entry.pageNode.remove();
     entry.tabNode.remove();
-    tabs.delete(tabId);
+    tabs.delete(resolvedTabId);
 
-    if (activeTabId === tabId) {
+    if (activeTabId === resolvedTabId) {
       activeTabId = null;
     }
 
@@ -172,7 +183,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       pageNode,
       runtime: null,
       documentRecord: {
-        moduleId: 'temporary',
+        moduleId: APP_CONFIG.project.moduleIds.temporary,
         path: tabId,
         document: { name: initialTitle || APP_CONFIG.ui.text.untitled }
       },
@@ -190,7 +201,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   }
 
   async function startTemporaryDocumentCreation({ moduleId, defaultName = '', onCommit }) {
-    const tabId = `temporary://${moduleId}/${++temporaryCounter}`;
+    const tabId = `${APP_CONFIG.project.temporaryDocumentPathPrefix}${moduleId}/${++temporaryCounter}`;
     const entry = createTemporaryTabEntry({ tabId, initialTitle: defaultName || APP_CONFIG.ui.text.untitled });
 
     const titleNode = entry.tabNode.querySelector(`.${APP_CONFIG.ui.classNames.tabTitle}`);
@@ -199,7 +210,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       return null;
     }
 
-    const input = createElement('input', ['workbench-inline-rename-input']);
+    const input = createElement('input', [APP_CONFIG.ui.classNames.inlineRenameInput]);
     input.type = 'text';
     input.value = defaultName;
     titleNode.replaceWith(input);
@@ -298,7 +309,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     titleNode.dataset.renaming = '1';
 
     const previousName = getDocumentLabel(entry.documentRecord);
-    const input = createElement('input', ['workbench-inline-rename-input']);
+    const input = createElement('input', [APP_CONFIG.ui.classNames.inlineRenameInput]);
     input.type = 'text';
     input.value = previousName;
 
@@ -321,25 +332,17 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
         if (!nextName) {
           logger.warn('tabs', 'Пустое имя отклонено');
         } else {
-          const renamed = await projectManager.renameDocument(tabId, nextName);
+          const renamed = await projectManager.renameDocument(getDocumentIdentityKey(entry.documentRecord), nextName);
 
           if (!renamed) {
             logger.warn('tabs', 'Переименование отклонено', { name: nextName });
           } else {
             if (renamed.nextPath !== renamed.previousPath) {
-              tabs.delete(renamed.previousPath);
-              entry.tabId = renamed.nextPath;
               entry.documentRecord.path = renamed.nextPath;
-              tabs.set(renamed.nextPath, entry);
-
-              if (activeTabId === renamed.previousPath) {
-                activeTabId = renamed.nextPath;
-              }
-
-              entry.pageNode.dataset.tabId = renamed.nextPath;
-              updatedTabId = renamed.nextPath;
             }
 
+            updatedTabId = entry.tabId;
+            entry.pageNode.dataset.tabId = entry.tabId;
             updateTabTitle(entry);
           }
         }
@@ -382,13 +385,19 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
 
 
   function findTabByDocument(documentRecord) {
-    const tabId = documentRecord?.path;
+    const identityKey = getDocumentIdentityKey(documentRecord);
 
-    if (!tabId || !tabs.has(tabId)) {
+    if (!identityKey) {
       return null;
     }
 
-    return tabs.get(tabId);
+    for (const entry of tabs.values()) {
+      if (getDocumentIdentityKey(entry.documentRecord) === identityKey) {
+        return entry;
+      }
+    }
+
+    return null;
   }
 
   async function openOrActivateDocument(documentRecord, options = {}) {
@@ -403,14 +412,15 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   }
 
   async function openDocument(documentRecord, { startRenameMode = false } = {}) {
-    const tabId = documentRecord.path;
+    const tabId = getDocumentIdentityKey(documentRecord) || documentRecord.path;
 
-    if (tabs.has(tabId)) {
-      void activateTab(tabId);
+    const existingEntry = tabs.get(tabId) || findTabByDocument(documentRecord);
+    if (existingEntry) {
+      void activateTab(existingEntry.tabId);
       if (startRenameMode) {
-        await startRename(tabId);
+        await startRename(existingEntry.tabId);
       }
-      return tabs.get(tabId);
+      return existingEntry;
     }
 
     const tabNode = createElement('button', [APP_CONFIG.ui.classNames.tab]);
@@ -488,21 +498,14 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       return;
     }
 
-    for (const [previousPath, nextPath] of pathMap.entries()) {
-      if (!tabs.has(previousPath)) {
+    for (const [identityKey, nextPath] of pathMap.entries()) {
+      if (!tabs.has(identityKey)) {
         continue;
       }
 
-      const entry = tabs.get(previousPath);
-      tabs.delete(previousPath);
-      entry.tabId = nextPath;
+      const entry = tabs.get(identityKey);
       entry.documentRecord.path = nextPath;
-      entry.pageNode.dataset.tabId = nextPath;
-      tabs.set(nextPath, entry);
-
-      if (activeTabId === previousPath) {
-        activeTabId = nextPath;
-      }
+      entry.pageNode.dataset.tabId = identityKey;
     }
   }
 

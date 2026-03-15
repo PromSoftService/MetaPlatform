@@ -1,11 +1,13 @@
 import { APP_CONFIG } from '../../config/app-config.js';
 import { createDocumentLoader } from '../runtime/documentLoader.js';
 import {
+  createDocumentGuid,
   getDocumentName,
   normalizeDocumentName,
   setDocumentName,
-  getDocumentSemanticKey,
-  isUnsavedDocumentPath
+  isUnsavedDocumentPath,
+  ensureDocumentId,
+  getDocumentIdentityKey
 } from '../runtime/documentRecordIdentity.js';
 import { areDocumentSnapshotsSemanticallyEqual } from '../runtime/documentSnapshot.js';
 
@@ -23,9 +25,9 @@ function buildProjectFilePath(projectRoot, projectFileName = APP_CONFIG.project.
 
 function getDefaultProjectModuleDirectories(projectRoot) {
   return {
-    metagen: joinPaths(projectRoot, APP_CONFIG.project.folders.metagen),
-    metalab: joinPaths(projectRoot, APP_CONFIG.project.folders.metalab),
-    metaview: joinPaths(projectRoot, APP_CONFIG.project.folders.metaview)
+    metagen: joinPaths(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metagen]),
+    metalab: joinPaths(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metalab]),
+    metaview: joinPaths(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metaview])
   };
 }
 
@@ -109,9 +111,9 @@ function stripFileExtension(fileName) {
 
 function getModuleFolder(moduleId) {
   const folderMap = {
-    metagen: APP_CONFIG.project.folders.metagen,
-    metalab: APP_CONFIG.project.folders.metalab,
-    metaview: APP_CONFIG.project.folders.metaview
+    [APP_CONFIG.project.moduleIds.metagen]: APP_CONFIG.project.folders.metagen,
+    [APP_CONFIG.project.moduleIds.metalab]: APP_CONFIG.project.folders.metalab,
+    [APP_CONFIG.project.moduleIds.metaview]: APP_CONFIG.project.folders.metaview
   };
 
   return folderMap[moduleId] || null;
@@ -136,7 +138,7 @@ function createDefaultProjectRaw() {
     kind: APP_CONFIG.project.projectKinds.root,
     version: 1,
     project: {
-      id: `project_${Date.now()}`,
+      id: createDocumentGuid(),
       name: 'Новый проект',
       description: ''
     },
@@ -213,7 +215,9 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
           continue;
         }
 
-        output.push({ moduleId, path: filePath, document: loaded.data });
+        const record = { moduleId, path: filePath, document: loaded.data };
+        ensureDocumentId(record);
+        output.push(record);
       } catch (error) {
         logger.warn('project', 'Ошибка чтения документа, файл пропущен', {
           path: filePath,
@@ -400,6 +404,12 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       raw.project.name = getProjectDisplayNameFromFilePath(resolvedProjectFilePath);
     }
 
+    for (const moduleId of Object.keys(documents || {})) {
+      for (const record of documents[moduleId] || []) {
+        ensureDocumentId(record);
+      }
+    }
+
     return {
       rootPath: normalizedRootPath,
       projectFilePath: resolvedProjectFilePath,
@@ -494,6 +504,16 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return getAllDocuments().find((entry) => entry.path === targetPath) || null;
   }
 
+  function getDocumentById(targetId) {
+    const normalizedId = String(targetId || '').trim();
+
+    if (!normalizedId) {
+      return null;
+    }
+
+    return getAllDocuments().find((entry) => ensureDocumentId(entry) === normalizedId) || null;
+  }
+
   function replaceDocumentRecord(nextRecord) {
     if (!currentProject) {
       return null;
@@ -509,8 +529,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    let index = moduleDocuments.findIndex((entry) => entry.path === nextRecord.path);
-
+    const identityKey = getDocumentIdentityKey(nextRecord);
+    const index = moduleDocuments.findIndex((entry) => getDocumentIdentityKey(entry) === identityKey);
 
     if (index < 0) {
       return null;
@@ -524,7 +544,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       setDirty(true);
     }
 
-    return moduleDocuments.find((entry) => entry.path === nextRecord.path) || null;
+    return moduleDocuments.find((entry) => getDocumentIdentityKey(entry) === identityKey) || null;
   }
 
   function isDocumentNameTaken(moduleId, name, excludePath = null) {
@@ -594,9 +614,10 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const document = module.createDefaultDocument({ name: resolvedName });
     const virtualPath = currentProject.rootPath
       ? joinPaths(currentProject.rootPath, getModuleFolder(moduleId), module.getFileName(document))
-      : `${APP_CONFIG.project.unsavedDocumentPathPrefix}${moduleId}/${++unsavedCounter}.yaml`;
+      : `${APP_CONFIG.project.unsavedDocumentPathPrefix}${moduleId}/${++unsavedCounter}${APP_CONFIG.project.fileExtensions.default}`;
 
     const record = { moduleId, path: virtualPath, document };
+    ensureDocumentId(record);
     currentProject.documents[moduleId].push(record);
     currentProject.documents[moduleId].sort((a, b) => getDocumentName(a).localeCompare(getDocumentName(b)));
 
@@ -605,12 +626,12 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return record;
   }
 
-  async function renameDocument(targetPath, nextName) {
+  async function renameDocument(targetIdentity, nextName) {
     if (!currentProject) {
       return null;
     }
 
-    const record = getDocumentByPath(targetPath);
+    const record = getDocumentById(targetIdentity) || getDocumentByPath(targetIdentity);
 
     if (!record) {
       return null;
@@ -622,7 +643,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    if (isDocumentNameTaken(record.moduleId, resolvedName, targetPath)) {
+    if (isDocumentNameTaken(record.moduleId, resolvedName, record.path)) {
       logger.warn('project', 'Имя документа уже занято', { moduleId: record.moduleId, name: resolvedName });
       return null;
     }
@@ -698,25 +719,26 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     await documentLoader.saveYaml(stagingPath, documentRecord.document);
   }
 
-  async function deleteDocument(targetPath) {
+  async function deleteDocument(targetIdentity) {
     if (!currentProject) {
       return false;
     }
 
-    const record = getDocumentByPath(targetPath);
+    const record = getDocumentById(targetIdentity) || getDocumentByPath(targetIdentity);
 
     if (!record) {
       return false;
     }
 
-    currentProject.documents[record.moduleId] = currentProject.documents[record.moduleId].filter((entry) => entry.path !== targetPath);
+    const identityKey = getDocumentIdentityKey(record);
+    currentProject.documents[record.moduleId] = currentProject.documents[record.moduleId].filter((entry) => getDocumentIdentityKey(entry) !== identityKey);
 
-    if (currentProject.rootPath && !isUnsavedDocumentPath(targetPath)) {
-      await fileSystem.deleteFile(targetPath);
+    if (currentProject.rootPath && !isUnsavedDocumentPath(record.path)) {
+      await fileSystem.deleteFile(record.path);
     }
 
     setDirty(true);
-    logger.info('project', 'Документ удалён', { path: targetPath });
+    logger.info('project', 'Документ удалён', { path: record.path });
     return true;
   }
 
@@ -738,7 +760,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const recordsByIdentity = new Map();
 
     for (const record of getAllDocuments()) {
-      const identityKey = getDocumentSemanticKey(record);
+      const identityKey = getDocumentIdentityKey(record);
 
       if (!identityKey) {
         continue;
@@ -752,7 +774,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
         continue;
       }
 
-      const identityKey = getDocumentSemanticKey(record);
+      const identityKey = getDocumentIdentityKey(record);
 
       if (!identityKey || !recordsByIdentity.has(identityKey)) {
         continue;
@@ -830,7 +852,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       const stagingPath = joinPaths(stagingRoot, moduleFolder, fileName);
 
       await saveDocumentSnapshot(stagingPath, record);
-      pathMap.set(record.path, finalPath);
+      pathMap.set(getDocumentIdentityKey(record), finalPath);
     }
 
     // stage project.yaml
@@ -911,6 +933,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     getMetaGenDocuments: () => currentProject?.documents?.metagen || [],
     getDocumentsByModule,
     getDocumentByPath,
+    getDocumentById,
     replaceDocumentRecord,
     createDocument,
     renameDocument,

@@ -78,7 +78,15 @@ FILE: config/project-config.js
 export const PROJECT_CONFIG = {
   defaultProjectRelativePath: 'project-examples/demo-feedmill',
   defaultProjectFileName: 'project.yaml',
+  defaultProjectName: 'project',
   allowedProjectFileExtensions: ['.yaml', '.yml'],
+
+  moduleIds: {
+    metagen: 'metagen',
+    metalab: 'metalab',
+    metaview: 'metaview',
+    temporary: 'temporary'
+  },
 
   folders: {
     metagen: 'metagen',
@@ -88,10 +96,24 @@ export const PROJECT_CONFIG = {
   },
 
   fileExtensions: {
-    yaml: ['.yaml', '.yml']
+    yaml: ['.yaml', '.yml'],
+    default: '.yaml'
   },
 
   unsavedDocumentPathPrefix: 'unsaved://',
+  temporaryDocumentPathPrefix: 'temporary://',
+
+  tree: {
+    nodeTypes: {
+      project: 'project',
+      module: 'module',
+      document: 'document'
+    },
+    actionIds: {
+      createComponent: 'create-component',
+      deleteComponent: 'delete-component'
+    }
+  },
 
   projectKinds: {
     root: 'metaplatform.project'
@@ -138,7 +160,16 @@ export const UI_CONFIG = {
     editorGrid: 'metagen-editor-grid',
     editorPanel: 'metagen-editor-panel',
     editorPanelHeader: 'metagen-editor-panel-header',
-    editorTextarea: 'metagen-editor-textarea'
+    editorTextarea: 'metagen-editor-textarea',
+    selected: 'is-selected',
+    inlineRenameInput: 'workbench-inline-rename-input',
+    dialogOverlay: 'meta-dialog-overlay',
+    dialog: 'meta-dialog',
+    dialogTitle: 'meta-dialog-title',
+    dialogInput: 'meta-dialog-input',
+    dialogActions: 'meta-dialog-actions',
+    dialogButton: 'meta-dialog-button',
+    dialogPrimaryButton: 'meta-dialog-button-primary'
   },
 
   panelHeaders: {
@@ -151,7 +182,13 @@ export const UI_CONFIG = {
 
   text: {
     untitled: 'Без имени',
-    dirtyMarker: '●'
+    dirtyMarker: '●',
+    closeAriaPrefix: 'Закрыть',
+    saveChangesTitle: 'Сохранить изменения в текущем проекте?',
+    save: 'Сохранить',
+    discard: 'Не сохранять',
+    cancel: 'Отмена',
+    create: 'Создать'
   }
 };
 
@@ -960,9 +997,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function handleCreateComponentRequest(moduleId) {
     const moduleDefaultNames = {
-      metagen: () => projectManager.getNextMetaGenDefaultName(),
-      metalab: () => 'Новый сценарий',
-      metaview: () => 'Новый экран'
+      [APP_CONFIG.project.moduleIds.metagen]: () => projectManager.getNextMetaGenDefaultName(),
+      [APP_CONFIG.project.moduleIds.metalab]: () => metaLabModule.getDefaultName(),
+      [APP_CONFIG.project.moduleIds.metaview]: () => metaViewModule.getDefaultName()
     };
 
     const getDefaultName = moduleDefaultNames[moduleId] || (() => APP_CONFIG.ui.text.untitled);
@@ -1000,9 +1037,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const openDocuments = await tabs.collectOpenDocumentRecords();
 
     if (project.isUnsaved || forceSaveAs) {
-      const projectStem = String(project.project?.name || 'project').trim() || 'project';
+      const projectStem = String(project.project?.name || APP_CONFIG.project.defaultProjectName).trim() || APP_CONFIG.project.defaultProjectName;
       const suggestedPath = project.projectFilePath
-        || buildProjectFilePath(project.rootPath || '.', `${projectStem}.yaml`);
+        || buildProjectFilePath(project.rootPath || '.', `${projectStem}${APP_CONFIG.project.fileExtensions.default}`);
       const targetProjectFilePath = await fileSystem.saveProjectFileAsDialog(suggestedPath);
 
       if (!targetProjectFilePath) {
@@ -1029,7 +1066,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const decision = await showSaveChangesDialog({
-      title: 'Сохранить изменения в текущем проекте?'
+      title: APP_CONFIG.ui.text.saveChangesTitle
     });
 
     if (decision === 'cancel') {
@@ -1427,11 +1464,13 @@ FILE: renderer/core/projectManager.js
 import { APP_CONFIG } from '../../config/app-config.js';
 import { createDocumentLoader } from '../runtime/documentLoader.js';
 import {
+  createDocumentGuid,
   getDocumentName,
   normalizeDocumentName,
   setDocumentName,
-  getDocumentSemanticKey,
-  isUnsavedDocumentPath
+  isUnsavedDocumentPath,
+  ensureDocumentId,
+  getDocumentIdentityKey
 } from '../runtime/documentRecordIdentity.js';
 import { areDocumentSnapshotsSemanticallyEqual } from '../runtime/documentSnapshot.js';
 
@@ -1449,9 +1488,9 @@ function buildProjectFilePath(projectRoot, projectFileName = APP_CONFIG.project.
 
 function getDefaultProjectModuleDirectories(projectRoot) {
   return {
-    metagen: joinPaths(projectRoot, APP_CONFIG.project.folders.metagen),
-    metalab: joinPaths(projectRoot, APP_CONFIG.project.folders.metalab),
-    metaview: joinPaths(projectRoot, APP_CONFIG.project.folders.metaview)
+    metagen: joinPaths(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metagen]),
+    metalab: joinPaths(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metalab]),
+    metaview: joinPaths(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metaview])
   };
 }
 
@@ -1535,9 +1574,9 @@ function stripFileExtension(fileName) {
 
 function getModuleFolder(moduleId) {
   const folderMap = {
-    metagen: APP_CONFIG.project.folders.metagen,
-    metalab: APP_CONFIG.project.folders.metalab,
-    metaview: APP_CONFIG.project.folders.metaview
+    [APP_CONFIG.project.moduleIds.metagen]: APP_CONFIG.project.folders.metagen,
+    [APP_CONFIG.project.moduleIds.metalab]: APP_CONFIG.project.folders.metalab,
+    [APP_CONFIG.project.moduleIds.metaview]: APP_CONFIG.project.folders.metaview
   };
 
   return folderMap[moduleId] || null;
@@ -1562,7 +1601,7 @@ function createDefaultProjectRaw() {
     kind: APP_CONFIG.project.projectKinds.root,
     version: 1,
     project: {
-      id: `project_${Date.now()}`,
+      id: createDocumentGuid(),
       name: 'Новый проект',
       description: ''
     },
@@ -1639,7 +1678,9 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
           continue;
         }
 
-        output.push({ moduleId, path: filePath, document: loaded.data });
+        const record = { moduleId, path: filePath, document: loaded.data };
+        ensureDocumentId(record);
+        output.push(record);
       } catch (error) {
         logger.warn('project', 'Ошибка чтения документа, файл пропущен', {
           path: filePath,
@@ -1826,6 +1867,12 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       raw.project.name = getProjectDisplayNameFromFilePath(resolvedProjectFilePath);
     }
 
+    for (const moduleId of Object.keys(documents || {})) {
+      for (const record of documents[moduleId] || []) {
+        ensureDocumentId(record);
+      }
+    }
+
     return {
       rootPath: normalizedRootPath,
       projectFilePath: resolvedProjectFilePath,
@@ -1920,6 +1967,16 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return getAllDocuments().find((entry) => entry.path === targetPath) || null;
   }
 
+  function getDocumentById(targetId) {
+    const normalizedId = String(targetId || '').trim();
+
+    if (!normalizedId) {
+      return null;
+    }
+
+    return getAllDocuments().find((entry) => ensureDocumentId(entry) === normalizedId) || null;
+  }
+
   function replaceDocumentRecord(nextRecord) {
     if (!currentProject) {
       return null;
@@ -1935,8 +1992,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    let index = moduleDocuments.findIndex((entry) => entry.path === nextRecord.path);
-
+    const identityKey = getDocumentIdentityKey(nextRecord);
+    const index = moduleDocuments.findIndex((entry) => getDocumentIdentityKey(entry) === identityKey);
 
     if (index < 0) {
       return null;
@@ -1950,7 +2007,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       setDirty(true);
     }
 
-    return moduleDocuments.find((entry) => entry.path === nextRecord.path) || null;
+    return moduleDocuments.find((entry) => getDocumentIdentityKey(entry) === identityKey) || null;
   }
 
   function isDocumentNameTaken(moduleId, name, excludePath = null) {
@@ -2020,9 +2077,10 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const document = module.createDefaultDocument({ name: resolvedName });
     const virtualPath = currentProject.rootPath
       ? joinPaths(currentProject.rootPath, getModuleFolder(moduleId), module.getFileName(document))
-      : `${APP_CONFIG.project.unsavedDocumentPathPrefix}${moduleId}/${++unsavedCounter}.yaml`;
+      : `${APP_CONFIG.project.unsavedDocumentPathPrefix}${moduleId}/${++unsavedCounter}${APP_CONFIG.project.fileExtensions.default}`;
 
     const record = { moduleId, path: virtualPath, document };
+    ensureDocumentId(record);
     currentProject.documents[moduleId].push(record);
     currentProject.documents[moduleId].sort((a, b) => getDocumentName(a).localeCompare(getDocumentName(b)));
 
@@ -2031,12 +2089,12 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return record;
   }
 
-  async function renameDocument(targetPath, nextName) {
+  async function renameDocument(targetIdentity, nextName) {
     if (!currentProject) {
       return null;
     }
 
-    const record = getDocumentByPath(targetPath);
+    const record = getDocumentById(targetIdentity) || getDocumentByPath(targetIdentity);
 
     if (!record) {
       return null;
@@ -2048,7 +2106,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    if (isDocumentNameTaken(record.moduleId, resolvedName, targetPath)) {
+    if (isDocumentNameTaken(record.moduleId, resolvedName, record.path)) {
       logger.warn('project', 'Имя документа уже занято', { moduleId: record.moduleId, name: resolvedName });
       return null;
     }
@@ -2124,25 +2182,26 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     await documentLoader.saveYaml(stagingPath, documentRecord.document);
   }
 
-  async function deleteDocument(targetPath) {
+  async function deleteDocument(targetIdentity) {
     if (!currentProject) {
       return false;
     }
 
-    const record = getDocumentByPath(targetPath);
+    const record = getDocumentById(targetIdentity) || getDocumentByPath(targetIdentity);
 
     if (!record) {
       return false;
     }
 
-    currentProject.documents[record.moduleId] = currentProject.documents[record.moduleId].filter((entry) => entry.path !== targetPath);
+    const identityKey = getDocumentIdentityKey(record);
+    currentProject.documents[record.moduleId] = currentProject.documents[record.moduleId].filter((entry) => getDocumentIdentityKey(entry) !== identityKey);
 
-    if (currentProject.rootPath && !isUnsavedDocumentPath(targetPath)) {
-      await fileSystem.deleteFile(targetPath);
+    if (currentProject.rootPath && !isUnsavedDocumentPath(record.path)) {
+      await fileSystem.deleteFile(record.path);
     }
 
     setDirty(true);
-    logger.info('project', 'Документ удалён', { path: targetPath });
+    logger.info('project', 'Документ удалён', { path: record.path });
     return true;
   }
 
@@ -2164,7 +2223,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const recordsByIdentity = new Map();
 
     for (const record of getAllDocuments()) {
-      const identityKey = getDocumentSemanticKey(record);
+      const identityKey = getDocumentIdentityKey(record);
 
       if (!identityKey) {
         continue;
@@ -2178,7 +2237,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
         continue;
       }
 
-      const identityKey = getDocumentSemanticKey(record);
+      const identityKey = getDocumentIdentityKey(record);
 
       if (!identityKey || !recordsByIdentity.has(identityKey)) {
         continue;
@@ -2256,7 +2315,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       const stagingPath = joinPaths(stagingRoot, moduleFolder, fileName);
 
       await saveDocumentSnapshot(stagingPath, record);
-      pathMap.set(record.path, finalPath);
+      pathMap.set(getDocumentIdentityKey(record), finalPath);
     }
 
     // stage project.yaml
@@ -2337,6 +2396,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     getMetaGenDocuments: () => currentProject?.documents?.metagen || [],
     getDocumentsByModule,
     getDocumentByPath,
+    getDocumentById,
     replaceDocumentRecord,
     createDocument,
     renameDocument,
@@ -3031,14 +3091,12 @@ export const METAGEN_CONFIG = {
 FILE: renderer/modules/metagen/metagenDocumentFactory.js
 ==================================================
 
-import { slugifyDocumentName } from '../../runtime/naming.js';
-import { createTransientEntityId } from '../../runtime/idFactory.js';
+import { createDocumentGuid } from '../../runtime/documentRecordIdentity.js';
 import { METAGEN_CONFIG } from './metagenConfig.js';
 
 export function createMetaGenDocument({ name }) {
   const safeName = String(name || METAGEN_CONFIG.defaults.newDocumentName).trim();
-  const baseId = slugifyDocumentName(safeName) || 'new_component';
-  const safeId = createTransientEntityId(baseId, 'new_component');
+  const safeId = createDocumentGuid();
 
   return {
     kind: METAGEN_CONFIG.documentKind,
@@ -3102,6 +3160,7 @@ export function createMetaGenGeneratorBridge() {
 FILE: renderer/modules/metagen/metagenModule.js
 ==================================================
 
+import { APP_CONFIG } from '../../../config/app-config.js';
 import { createMetaGenDocument } from './metagenDocumentFactory.js';
 import { validateMetaGenDocument } from './metagenSchema.js';
 import { createMetaGenEditor } from '../../editors/metagen/createMetaGenEditor.js';
@@ -3114,12 +3173,16 @@ export function createMetaGenModule({ logger }) {
     name: METAGEN_CONFIG.moduleName,
     documentKinds: [METAGEN_CONFIG.documentKind],
 
+    getDefaultName() {
+      return METAGEN_CONFIG.defaults.newDocumentName;
+    },
+
     createDefaultDocument({ name }) {
       return createMetaGenDocument({ name });
     },
 
     getFileName(document) {
-      return `${slugifyDocumentName(document?.component?.name || 'new_component')}.yaml`;
+      return `${slugifyDocumentName(document?.component?.name || METAGEN_CONFIG.defaults.newDocumentName)}${APP_CONFIG.project.fileExtensions.default}`;
     },
 
     validate(document) {
@@ -4349,26 +4412,29 @@ export const METALAB_CONFIG = {
     createScenario: 'METALAB_CREATE_SCENARIO',
     runScenario: 'METALAB_RUN_SCENARIO',
     stopScenario: 'METALAB_STOP_SCENARIO'
+  },
+
+  defaults: {
+    newDocumentName: 'Новый сценарий'
   }
 };
+
 
 ==================================================
 FILE: renderer/modules/metalab/metalabDocumentFactory.js
 ==================================================
 
 import { METALAB_CONFIG } from './metalabConfig.js';
-import { slugifyDocumentName } from '../../runtime/naming.js';
-import { createTransientEntityId } from '../../runtime/idFactory.js';
+import { createDocumentGuid } from '../../runtime/documentRecordIdentity.js';
 
-export function createMetaLabDocument({ name = 'Новый сценарий' } = {}) {
-  const safeName = String(name || 'Новый сценарий').trim();
-  const baseId = slugifyDocumentName(safeName) || 'new_scenario';
+export function createMetaLabDocument({ name = METALAB_CONFIG.defaults.newDocumentName } = {}) {
+  const safeName = String(name || METALAB_CONFIG.defaults.newDocumentName).trim();
 
   return {
     kind: METALAB_CONFIG.documentKind,
     version: 1,
     scenario: {
-      id: createTransientEntityId(baseId, 'new_scenario'),
+      id: createDocumentGuid(),
       name: safeName
     }
   };
@@ -4379,6 +4445,7 @@ export function createMetaLabDocument({ name = 'Новый сценарий' } =
 FILE: renderer/modules/metalab/metalabModule.js
 ==================================================
 
+import { APP_CONFIG } from '../../../config/app-config.js';
 import { METALAB_CONFIG } from './metalabConfig.js';
 import { createMetaLabDocument } from './metalabDocumentFactory.js';
 import { createMetaLabEditor } from '../../editors/metalab/createMetaLabEditor.js';
@@ -4390,12 +4457,16 @@ export function createMetaLabModule() {
     name: METALAB_CONFIG.moduleName,
     documentKinds: [METALAB_CONFIG.documentKind],
 
+    getDefaultName() {
+      return METALAB_CONFIG.defaults.newDocumentName;
+    },
+
     createDefaultDocument({ name }) {
       return createMetaLabDocument({ name });
     },
 
     getFileName(document) {
-      return `${slugifyDocumentName(document?.scenario?.name || 'new_scenario')}.yaml`;
+      return `${slugifyDocumentName(document?.scenario?.name || METALAB_CONFIG.defaults.newDocumentName)}${APP_CONFIG.project.fileExtensions.default}`;
     },
 
     async openDocument({ documentRecord, mountElement }) {
@@ -4430,26 +4501,29 @@ export const METAVIEW_CONFIG = {
 
   commands: {
     createScreen: 'METAVIEW_CREATE_SCREEN'
+  },
+
+  defaults: {
+    newDocumentName: 'Новый экран'
   }
 };
+
 
 ==================================================
 FILE: renderer/modules/metaview/metaviewDocumentFactory.js
 ==================================================
 
 import { METAVIEW_CONFIG } from './metaviewConfig.js';
-import { slugifyDocumentName } from '../../runtime/naming.js';
-import { createTransientEntityId } from '../../runtime/idFactory.js';
+import { createDocumentGuid } from '../../runtime/documentRecordIdentity.js';
 
-export function createMetaViewDocument({ name = 'Новый экран' } = {}) {
-  const safeName = String(name || 'Новый экран').trim();
-  const baseId = slugifyDocumentName(safeName) || 'new_screen';
+export function createMetaViewDocument({ name = METAVIEW_CONFIG.defaults.newDocumentName } = {}) {
+  const safeName = String(name || METAVIEW_CONFIG.defaults.newDocumentName).trim();
 
   return {
     kind: METAVIEW_CONFIG.documentKind,
     version: 1,
     screen: {
-      id: createTransientEntityId(baseId, 'new_screen'),
+      id: createDocumentGuid(),
       name: safeName
     }
   };
@@ -4460,6 +4534,7 @@ export function createMetaViewDocument({ name = 'Новый экран' } = {}) 
 FILE: renderer/modules/metaview/metaviewModule.js
 ==================================================
 
+import { APP_CONFIG } from '../../../config/app-config.js';
 import { METAVIEW_CONFIG } from './metaviewConfig.js';
 import { createMetaViewDocument } from './metaviewDocumentFactory.js';
 import { createMetaViewEditor } from '../../editors/metaview/createMetaViewEditor.js';
@@ -4471,12 +4546,16 @@ export function createMetaViewModule() {
     name: METAVIEW_CONFIG.moduleName,
     documentKinds: [METAVIEW_CONFIG.documentKind],
 
+    getDefaultName() {
+      return METAVIEW_CONFIG.defaults.newDocumentName;
+    },
+
     createDefaultDocument({ name }) {
       return createMetaViewDocument({ name });
     },
 
     getFileName(document) {
-      return `${slugifyDocumentName(document?.screen?.name || 'new_screen')}.yaml`;
+      return `${slugifyDocumentName(document?.screen?.name || METAVIEW_CONFIG.defaults.newDocumentName)}${APP_CONFIG.project.fileExtensions.default}`;
     },
 
     async openDocument({ documentRecord, mountElement }) {
@@ -4515,7 +4594,24 @@ FILE: renderer/runtime/documentRecordIdentity.js
 ==================================================
 
 import { APP_CONFIG } from '../../config/app-config.js';
-import { slugifyDocumentName } from './naming.js';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function fallbackUuidV4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (token) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = token === 'x' ? random : ((random & 0x3) | 0x8);
+    return value.toString(16);
+  });
+}
+
+export function createDocumentGuid() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return fallbackUuidV4();
+}
 
 export function normalizeDocumentName(name) {
   return String(name ?? '').trim();
@@ -4531,41 +4627,69 @@ export function getDocumentName(documentRecord) {
   );
 }
 
+function getDocumentIdentityContainer(documentRecord) {
+  if (documentRecord?.document?.component) {
+    return documentRecord.document.component;
+  }
+
+  if (documentRecord?.document?.scenario) {
+    return documentRecord.document.scenario;
+  }
+
+  if (documentRecord?.document?.screen) {
+    return documentRecord.document.screen;
+  }
+
+  return documentRecord?.document || null;
+}
+
+export function getDocumentId(documentRecord) {
+  const value = getDocumentIdentityContainer(documentRecord)?.id;
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+export function isValidDocumentGuid(value) {
+  return UUID_REGEX.test(String(value || '').trim());
+}
+
+export function ensureDocumentId(documentRecord, { force = false } = {}) {
+  const container = getDocumentIdentityContainer(documentRecord);
+
+  if (!container) {
+    return '';
+  }
+
+  const currentId = getDocumentId(documentRecord);
+
+  if (!force && isValidDocumentGuid(currentId)) {
+    return currentId;
+  }
+
+  const nextId = createDocumentGuid();
+  container.id = nextId;
+  return nextId;
+}
+
+export function getDocumentIdentityKey(documentRecord) {
+  const documentId = ensureDocumentId(documentRecord);
+  return documentId ? `document:${documentId}` : '';
+}
+
 export function setDocumentName(documentRecord, nextName) {
   const value = normalizeDocumentName(nextName);
-  const slug = slugifyDocumentName(value);
 
   if (documentRecord?.document?.component) {
     documentRecord.document.component.name = value;
-
-    if ('id' in documentRecord.document.component) {
-      documentRecord.document.component.id = slug || 'new_component';
-    }
-
-    if (documentRecord.document?.generation?.output) {
-      documentRecord.document.generation.output.fileName = `${slug || 'new_component'}.st`;
-    }
-
     return value;
   }
 
   if (documentRecord?.document?.scenario) {
     documentRecord.document.scenario.name = value;
-
-    if ('id' in documentRecord.document.scenario) {
-      documentRecord.document.scenario.id = slug || 'new_scenario';
-    }
-
     return value;
   }
 
   if (documentRecord?.document?.screen) {
     documentRecord.document.screen.name = value;
-
-    if ('id' in documentRecord.document.screen) {
-      documentRecord.document.screen.id = slug || 'new_screen';
-    }
-
     return value;
   }
 
@@ -4582,17 +4706,6 @@ export function getDocumentLabel(documentRecord) {
 
 export function isUnsavedDocumentPath(targetPath) {
   return String(targetPath || '').startsWith(APP_CONFIG.project.unsavedDocumentPathPrefix);
-}
-
-export function getDocumentSemanticKey(documentRecord) {
-  const moduleId = String(documentRecord?.moduleId || '').trim();
-  const documentName = getDocumentName(documentRecord);
-
-  if (!moduleId || !documentName) {
-    return '';
-  }
-
-  return `${moduleId}::${documentName}`;
 }
 
 
@@ -5417,12 +5530,12 @@ export function createProjectTree({
     {
       moduleId: METALAB_CONFIG.moduleId,
       moduleName: METALAB_CONFIG.moduleName,
-      getDefaultName: () => 'Новый сценарий'
+      getDefaultName: () => METALAB_CONFIG.defaults.newDocumentName
     },
     {
       moduleId: METAVIEW_CONFIG.moduleId,
       moduleName: METAVIEW_CONFIG.moduleName,
-      getDefaultName: () => 'Новый экран'
+      getDefaultName: () => METAVIEW_CONFIG.defaults.newDocumentName
     }
   ];
 
@@ -5467,7 +5580,7 @@ export function createProjectTree({
     }),
     onDeleteComponentRequest: onDeleteComponentRequest || (async (documentRecord) => {
       tabs.closeTab(documentRecord.path);
-      await projectManager.deleteDocument(documentRecord.path);
+      await projectManager.deleteDocument(documentRecord);
     })
   });
 
@@ -5521,7 +5634,7 @@ export function createProjectTree({
     }
 
     if (treeSelectionState.selectedNodeId === nodeData.id) {
-      row.classList.add('is-selected');
+      row.classList.add(TREE_CLASSNAMES.selected);
     }
 
     return row;
@@ -5591,19 +5704,10 @@ FILE: renderer/ui/projectTree/treeAdapter.js
 ==================================================
 
 import { APP_CONFIG } from '../../../config/app-config.js';
-import { getDocumentLabel } from '../../runtime/documentRecordIdentity.js';
+import { getDocumentLabel, getDocumentIdentityKey } from '../../runtime/documentRecordIdentity.js';
 
-export const TREE_NODE_TYPES = {
-  project: 'project',
-  module: 'module',
-  document: 'document'
-};
-
-
-export const TREE_ACTION_IDS = {
-  createComponent: 'create-component',
-  deleteComponent: 'delete-component'
-};
+export const TREE_NODE_TYPES = APP_CONFIG.project.tree.nodeTypes;
+export const TREE_ACTION_IDS = APP_CONFIG.project.tree.actionIds;
 
 export function createTreeBehaviorConfig() {
   return {
@@ -5633,7 +5737,7 @@ export function buildProjectTreeNodes({ project, moduleSections, getDocumentsByM
       sectionConfig,
       children: getDocumentsByModule(sectionConfig.moduleId).map((documentRecord) => ({
         nodeType: TREE_NODE_TYPES.document,
-        id: `document:${documentRecord.path}`,
+        id: getDocumentIdentityKey(documentRecord),
         label: getDocumentLabel(documentRecord),
         moduleId: sectionConfig.moduleId,
         path: documentRecord.path,
@@ -5645,35 +5749,17 @@ export function buildProjectTreeNodes({ project, moduleSections, getDocumentsByM
 
 export function getNodeActions(nodeData) {
   if (nodeData?.nodeType === TREE_NODE_TYPES.module) {
-    return [
-      {
-        id: TREE_ACTION_IDS.createComponent,
-        title: 'Добавить компонент',
-        icon: '+',
-        visible: true
-      }
-    ];
+    return [{ id: TREE_ACTION_IDS.createComponent, title: 'Добавить компонент', icon: '+', visible: true }];
   }
 
   if (nodeData?.nodeType === TREE_NODE_TYPES.document) {
-    return [
-      {
-        id: TREE_ACTION_IDS.deleteComponent,
-        title: 'Удалить компонент',
-        icon: '🗑',
-        visible: true
-      }
-    ];
+    return [{ id: TREE_ACTION_IDS.deleteComponent, title: 'Удалить компонент', icon: '🗑', visible: true }];
   }
 
   return [];
 }
 
-export function createTreeInteractionController({
-  tabs,
-  onCreateComponentRequest,
-  onDeleteComponentRequest
-}) {
+export function createTreeInteractionController({ tabs, onCreateComponentRequest, onDeleteComponentRequest }) {
   async function onNodePrimaryClick(nodeData) {
     if (nodeData?.nodeType !== TREE_NODE_TYPES.document) {
       return { handled: false, reason: 'non-document-node' };
@@ -5691,21 +5777,18 @@ export function createTreeInteractionController({
 
     if (actionId === TREE_ACTION_IDS.createComponent && nodeData?.nodeType === TREE_NODE_TYPES.module) {
       await onCreateComponentRequest?.(nodeData.moduleId, nodeData);
-      return { handled: true, reason: 'create-component' };
+      return { handled: true, reason: TREE_ACTION_IDS.createComponent };
     }
 
     if (actionId === TREE_ACTION_IDS.deleteComponent && nodeData?.nodeType === TREE_NODE_TYPES.document) {
       await onDeleteComponentRequest?.(nodeData.documentRecord, nodeData);
-      return { handled: true, reason: 'delete-component' };
+      return { handled: true, reason: TREE_ACTION_IDS.deleteComponent };
     }
 
     return { handled: false, reason: 'unsupported-action' };
   }
 
-  return {
-    onNodePrimaryClick,
-    onNodeActionClick
-  };
+  return { onNodePrimaryClick, onNodeActionClick };
 }
 
 
@@ -5716,7 +5799,7 @@ FILE: renderer/ui/createWorkbenchTabs.js
 import { APP_CONFIG } from '../../config/app-config.js';
 import { finalizeEditingBeforeTabSwitch } from './tabEditLifecycle.js';
 import { finalizeEditingBeforeContextTransition } from './editorContextLifecycle.js';
-import { getDocumentLabel } from '../runtime/documentRecordIdentity.js';
+import { getDocumentLabel, getDocumentIdentityKey } from '../runtime/documentRecordIdentity.js';
 
 function createElement(tagName, classNames = []) {
   const node = document.createElement(tagName);
@@ -5739,7 +5822,7 @@ function buildCloseButtonNode(label) {
   closeButtonNode.type = 'button';
   closeButtonNode.textContent = '×';
   closeButtonNode.tabIndex = -1;
-  closeButtonNode.setAttribute('aria-label', `Закрыть ${label}`);
+  closeButtonNode.setAttribute('aria-label', `${APP_CONFIG.ui.text.closeAriaPrefix} ${label}`);
   return closeButtonNode;
 }
 
@@ -5818,14 +5901,25 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   }
 
   async function closeTab(tabId, options = {}) {
-    const entry = tabs.get(tabId);
+    let resolvedTabId = tabId;
+    let entry = tabs.get(resolvedTabId);
+
+    if (!entry) {
+      for (const [candidateTabId, candidateEntry] of tabs.entries()) {
+        if (candidateEntry.documentRecord?.path === tabId || candidateEntry.documentRecord === tabId) {
+          resolvedTabId = candidateTabId;
+          entry = candidateEntry;
+          break;
+        }
+      }
+    }
 
     if (!entry) {
       return;
     }
 
     const orderedEntries = Array.from(tabs.values());
-    const index = orderedEntries.findIndex((tabEntry) => tabEntry.tabId === tabId);
+    const index = orderedEntries.findIndex((tabEntry) => tabEntry.tabId === resolvedTabId);
 
     await finalizeEditingBeforeContextTransition({
       activeEntry: entry,
@@ -5840,7 +5934,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
         await syncEntryDocumentRecordToProject(entry);
       } catch (error) {
         logger.error('tabs', 'Ошибка синхронизации snapshot перед закрытием вкладки', {
-          tabId,
+          tabId: resolvedTabId,
           message: error?.message || String(error)
         });
       }
@@ -5849,9 +5943,9 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     entry.runtime?.dispose?.();
     entry.pageNode.remove();
     entry.tabNode.remove();
-    tabs.delete(tabId);
+    tabs.delete(resolvedTabId);
 
-    if (activeTabId === tabId) {
+    if (activeTabId === resolvedTabId) {
       activeTabId = null;
     }
 
@@ -5887,7 +5981,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       pageNode,
       runtime: null,
       documentRecord: {
-        moduleId: 'temporary',
+        moduleId: APP_CONFIG.project.moduleIds.temporary,
         path: tabId,
         document: { name: initialTitle || APP_CONFIG.ui.text.untitled }
       },
@@ -5905,7 +5999,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   }
 
   async function startTemporaryDocumentCreation({ moduleId, defaultName = '', onCommit }) {
-    const tabId = `temporary://${moduleId}/${++temporaryCounter}`;
+    const tabId = `${APP_CONFIG.project.temporaryDocumentPathPrefix}${moduleId}/${++temporaryCounter}`;
     const entry = createTemporaryTabEntry({ tabId, initialTitle: defaultName || APP_CONFIG.ui.text.untitled });
 
     const titleNode = entry.tabNode.querySelector(`.${APP_CONFIG.ui.classNames.tabTitle}`);
@@ -5914,7 +6008,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       return null;
     }
 
-    const input = createElement('input', ['workbench-inline-rename-input']);
+    const input = createElement('input', [APP_CONFIG.ui.classNames.inlineRenameInput]);
     input.type = 'text';
     input.value = defaultName;
     titleNode.replaceWith(input);
@@ -6013,7 +6107,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     titleNode.dataset.renaming = '1';
 
     const previousName = getDocumentLabel(entry.documentRecord);
-    const input = createElement('input', ['workbench-inline-rename-input']);
+    const input = createElement('input', [APP_CONFIG.ui.classNames.inlineRenameInput]);
     input.type = 'text';
     input.value = previousName;
 
@@ -6036,25 +6130,17 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
         if (!nextName) {
           logger.warn('tabs', 'Пустое имя отклонено');
         } else {
-          const renamed = await projectManager.renameDocument(tabId, nextName);
+          const renamed = await projectManager.renameDocument(getDocumentIdentityKey(entry.documentRecord), nextName);
 
           if (!renamed) {
             logger.warn('tabs', 'Переименование отклонено', { name: nextName });
           } else {
             if (renamed.nextPath !== renamed.previousPath) {
-              tabs.delete(renamed.previousPath);
-              entry.tabId = renamed.nextPath;
               entry.documentRecord.path = renamed.nextPath;
-              tabs.set(renamed.nextPath, entry);
-
-              if (activeTabId === renamed.previousPath) {
-                activeTabId = renamed.nextPath;
-              }
-
-              entry.pageNode.dataset.tabId = renamed.nextPath;
-              updatedTabId = renamed.nextPath;
             }
 
+            updatedTabId = entry.tabId;
+            entry.pageNode.dataset.tabId = entry.tabId;
             updateTabTitle(entry);
           }
         }
@@ -6097,13 +6183,19 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
 
 
   function findTabByDocument(documentRecord) {
-    const tabId = documentRecord?.path;
+    const identityKey = getDocumentIdentityKey(documentRecord);
 
-    if (!tabId || !tabs.has(tabId)) {
+    if (!identityKey) {
       return null;
     }
 
-    return tabs.get(tabId);
+    for (const entry of tabs.values()) {
+      if (getDocumentIdentityKey(entry.documentRecord) === identityKey) {
+        return entry;
+      }
+    }
+
+    return null;
   }
 
   async function openOrActivateDocument(documentRecord, options = {}) {
@@ -6118,14 +6210,15 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   }
 
   async function openDocument(documentRecord, { startRenameMode = false } = {}) {
-    const tabId = documentRecord.path;
+    const tabId = getDocumentIdentityKey(documentRecord) || documentRecord.path;
 
-    if (tabs.has(tabId)) {
-      void activateTab(tabId);
+    const existingEntry = tabs.get(tabId) || findTabByDocument(documentRecord);
+    if (existingEntry) {
+      void activateTab(existingEntry.tabId);
       if (startRenameMode) {
-        await startRename(tabId);
+        await startRename(existingEntry.tabId);
       }
-      return tabs.get(tabId);
+      return existingEntry;
     }
 
     const tabNode = createElement('button', [APP_CONFIG.ui.classNames.tab]);
@@ -6203,21 +6296,14 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       return;
     }
 
-    for (const [previousPath, nextPath] of pathMap.entries()) {
-      if (!tabs.has(previousPath)) {
+    for (const [identityKey, nextPath] of pathMap.entries()) {
+      if (!tabs.has(identityKey)) {
         continue;
       }
 
-      const entry = tabs.get(previousPath);
-      tabs.delete(previousPath);
-      entry.tabId = nextPath;
+      const entry = tabs.get(identityKey);
       entry.documentRecord.path = nextPath;
-      entry.pageNode.dataset.tabId = nextPath;
-      tabs.set(nextPath, entry);
-
-      if (activeTabId === previousPath) {
-        activeTabId = nextPath;
-      }
+      entry.pageNode.dataset.tabId = identityKey;
     }
   }
 
@@ -6242,6 +6328,8 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
 FILE: renderer/ui/dialogs.js
 ==================================================
 
+import { APP_CONFIG } from '../../config/app-config.js';
+
 function createElement(tagName, className = '') {
   const node = document.createElement(tagName);
 
@@ -6252,23 +6340,28 @@ function createElement(tagName, className = '') {
   return node;
 }
 
-export function showTextInputDialog({ title, initialValue = '', confirmText = 'Создать', cancelText = 'Отмена' }) {
+export function showTextInputDialog({
+  title,
+  initialValue = '',
+  confirmText = APP_CONFIG.ui.text.create,
+  cancelText = APP_CONFIG.ui.text.cancel
+}) {
   return new Promise((resolve) => {
-    const overlay = createElement('div', 'meta-dialog-overlay');
-    const modal = createElement('div', 'meta-dialog');
-    const titleNode = createElement('div', 'meta-dialog-title');
+    const overlay = createElement('div', APP_CONFIG.ui.classNames.dialogOverlay);
+    const modal = createElement('div', APP_CONFIG.ui.classNames.dialog);
+    const titleNode = createElement('div', APP_CONFIG.ui.classNames.dialogTitle);
     titleNode.textContent = title;
 
-    const input = createElement('input', 'meta-dialog-input');
+    const input = createElement('input', APP_CONFIG.ui.classNames.dialogInput);
     input.type = 'text';
     input.value = initialValue;
 
-    const actions = createElement('div', 'meta-dialog-actions');
-    const cancelButton = createElement('button', 'meta-dialog-button');
+    const actions = createElement('div', APP_CONFIG.ui.classNames.dialogActions);
+    const cancelButton = createElement('button', APP_CONFIG.ui.classNames.dialogButton);
     cancelButton.type = 'button';
     cancelButton.textContent = cancelText;
 
-    const confirmButton = createElement('button', 'meta-dialog-button meta-dialog-button-primary');
+    const confirmButton = createElement('button', `${APP_CONFIG.ui.classNames.dialogButton} ${APP_CONFIG.ui.classNames.dialogPrimaryButton}`);
     confirmButton.type = 'button';
     confirmButton.textContent = confirmText;
 
@@ -6297,7 +6390,6 @@ export function showTextInputDialog({ title, initialValue = '', confirmText = '�
 
     actions.appendChild(cancelButton);
     actions.appendChild(confirmButton);
-
     modal.appendChild(titleNode);
     modal.appendChild(input);
     modal.appendChild(actions);
@@ -6310,27 +6402,27 @@ export function showTextInputDialog({ title, initialValue = '', confirmText = '�
 }
 
 export function showSaveChangesDialog({
-  title = 'Сохранить изменения в текущем проекте?',
-  saveText = 'Сохранить',
-  discardText = 'Не сохранять',
-  cancelText = 'Отмена'
+  title = APP_CONFIG.ui.text.saveChangesTitle,
+  saveText = APP_CONFIG.ui.text.save,
+  discardText = APP_CONFIG.ui.text.discard,
+  cancelText = APP_CONFIG.ui.text.cancel
 }) {
   return new Promise((resolve) => {
-    const overlay = createElement('div', 'meta-dialog-overlay');
-    const modal = createElement('div', 'meta-dialog');
-    const titleNode = createElement('div', 'meta-dialog-title');
+    const overlay = createElement('div', APP_CONFIG.ui.classNames.dialogOverlay);
+    const modal = createElement('div', APP_CONFIG.ui.classNames.dialog);
+    const titleNode = createElement('div', APP_CONFIG.ui.classNames.dialogTitle);
     titleNode.textContent = title;
 
-    const actions = createElement('div', 'meta-dialog-actions');
-    const cancelButton = createElement('button', 'meta-dialog-button');
+    const actions = createElement('div', APP_CONFIG.ui.classNames.dialogActions);
+    const cancelButton = createElement('button', APP_CONFIG.ui.classNames.dialogButton);
     cancelButton.type = 'button';
     cancelButton.textContent = cancelText;
 
-    const discardButton = createElement('button', 'meta-dialog-button');
+    const discardButton = createElement('button', APP_CONFIG.ui.classNames.dialogButton);
     discardButton.type = 'button';
     discardButton.textContent = discardText;
 
-    const saveButton = createElement('button', 'meta-dialog-button meta-dialog-button-primary');
+    const saveButton = createElement('button', `${APP_CONFIG.ui.classNames.dialogButton} ${APP_CONFIG.ui.classNames.dialogPrimaryButton}`);
     saveButton.type = 'button';
     saveButton.textContent = saveText;
 
@@ -6352,7 +6444,6 @@ export function showSaveChangesDialog({
     actions.appendChild(cancelButton);
     actions.appendChild(discardButton);
     actions.appendChild(saveButton);
-
     modal.appendChild(titleNode);
     modal.appendChild(actions);
     overlay.appendChild(modal);
@@ -7004,6 +7095,7 @@ import { createMetaGenDocument } from '../renderer/modules/metagen/metagenDocume
 import { createMetaLabDocument } from '../renderer/modules/metalab/metalabDocumentFactory.js';
 import { createMetaViewDocument } from '../renderer/modules/metaview/metaviewDocumentFactory.js';
 import { slugifyDocumentName } from '../renderer/runtime/naming.js';
+import { getDocumentIdentityKey } from '../renderer/runtime/documentRecordIdentity.js';
 import { createWorkbenchTabs } from '../renderer/ui/createWorkbenchTabs.js';
 import { APP_CONFIG } from '../config/app-config.js';
 
@@ -7803,7 +7895,7 @@ test('updateTabPaths remaps active tab and document path after save as pathMap',
   await manager.openProject(getProjectFilePath(root));
 
   const record = manager.getDocumentsByModule('metagen')[0];
-  const previousPath = record.path;
+  const documentIdentityKey = getDocumentIdentityKey(record);
   const nextPath = path.join(root, 'metagen', 'pump_remapped.yaml');
 
   const { document } = createFakeDocument();
@@ -7821,12 +7913,12 @@ test('updateTabPaths remaps active tab and document path after save as pathMap',
     });
 
     await tabs.openDocument(record);
-    tabs.updateTabPaths(new Map([[previousPath, nextPath]]));
+    tabs.updateTabPaths(new Map([[documentIdentityKey, nextPath]]));
 
     const active = tabs.getActiveDocumentRecord();
     assert.equal(active.path, nextPath);
 
-    await tabs.closeTab(nextPath);
+    await tabs.closeTab(documentIdentityKey);
     assert.equal(tabs.getActiveDocumentRecord(), null);
   } finally {
     globalThis.document = previousDocument;
@@ -8080,6 +8172,106 @@ test('save-as path remap keeps active tab closable and document renameable', asy
   } finally {
     globalThis.document = previousDocument;
   }
+});
+
+const UUID_LIKE_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+test('new MetaGen document gets GUID id on create', async () => {
+  const manager = createManager();
+  await manager.createNewProject();
+
+  const first = await manager.createDocument('metagen', 'Компонент A');
+  const second = await manager.createDocument('metagen', 'Компонент B');
+
+  assert.match(first.document.component.id, UUID_LIKE_REGEX);
+  assert.match(second.document.component.id, UUID_LIKE_REGEX);
+  assert.notEqual(first.document.component.id, second.document.component.id);
+});
+
+test('new MetaLab and MetaView documents get GUID id on create', async () => {
+  const manager = createManager();
+  await manager.createNewProject();
+
+  const lab = await manager.createDocument('metalab', 'Сценарий A');
+  const view = await manager.createDocument('metaview', 'Экран A');
+
+  assert.match(lab.document.scenario.id, UUID_LIKE_REGEX);
+  assert.match(view.document.screen.id, UUID_LIKE_REGEX);
+});
+
+test('rename does not change document ids and does not change MetaGen generation output fileName', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-rename-id-stable-'));
+  await createFixtureProject(root);
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const metaGenRecord = manager.getDocumentsByModule('metagen')[0];
+  const metaLabRecord = manager.getDocumentsByModule('metalab')[0];
+  const metaViewRecord = manager.getDocumentsByModule('metaview')[0];
+
+  const mgId = metaGenRecord.document.component.id;
+  const mlId = metaLabRecord.document.scenario.id;
+  const mvId = metaViewRecord.document.screen.id;
+  const generationFileName = metaGenRecord.document.generation.output.fileName;
+
+  await manager.renameDocument(mgId, 'Pump Renamed');
+  await manager.renameDocument(mlId, 'Scenario Renamed');
+  await manager.renameDocument(mvId, 'Screen Renamed');
+
+  assert.equal(manager.getDocumentById(mgId).document.component.id, mgId);
+  assert.equal(manager.getDocumentById(mlId).document.scenario.id, mlId);
+  assert.equal(manager.getDocumentById(mvId).document.screen.id, mvId);
+  assert.equal(manager.getDocumentById(mgId).document.generation.output.fileName, generationFileName);
+});
+
+test('save-as remap and reopen preserve document id', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-id-save-as-src-'));
+  const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-id-save-as-dst-'));
+  await createFixtureProject(root);
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const original = manager.getDocumentsByModule('metagen')[0];
+  const originalId = original.document.component.id;
+
+  await manager.saveProjectAs(path.join(targetRoot, 'project.yaml'));
+  await manager.closeProject();
+  await manager.openProject(path.join(targetRoot, 'project.yaml'));
+
+  const reopened = manager.getDocumentsByModule('metagen')[0];
+  assert.equal(reopened.document.component.id, originalId);
+});
+
+test('loading legacy document without id assigns runtime id and persists via save', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-legacy-id-'));
+  await createFixtureProject(root);
+
+  const legacyPath = path.join(root, 'metagen', 'legacy.yaml');
+  const legacy = {
+    kind: 'metagen.component',
+    version: 1,
+    component: { name: 'Legacy', type: 'FB', module: 'Main', description: '' },
+    params: { format: 'header-plus-rows', header: [], rows: [] },
+    data: { format: 'table', columns: [], rows: [] },
+    instances: { format: 'list', rows: [] },
+    code: { format: 'template-text', language: 'st-template', text: '' },
+    generation: { engine: 'structured-text', entrypoint: 'Main', mode: 'component', output: { language: 'st', fileName: 'legacy.st' } },
+    meta: { author: '', importedFrom: '', importedSheet: '' }
+  };
+
+  await fs.writeFile(legacyPath, YAML.stringify(legacy), 'utf-8');
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const legacyRecord = manager.getDocumentsByModule('metagen').find((entry) => entry.path.endsWith('legacy.yaml'));
+  assert.match(legacyRecord.document.component.id, UUID_LIKE_REGEX);
+
+  await manager.saveProject();
+
+  const persisted = YAML.parse(await fs.readFile(legacyPath, 'utf-8'));
+  assert.equal(persisted.component.id, legacyRecord.document.component.id);
 });
 
 
@@ -8692,6 +8884,34 @@ test('unsupported action returns no-op result and does not call handlers', async
   assert.equal(result.reason, 'unsupported-action');
   assert.equal(createCalls, 0);
   assert.equal(deleteCalls, 0);
+});
+
+test('tree document node identity is based on document GUID and remains stable for path changes', () => {
+  const project = {
+    project: { name: 'Demo' },
+    documents: {
+      metagen: [{ moduleId: 'metagen', path: '/tmp/metagen/a.yaml', document: { component: { id: '11111111-1111-4111-8111-111111111111', name: 'A' } } }],
+      metalab: [],
+      metaview: []
+    }
+  };
+
+  const firstNodes = buildProjectTreeNodes({
+    project,
+    moduleSections: createModuleSections(),
+    getDocumentsByModule: (moduleId) => project.documents[moduleId] || []
+  });
+  const firstDocumentNode = firstNodes.find((node) => node.moduleId === 'metagen').children[0];
+
+  project.documents.metagen[0].path = '/tmp/metagen/a-renamed.yaml';
+  const secondNodes = buildProjectTreeNodes({
+    project,
+    moduleSections: createModuleSections(),
+    getDocumentsByModule: (moduleId) => project.documents[moduleId] || []
+  });
+  const secondDocumentNode = secondNodes.find((node) => node.moduleId === 'metagen').children[0];
+
+  assert.equal(firstDocumentNode.id, secondDocumentNode.id);
 });
 
 

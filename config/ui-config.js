@@ -33,7 +33,16 @@ export const UI_CONFIG = {
     editorGrid: 'metagen-editor-grid',
     editorPanel: 'metagen-editor-panel',
     editorPanelHeader: 'metagen-editor-panel-header',
-    editorTextarea: 'metagen-editor-textarea'
+    editorTextarea: 'metagen-editor-textarea',
+    selected: 'is-selected',
+    inlineRenameInput: 'workbench-inline-rename-input',
+    dialogOverlay: 'meta-dialog-overlay',
+    dialog: 'meta-dialog',
+    dialogTitle: 'meta-dialog-title',
+    dialogInput: 'meta-dialog-input',
+    dialogActions: 'meta-dialog-actions',
+    dialogButton: 'meta-dialog-button',
+    dialogPrimaryButton: 'meta-dialog-button-primary'
   },
 
   panelHeaders: {
@@ -46,6 +55,12 @@ export const UI_CONFIG = {
 
   text: {
     untitled: 'Без имени',
-    dirtyMarker: '●'
+    dirtyMarker: '●',
+    closeAriaPrefix: 'Закрыть',
+    saveChangesTitle: 'Сохранить изменения в текущем проекте?',
+    save: 'Сохранить',
+    discard: 'Не сохранять',
+    cancel: 'Отмена',
+    create: 'Создать'
   }
 };

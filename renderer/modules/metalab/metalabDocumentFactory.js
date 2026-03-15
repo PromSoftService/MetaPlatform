@@ -1,16 +1,14 @@
 import { METALAB_CONFIG } from './metalabConfig.js';
-import { slugifyDocumentName } from '../../runtime/naming.js';
-import { createTransientEntityId } from '../../runtime/idFactory.js';
+import { createDocumentGuid } from '../../runtime/documentRecordIdentity.js';
 
-export function createMetaLabDocument({ name = 'Новый сценарий' } = {}) {
-  const safeName = String(name || 'Новый сценарий').trim();
-  const baseId = slugifyDocumentName(safeName) || 'new_scenario';
+export function createMetaLabDocument({ name = METALAB_CONFIG.defaults.newDocumentName } = {}) {
+  const safeName = String(name || METALAB_CONFIG.defaults.newDocumentName).trim();
 
   return {
     kind: METALAB_CONFIG.documentKind,
     version: 1,
     scenario: {
-      id: createTransientEntityId(baseId, 'new_scenario'),
+      id: createDocumentGuid(),
       name: safeName
     }
   };

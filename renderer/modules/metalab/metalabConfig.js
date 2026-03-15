@@ -7,5 +7,9 @@ export const METALAB_CONFIG = {
     createScenario: 'METALAB_CREATE_SCENARIO',
     runScenario: 'METALAB_RUN_SCENARIO',
     stopScenario: 'METALAB_STOP_SCENARIO'
+  },
+
+  defaults: {
+    newDocumentName: 'Новый сценарий'
   }
 };

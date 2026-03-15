@@ -11,6 +11,7 @@ import { createMetaGenDocument } from '../renderer/modules/metagen/metagenDocume
 import { createMetaLabDocument } from '../renderer/modules/metalab/metalabDocumentFactory.js';
 import { createMetaViewDocument } from '../renderer/modules/metaview/metaviewDocumentFactory.js';
 import { slugifyDocumentName } from '../renderer/runtime/naming.js';
+import { getDocumentIdentityKey } from '../renderer/runtime/documentRecordIdentity.js';
 import { createWorkbenchTabs } from '../renderer/ui/createWorkbenchTabs.js';
 import { APP_CONFIG } from '../config/app-config.js';
 
@@ -810,7 +811,7 @@ test('updateTabPaths remaps active tab and document path after save as pathMap',
   await manager.openProject(getProjectFilePath(root));
 
   const record = manager.getDocumentsByModule('metagen')[0];
-  const previousPath = record.path;
+  const documentIdentityKey = getDocumentIdentityKey(record);
   const nextPath = path.join(root, 'metagen', 'pump_remapped.yaml');
 
   const { document } = createFakeDocument();
@@ -828,12 +829,12 @@ test('updateTabPaths remaps active tab and document path after save as pathMap',
     });
 
     await tabs.openDocument(record);
-    tabs.updateTabPaths(new Map([[previousPath, nextPath]]));
+    tabs.updateTabPaths(new Map([[documentIdentityKey, nextPath]]));
 
     const active = tabs.getActiveDocumentRecord();
     assert.equal(active.path, nextPath);
 
-    await tabs.closeTab(nextPath);
+    await tabs.closeTab(documentIdentityKey);
     assert.equal(tabs.getActiveDocumentRecord(), null);
   } finally {
     globalThis.document = previousDocument;
@@ -1087,4 +1088,104 @@ test('save-as path remap keeps active tab closable and document renameable', asy
   } finally {
     globalThis.document = previousDocument;
   }
+});
+
+const UUID_LIKE_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+test('new MetaGen document gets GUID id on create', async () => {
+  const manager = createManager();
+  await manager.createNewProject();
+
+  const first = await manager.createDocument('metagen', 'Компонент A');
+  const second = await manager.createDocument('metagen', 'Компонент B');
+
+  assert.match(first.document.component.id, UUID_LIKE_REGEX);
+  assert.match(second.document.component.id, UUID_LIKE_REGEX);
+  assert.notEqual(first.document.component.id, second.document.component.id);
+});
+
+test('new MetaLab and MetaView documents get GUID id on create', async () => {
+  const manager = createManager();
+  await manager.createNewProject();
+
+  const lab = await manager.createDocument('metalab', 'Сценарий A');
+  const view = await manager.createDocument('metaview', 'Экран A');
+
+  assert.match(lab.document.scenario.id, UUID_LIKE_REGEX);
+  assert.match(view.document.screen.id, UUID_LIKE_REGEX);
+});
+
+test('rename does not change document ids and does not change MetaGen generation output fileName', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-rename-id-stable-'));
+  await createFixtureProject(root);
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const metaGenRecord = manager.getDocumentsByModule('metagen')[0];
+  const metaLabRecord = manager.getDocumentsByModule('metalab')[0];
+  const metaViewRecord = manager.getDocumentsByModule('metaview')[0];
+
+  const mgId = metaGenRecord.document.component.id;
+  const mlId = metaLabRecord.document.scenario.id;
+  const mvId = metaViewRecord.document.screen.id;
+  const generationFileName = metaGenRecord.document.generation.output.fileName;
+
+  await manager.renameDocument(mgId, 'Pump Renamed');
+  await manager.renameDocument(mlId, 'Scenario Renamed');
+  await manager.renameDocument(mvId, 'Screen Renamed');
+
+  assert.equal(manager.getDocumentById(mgId).document.component.id, mgId);
+  assert.equal(manager.getDocumentById(mlId).document.scenario.id, mlId);
+  assert.equal(manager.getDocumentById(mvId).document.screen.id, mvId);
+  assert.equal(manager.getDocumentById(mgId).document.generation.output.fileName, generationFileName);
+});
+
+test('save-as remap and reopen preserve document id', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-id-save-as-src-'));
+  const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-id-save-as-dst-'));
+  await createFixtureProject(root);
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const original = manager.getDocumentsByModule('metagen')[0];
+  const originalId = original.document.component.id;
+
+  await manager.saveProjectAs(path.join(targetRoot, 'project.yaml'));
+  await manager.closeProject();
+  await manager.openProject(path.join(targetRoot, 'project.yaml'));
+
+  const reopened = manager.getDocumentsByModule('metagen')[0];
+  assert.equal(reopened.document.component.id, originalId);
+});
+
+test('loading legacy document without id assigns runtime id and persists via save', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-legacy-id-'));
+  await createFixtureProject(root);
+
+  const legacyPath = path.join(root, 'metagen', 'legacy.yaml');
+  const legacy = {
+    kind: 'metagen.component',
+    version: 1,
+    component: { name: 'Legacy', type: 'FB', module: 'Main', description: '' },
+    params: { format: 'header-plus-rows', header: [], rows: [] },
+    data: { format: 'table', columns: [], rows: [] },
+    instances: { format: 'list', rows: [] },
+    code: { format: 'template-text', language: 'st-template', text: '' },
+    generation: { engine: 'structured-text', entrypoint: 'Main', mode: 'component', output: { language: 'st', fileName: 'legacy.st' } },
+    meta: { author: '', importedFrom: '', importedSheet: '' }
+  };
+
+  await fs.writeFile(legacyPath, YAML.stringify(legacy), 'utf-8');
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const legacyRecord = manager.getDocumentsByModule('metagen').find((entry) => entry.path.endsWith('legacy.yaml'));
+  assert.match(legacyRecord.document.component.id, UUID_LIKE_REGEX);
+
+  await manager.saveProject();
+
+  const persisted = YAML.parse(await fs.readFile(legacyPath, 'utf-8'));
+  assert.equal(persisted.component.id, legacyRecord.document.component.id);
 });

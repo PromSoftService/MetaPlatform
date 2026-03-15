@@ -1,3 +1,5 @@
+import { APP_CONFIG } from '../../config/app-config.js';
+
 function createElement(tagName, className = '') {
   const node = document.createElement(tagName);
 
@@ -8,23 +10,28 @@ function createElement(tagName, className = '') {
   return node;
 }
 
-export function showTextInputDialog({ title, initialValue = '', confirmText = 'Создать', cancelText = 'Отмена' }) {
+export function showTextInputDialog({
+  title,
+  initialValue = '',
+  confirmText = APP_CONFIG.ui.text.create,
+  cancelText = APP_CONFIG.ui.text.cancel
+}) {
   return new Promise((resolve) => {
-    const overlay = createElement('div', 'meta-dialog-overlay');
-    const modal = createElement('div', 'meta-dialog');
-    const titleNode = createElement('div', 'meta-dialog-title');
+    const overlay = createElement('div', APP_CONFIG.ui.classNames.dialogOverlay);
+    const modal = createElement('div', APP_CONFIG.ui.classNames.dialog);
+    const titleNode = createElement('div', APP_CONFIG.ui.classNames.dialogTitle);
     titleNode.textContent = title;
 
-    const input = createElement('input', 'meta-dialog-input');
+    const input = createElement('input', APP_CONFIG.ui.classNames.dialogInput);
     input.type = 'text';
     input.value = initialValue;
 
-    const actions = createElement('div', 'meta-dialog-actions');
-    const cancelButton = createElement('button', 'meta-dialog-button');
+    const actions = createElement('div', APP_CONFIG.ui.classNames.dialogActions);
+    const cancelButton = createElement('button', APP_CONFIG.ui.classNames.dialogButton);
     cancelButton.type = 'button';
     cancelButton.textContent = cancelText;
 
-    const confirmButton = createElement('button', 'meta-dialog-button meta-dialog-button-primary');
+    const confirmButton = createElement('button', `${APP_CONFIG.ui.classNames.dialogButton} ${APP_CONFIG.ui.classNames.dialogPrimaryButton}`);
     confirmButton.type = 'button';
     confirmButton.textContent = confirmText;
 
@@ -53,7 +60,6 @@ export function showTextInputDialog({ title, initialValue = '', confirmText = '�
 
     actions.appendChild(cancelButton);
     actions.appendChild(confirmButton);
-
     modal.appendChild(titleNode);
     modal.appendChild(input);
     modal.appendChild(actions);
@@ -66,27 +72,27 @@ export function showTextInputDialog({ title, initialValue = '', confirmText = '�
 }
 
 export function showSaveChangesDialog({
-  title = 'Сохранить изменения в текущем проекте?',
-  saveText = 'Сохранить',
-  discardText = 'Не сохранять',
-  cancelText = 'Отмена'
+  title = APP_CONFIG.ui.text.saveChangesTitle,
+  saveText = APP_CONFIG.ui.text.save,
+  discardText = APP_CONFIG.ui.text.discard,
+  cancelText = APP_CONFIG.ui.text.cancel
 }) {
   return new Promise((resolve) => {
-    const overlay = createElement('div', 'meta-dialog-overlay');
-    const modal = createElement('div', 'meta-dialog');
-    const titleNode = createElement('div', 'meta-dialog-title');
+    const overlay = createElement('div', APP_CONFIG.ui.classNames.dialogOverlay);
+    const modal = createElement('div', APP_CONFIG.ui.classNames.dialog);
+    const titleNode = createElement('div', APP_CONFIG.ui.classNames.dialogTitle);
     titleNode.textContent = title;
 
-    const actions = createElement('div', 'meta-dialog-actions');
-    const cancelButton = createElement('button', 'meta-dialog-button');
+    const actions = createElement('div', APP_CONFIG.ui.classNames.dialogActions);
+    const cancelButton = createElement('button', APP_CONFIG.ui.classNames.dialogButton);
     cancelButton.type = 'button';
     cancelButton.textContent = cancelText;
 
-    const discardButton = createElement('button', 'meta-dialog-button');
+    const discardButton = createElement('button', APP_CONFIG.ui.classNames.dialogButton);
     discardButton.type = 'button';
     discardButton.textContent = discardText;
 
-    const saveButton = createElement('button', 'meta-dialog-button meta-dialog-button-primary');
+    const saveButton = createElement('button', `${APP_CONFIG.ui.classNames.dialogButton} ${APP_CONFIG.ui.classNames.dialogPrimaryButton}`);
     saveButton.type = 'button';
     saveButton.textContent = saveText;
 
@@ -108,7 +114,6 @@ export function showSaveChangesDialog({
     actions.appendChild(cancelButton);
     actions.appendChild(discardButton);
     actions.appendChild(saveButton);
-
     modal.appendChild(titleNode);
     modal.appendChild(actions);
     overlay.appendChild(modal);

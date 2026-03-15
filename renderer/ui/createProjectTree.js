@@ -51,12 +51,12 @@ export function createProjectTree({
     {
       moduleId: METALAB_CONFIG.moduleId,
       moduleName: METALAB_CONFIG.moduleName,
-      getDefaultName: () => 'Новый сценарий'
+      getDefaultName: () => METALAB_CONFIG.defaults.newDocumentName
     },
     {
       moduleId: METAVIEW_CONFIG.moduleId,
       moduleName: METAVIEW_CONFIG.moduleName,
-      getDefaultName: () => 'Новый экран'
+      getDefaultName: () => METAVIEW_CONFIG.defaults.newDocumentName
     }
   ];
 
@@ -101,7 +101,7 @@ export function createProjectTree({
     }),
     onDeleteComponentRequest: onDeleteComponentRequest || (async (documentRecord) => {
       tabs.closeTab(documentRecord.path);
-      await projectManager.deleteDocument(documentRecord.path);
+      await projectManager.deleteDocument(documentRecord);
     })
   });
 
@@ -155,7 +155,7 @@ export function createProjectTree({
     }
 
     if (treeSelectionState.selectedNodeId === nodeData.id) {
-      row.classList.add('is-selected');
+      row.classList.add(TREE_CLASSNAMES.selected);
     }
 
     return row;

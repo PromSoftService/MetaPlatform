@@ -1,16 +1,14 @@
 import { METAVIEW_CONFIG } from './metaviewConfig.js';
-import { slugifyDocumentName } from '../../runtime/naming.js';
-import { createTransientEntityId } from '../../runtime/idFactory.js';
+import { createDocumentGuid } from '../../runtime/documentRecordIdentity.js';
 
-export function createMetaViewDocument({ name = 'Новый экран' } = {}) {
-  const safeName = String(name || 'Новый экран').trim();
-  const baseId = slugifyDocumentName(safeName) || 'new_screen';
+export function createMetaViewDocument({ name = METAVIEW_CONFIG.defaults.newDocumentName } = {}) {
+  const safeName = String(name || METAVIEW_CONFIG.defaults.newDocumentName).trim();
 
   return {
     kind: METAVIEW_CONFIG.documentKind,
     version: 1,
     screen: {
-      id: createTransientEntityId(baseId, 'new_screen'),
+      id: createDocumentGuid(),
       name: safeName
     }
   };

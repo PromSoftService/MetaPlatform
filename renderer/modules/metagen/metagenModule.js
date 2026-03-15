@@ -1,3 +1,4 @@
+import { APP_CONFIG } from '../../../config/app-config.js';
 import { createMetaGenDocument } from './metagenDocumentFactory.js';
 import { validateMetaGenDocument } from './metagenSchema.js';
 import { createMetaGenEditor } from '../../editors/metagen/createMetaGenEditor.js';
@@ -10,12 +11,16 @@ export function createMetaGenModule({ logger }) {
     name: METAGEN_CONFIG.moduleName,
     documentKinds: [METAGEN_CONFIG.documentKind],
 
+    getDefaultName() {
+      return METAGEN_CONFIG.defaults.newDocumentName;
+    },
+
     createDefaultDocument({ name }) {
       return createMetaGenDocument({ name });
     },
 
     getFileName(document) {
-      return `${slugifyDocumentName(document?.component?.name || 'new_component')}.yaml`;
+      return `${slugifyDocumentName(document?.component?.name || METAGEN_CONFIG.defaults.newDocumentName)}${APP_CONFIG.project.fileExtensions.default}`;
     },
 
     validate(document) {

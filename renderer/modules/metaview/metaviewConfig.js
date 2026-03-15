@@ -5,5 +5,9 @@ export const METAVIEW_CONFIG = {
 
   commands: {
     createScreen: 'METAVIEW_CREATE_SCREEN'
+  },
+
+  defaults: {
+    newDocumentName: 'Новый экран'
   }
 };

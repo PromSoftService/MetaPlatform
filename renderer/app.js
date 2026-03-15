@@ -85,9 +85,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function handleCreateComponentRequest(moduleId) {
     const moduleDefaultNames = {
-      metagen: () => projectManager.getNextMetaGenDefaultName(),
-      metalab: () => 'Новый сценарий',
-      metaview: () => 'Новый экран'
+      [APP_CONFIG.project.moduleIds.metagen]: () => projectManager.getNextMetaGenDefaultName(),
+      [APP_CONFIG.project.moduleIds.metalab]: () => metaLabModule.getDefaultName(),
+      [APP_CONFIG.project.moduleIds.metaview]: () => metaViewModule.getDefaultName()
     };
 
     const getDefaultName = moduleDefaultNames[moduleId] || (() => APP_CONFIG.ui.text.untitled);
@@ -125,9 +125,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const openDocuments = await tabs.collectOpenDocumentRecords();
 
     if (project.isUnsaved || forceSaveAs) {
-      const projectStem = String(project.project?.name || 'project').trim() || 'project';
+      const projectStem = String(project.project?.name || APP_CONFIG.project.defaultProjectName).trim() || APP_CONFIG.project.defaultProjectName;
       const suggestedPath = project.projectFilePath
-        || buildProjectFilePath(project.rootPath || '.', `${projectStem}.yaml`);
+        || buildProjectFilePath(project.rootPath || '.', `${projectStem}${APP_CONFIG.project.fileExtensions.default}`);
       const targetProjectFilePath = await fileSystem.saveProjectFileAsDialog(suggestedPath);
 
       if (!targetProjectFilePath) {
@@ -154,7 +154,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const decision = await showSaveChangesDialog({
-      title: 'Сохранить изменения в текущем проекте?'
+      title: APP_CONFIG.ui.text.saveChangesTitle
     });
 
     if (decision === 'cancel') {

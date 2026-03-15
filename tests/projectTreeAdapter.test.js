@@ -225,3 +225,31 @@ test('unsupported action returns no-op result and does not call handlers', async
   assert.equal(createCalls, 0);
   assert.equal(deleteCalls, 0);
 });
+
+test('tree document node identity is based on document GUID and remains stable for path changes', () => {
+  const project = {
+    project: { name: 'Demo' },
+    documents: {
+      metagen: [{ moduleId: 'metagen', path: '/tmp/metagen/a.yaml', document: { component: { id: '11111111-1111-4111-8111-111111111111', name: 'A' } } }],
+      metalab: [],
+      metaview: []
+    }
+  };
+
+  const firstNodes = buildProjectTreeNodes({
+    project,
+    moduleSections: createModuleSections(),
+    getDocumentsByModule: (moduleId) => project.documents[moduleId] || []
+  });
+  const firstDocumentNode = firstNodes.find((node) => node.moduleId === 'metagen').children[0];
+
+  project.documents.metagen[0].path = '/tmp/metagen/a-renamed.yaml';
+  const secondNodes = buildProjectTreeNodes({
+    project,
+    moduleSections: createModuleSections(),
+    getDocumentsByModule: (moduleId) => project.documents[moduleId] || []
+  });
+  const secondDocumentNode = secondNodes.find((node) => node.moduleId === 'metagen').children[0];
+
+  assert.equal(firstDocumentNode.id, secondDocumentNode.id);
+});

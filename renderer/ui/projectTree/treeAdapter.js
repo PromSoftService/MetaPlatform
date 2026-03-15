@@ -1,17 +1,8 @@
 import { APP_CONFIG } from '../../../config/app-config.js';
-import { getDocumentLabel } from '../../runtime/documentRecordIdentity.js';
+import { getDocumentLabel, getDocumentIdentityKey } from '../../runtime/documentRecordIdentity.js';
 
-export const TREE_NODE_TYPES = {
-  project: 'project',
-  module: 'module',
-  document: 'document'
-};
-
-
-export const TREE_ACTION_IDS = {
-  createComponent: 'create-component',
-  deleteComponent: 'delete-component'
-};
+export const TREE_NODE_TYPES = APP_CONFIG.project.tree.nodeTypes;
+export const TREE_ACTION_IDS = APP_CONFIG.project.tree.actionIds;
 
 export function createTreeBehaviorConfig() {
   return {
@@ -41,7 +32,7 @@ export function buildProjectTreeNodes({ project, moduleSections, getDocumentsByM
       sectionConfig,
       children: getDocumentsByModule(sectionConfig.moduleId).map((documentRecord) => ({
         nodeType: TREE_NODE_TYPES.document,
-        id: `document:${documentRecord.path}`,
+        id: getDocumentIdentityKey(documentRecord),
         label: getDocumentLabel(documentRecord),
         moduleId: sectionConfig.moduleId,
         path: documentRecord.path,
@@ -53,35 +44,17 @@ export function buildProjectTreeNodes({ project, moduleSections, getDocumentsByM
 
 export function getNodeActions(nodeData) {
   if (nodeData?.nodeType === TREE_NODE_TYPES.module) {
-    return [
-      {
-        id: TREE_ACTION_IDS.createComponent,
-        title: 'Добавить компонент',
-        icon: '+',
-        visible: true
-      }
-    ];
+    return [{ id: TREE_ACTION_IDS.createComponent, title: 'Добавить компонент', icon: '+', visible: true }];
   }
 
   if (nodeData?.nodeType === TREE_NODE_TYPES.document) {
-    return [
-      {
-        id: TREE_ACTION_IDS.deleteComponent,
-        title: 'Удалить компонент',
-        icon: '🗑',
-        visible: true
-      }
-    ];
+    return [{ id: TREE_ACTION_IDS.deleteComponent, title: 'Удалить компонент', icon: '🗑', visible: true }];
   }
 
   return [];
 }
 
-export function createTreeInteractionController({
-  tabs,
-  onCreateComponentRequest,
-  onDeleteComponentRequest
-}) {
+export function createTreeInteractionController({ tabs, onCreateComponentRequest, onDeleteComponentRequest }) {
   async function onNodePrimaryClick(nodeData) {
     if (nodeData?.nodeType !== TREE_NODE_TYPES.document) {
       return { handled: false, reason: 'non-document-node' };
@@ -99,19 +72,16 @@ export function createTreeInteractionController({
 
     if (actionId === TREE_ACTION_IDS.createComponent && nodeData?.nodeType === TREE_NODE_TYPES.module) {
       await onCreateComponentRequest?.(nodeData.moduleId, nodeData);
-      return { handled: true, reason: 'create-component' };
+      return { handled: true, reason: TREE_ACTION_IDS.createComponent };
     }
 
     if (actionId === TREE_ACTION_IDS.deleteComponent && nodeData?.nodeType === TREE_NODE_TYPES.document) {
       await onDeleteComponentRequest?.(nodeData.documentRecord, nodeData);
-      return { handled: true, reason: 'delete-component' };
+      return { handled: true, reason: TREE_ACTION_IDS.deleteComponent };
     }
 
     return { handled: false, reason: 'unsupported-action' };
   }
 
-  return {
-    onNodePrimaryClick,
-    onNodeActionClick
-  };
+  return { onNodePrimaryClick, onNodeActionClick };
 }

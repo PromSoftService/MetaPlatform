@@ -1,11 +1,9 @@
-import { slugifyDocumentName } from '../../runtime/naming.js';
-import { createTransientEntityId } from '../../runtime/idFactory.js';
+import { createDocumentGuid } from '../../runtime/documentRecordIdentity.js';
 import { METAGEN_CONFIG } from './metagenConfig.js';
 
 export function createMetaGenDocument({ name }) {
   const safeName = String(name || METAGEN_CONFIG.defaults.newDocumentName).trim();
-  const baseId = slugifyDocumentName(safeName) || 'new_component';
-  const safeId = createTransientEntityId(baseId, 'new_component');
+  const safeId = createDocumentGuid();
 
   return {
     kind: METAGEN_CONFIG.documentKind,
