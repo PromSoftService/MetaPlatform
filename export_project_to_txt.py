@@ -9,7 +9,6 @@ OUTPUT_FILE = ROOT / 'metaplatform_project_dump.txt'
 PROJECT_FILES = [
   '.gitignore',
   'config/app-config.js',
-  'config/ipc-config.json',
   'config/platform-config.js',
   'config/project-config.js',
   'config/ui-config.js',

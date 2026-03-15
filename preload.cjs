@@ -1,5 +1,26 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const IPC = require('./config/ipc-config.json');
+
+const IPC = {
+  channels: {
+    menuAction: 'menu:action',
+    windowCloseRequested: 'window:close-requested'
+  },
+  handlers: {
+    openProjectDialog: 'dialog:open-project',
+    saveProjectAsDialog: 'dialog:save-project-as',
+    appQuit: 'app:quit',
+    windowCloseApproved: 'window:close-approved',
+    windowCloseCancelled: 'window:close-cancelled',
+    fsEnsureDir: 'fs:ensure-dir',
+    fsExists: 'fs:exists',
+    fsReadText: 'fs:read-text',
+    fsWriteText: 'fs:write-text',
+    fsRename: 'fs:rename',
+    fsDeleteFile: 'fs:delete-file',
+    fsDeleteDir: 'fs:delete-dir',
+    fsListFiles: 'fs:list-files'
+  }
+};
 
 contextBridge.exposeInMainWorld('MetaPlatformFS', {
   openProjectFileDialog: () => ipcRenderer.invoke(IPC.handlers.openProjectDialog),
@@ -15,11 +36,13 @@ contextBridge.exposeInMainWorld('MetaPlatformFS', {
   deleteFile: (targetPath) => ipcRenderer.invoke(IPC.handlers.fsDeleteFile, targetPath),
   deleteDir: (targetPath) => ipcRenderer.invoke(IPC.handlers.fsDeleteDir, targetPath),
   listFiles: (targetDir, extensions) => ipcRenderer.invoke(IPC.handlers.fsListFiles, targetDir, extensions),
+
   onWindowCloseRequested: (listener) => {
     const wrapped = () => listener();
     ipcRenderer.on(IPC.channels.windowCloseRequested, wrapped);
     return () => ipcRenderer.off(IPC.channels.windowCloseRequested, wrapped);
   },
+
   onMenuAction: (listener) => {
     const wrapped = (_event, action) => listener(action);
     const menuEventChannel = IPC.channels.menuAction;
