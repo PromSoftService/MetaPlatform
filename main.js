@@ -13,16 +13,16 @@ function createAppMenu(mainWindow) {
 
   const template = [
     {
-      label: 'Файл',
+      label: APP_CONFIG.platform.app.menu.fileLabel,
       submenu: [
-        { label: '🆕 Создать проект', click: () => sendAction('new-project') },
-        { label: '📂 Открыть проект', click: () => sendAction('open-project') },
-        { label: '📁 Закрыть проект', click: () => sendAction('close-project') },
+        { label: '🆕 Создать проект', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.newProject) },
+        { label: '📂 Открыть проект', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.openProject) },
+        { label: '📁 Закрыть проект', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.closeProject) },
         { type: 'separator' },
-        { label: '💾 Сохранить', click: () => sendAction('save') },
-        { label: '📝 Сохранить как', click: () => sendAction('save-as') },
+        { label: '💾 Сохранить', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.save) },
+        { label: '📝 Сохранить как', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.saveAs) },
         { type: 'separator' },
-        { label: '🚪 Выход', click: () => sendAction('exit') }
+        { label: '🚪 Выход', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.exit) }
       ]
     }
   ];

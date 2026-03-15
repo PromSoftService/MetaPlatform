@@ -139,7 +139,7 @@ function createDefaultProjectRaw() {
     version: 1,
     project: {
       id: createDocumentGuid(),
-      name: 'Новый проект',
+      name: APP_CONFIG.project.defaultProjectName,
       description: ''
     },
     modules: ['MetaGen', 'MetaLab', 'MetaView'],
@@ -514,6 +514,42 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return getAllDocuments().find((entry) => ensureDocumentId(entry) === normalizedId) || null;
   }
 
+
+
+  function resolveDocumentRecord(targetIdentity) {
+    if (!targetIdentity) {
+      return null;
+    }
+
+    if (typeof targetIdentity === 'object') {
+      const identityKey = getDocumentIdentityKey(targetIdentity);
+
+      if (identityKey) {
+        return getAllDocuments().find((entry) => getDocumentIdentityKey(entry) === identityKey) || null;
+      }
+
+      if (targetIdentity.path) {
+        return getDocumentByPath(targetIdentity.path);
+      }
+
+      return null;
+    }
+
+    const normalizedIdentity = String(targetIdentity).trim();
+
+    if (!normalizedIdentity) {
+      return null;
+    }
+
+    const recordByIdentityKey = getAllDocuments().find((entry) => getDocumentIdentityKey(entry) === normalizedIdentity);
+
+    if (recordByIdentityKey) {
+      return recordByIdentityKey;
+    }
+
+    return getDocumentById(normalizedIdentity) || getDocumentByPath(normalizedIdentity);
+  }
+
   function replaceDocumentRecord(nextRecord) {
     if (!currentProject) {
       return null;
@@ -547,7 +583,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return moduleDocuments.find((entry) => getDocumentIdentityKey(entry) === identityKey) || null;
   }
 
-  function isDocumentNameTaken(moduleId, name, excludePath = null) {
+  function isDocumentNameTaken(moduleId, name, excludeIdentity = null) {
     if (!currentProject) {
       return false;
     }
@@ -559,7 +595,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     return getDocumentsByModule(moduleId).some((record) => {
-      if (excludePath && record.path === excludePath) {
+      if (excludeIdentity && getDocumentIdentityKey(record) === excludeIdentity) {
         return false;
       }
 
@@ -567,8 +603,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     });
   }
 
-  function isMetaGenNameTaken(name, excludePath = null) {
-    return isDocumentNameTaken('metagen', name, excludePath);
+  function isMetaGenNameTaken(name, excludeIdentity = null) {
+    return isDocumentNameTaken('metagen', name, excludeIdentity);
   }
 
   function getNextMetaGenDefaultName() {
@@ -631,7 +667,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    const record = getDocumentById(targetIdentity) || getDocumentByPath(targetIdentity);
+    const record = resolveDocumentRecord(targetIdentity);
 
     if (!record) {
       return null;
@@ -643,7 +679,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    if (isDocumentNameTaken(record.moduleId, resolvedName, record.path)) {
+    if (isDocumentNameTaken(record.moduleId, resolvedName, getDocumentIdentityKey(record))) {
       logger.warn('project', 'Имя документа уже занято', { moduleId: record.moduleId, name: resolvedName });
       return null;
     }
@@ -687,7 +723,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     };
   }
 
-  function markDocumentDirty() {
+  function markDocumentDirty(_targetIdentity = null) {
     setDirty(true);
   }
 
@@ -724,7 +760,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return false;
     }
 
-    const record = getDocumentById(targetIdentity) || getDocumentByPath(targetIdentity);
+    const record = resolveDocumentRecord(targetIdentity);
 
     if (!record) {
       return false;
@@ -738,7 +774,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     setDirty(true);
-    logger.info('project', 'Документ удалён', { path: record.path });
+    logger.info('project', 'Документ удалён', { identityKey, path: record.path });
     return true;
   }
 
@@ -934,6 +970,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     getDocumentsByModule,
     getDocumentByPath,
     getDocumentById,
+    resolveDocumentRecord,
     replaceDocumentRecord,
     createDocument,
     renameDocument,

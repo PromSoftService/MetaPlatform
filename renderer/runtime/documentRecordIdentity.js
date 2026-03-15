@@ -77,7 +77,7 @@ export function ensureDocumentId(documentRecord, { force = false } = {}) {
 
 export function getDocumentIdentityKey(documentRecord) {
   const documentId = ensureDocumentId(documentRecord);
-  return documentId ? `document:${documentId}` : '';
+  return documentId ? `${APP_CONFIG.project.identity.documentPrefix}${documentId}` : '';
 }
 
 export function setDocumentName(documentRecord, nextName) {

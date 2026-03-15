@@ -53,6 +53,27 @@ export const UI_CONFIG = {
     code: '📝 Шаблон ST'
   },
 
+
+
+  runtime: {
+    transitionReasons: {
+      tabClose: 'tab-close',
+      collectOpenDocumentRecords: 'collect-open-document-records',
+      menuActionPrefix: 'menu-action:'
+    },
+    dialogResults: {
+      save: 'save',
+      discard: 'discard',
+      cancel: 'cancel'
+    },
+    loggerSources: {
+      tabs: 'tabs',
+      menu: 'menu',
+      projectTree: 'project-tree',
+      windowClose: 'window-close'
+    }
+  },
+
   text: {
     untitled: 'Без имени',
     dirtyMarker: '●',

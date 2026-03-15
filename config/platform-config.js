@@ -13,7 +13,18 @@ export const PLATFORM_CONFIG = {
 
   app: {
     title: 'MetaPlatform',
-    topPanelTitle: '⚡ MetaPlatform'
+    topPanelTitle: '⚡ MetaPlatform',
+    menu: {
+      fileLabel: 'Файл',
+      actionIds: {
+        newProject: 'new-project',
+        openProject: 'open-project',
+        closeProject: 'close-project',
+        save: 'save',
+        saveAs: 'save-as',
+        exit: 'exit'
+      }
+    }
   },
 
   logging: {

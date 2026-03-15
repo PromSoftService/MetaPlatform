@@ -90,7 +90,7 @@ export function createProjectTree({
       const sectionConfig = moduleSections.find((section) => section.moduleId === moduleId);
 
       if (!sectionConfig) {
-        logger.warn('project-tree', 'Не найден модуль для создания компонента', {
+        logger.warn(APP_CONFIG.ui.runtime.loggerSources.projectTree, 'Не найден модуль для создания компонента', {
           moduleId,
           nodeData
         });
@@ -99,9 +99,10 @@ export function createProjectTree({
 
       await startDocumentCreation(sectionConfig);
     }),
-    onDeleteComponentRequest: onDeleteComponentRequest || (async (documentRecord) => {
-      tabs.closeTab(documentRecord.path);
-      await projectManager.deleteDocument(documentRecord);
+    onDeleteComponentRequest: onDeleteComponentRequest || (async (documentRecord, nodeData) => {
+      const documentIdentity = nodeData?.id || documentRecord;
+      await tabs.closeTab(documentIdentity, { skipProjectSync: true });
+      await projectManager.deleteDocument(documentIdentity);
     })
   });
 
@@ -202,7 +203,7 @@ export function createProjectTree({
       }
     }
 
-    logger.info('project-tree', 'Дерево проекта обновлено', {
+    logger.info(APP_CONFIG.ui.runtime.loggerSources.projectTree, 'Дерево проекта обновлено', {
       inlineRenameEnabled: behaviorConfig.inlineRenameEnabled,
       slowDoubleClickRenameEnabled: behaviorConfig.slowDoubleClickRenameEnabled
     });
@@ -210,7 +211,7 @@ export function createProjectTree({
 
   projectManager.subscribe(() => {
     render().catch((error) => {
-      logger.error('project-tree', 'Ошибка рендера дерева проекта', {
+      logger.error(APP_CONFIG.ui.runtime.loggerSources.projectTree, 'Ошибка рендера дерева проекта', {
         message: error?.message || String(error)
       });
     });

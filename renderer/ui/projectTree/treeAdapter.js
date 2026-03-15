@@ -19,13 +19,13 @@ export function buildProjectTreeNodes({ project, moduleSections, getDocumentsByM
   return [
     {
       nodeType: TREE_NODE_TYPES.project,
-      id: `project:${project.project?.name || 'unnamed'}`,
+      id: `${APP_CONFIG.project.identity.treeProjectPrefix}${project.project?.name || 'unnamed'}`,
       label: project.project?.name || APP_CONFIG.ui.text.untitled,
       project
     },
     ...moduleSections.map((sectionConfig) => ({
       nodeType: TREE_NODE_TYPES.module,
-      id: `module:${sectionConfig.moduleId}`,
+      id: `${APP_CONFIG.project.identity.treeModulePrefix}${sectionConfig.moduleId}`,
       moduleId: sectionConfig.moduleId,
       moduleName: sectionConfig.moduleName,
       label: sectionConfig.moduleName,

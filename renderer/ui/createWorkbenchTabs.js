@@ -41,7 +41,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     const result = await finalizeEditingBeforeContextTransition({
       activeEntry: currentEntry,
       logger,
-      source: 'tabs',
+      source: APP_CONFIG.ui.runtime.loggerSources.tabs,
       reason,
       blockOnFailure
     });
@@ -102,19 +102,42 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     return nextRecord;
   }
 
-  async function closeTab(tabId, options = {}) {
-    let resolvedTabId = tabId;
-    let entry = tabs.get(resolvedTabId);
+  function resolveTabId(targetIdentity) {
+    if (tabs.has(targetIdentity)) {
+      return targetIdentity;
+    }
 
-    if (!entry) {
-      for (const [candidateTabId, candidateEntry] of tabs.entries()) {
-        if (candidateEntry.documentRecord?.path === tabId || candidateEntry.documentRecord === tabId) {
-          resolvedTabId = candidateTabId;
-          entry = candidateEntry;
-          break;
-        }
+    const identityKeyFromRecord = targetIdentity && typeof targetIdentity === 'object'
+      ? getDocumentIdentityKey(targetIdentity)
+      : '';
+
+    for (const [candidateTabId, candidateEntry] of tabs.entries()) {
+      const candidateIdentityKey = getDocumentIdentityKey(candidateEntry.documentRecord);
+
+      if (identityKeyFromRecord && candidateIdentityKey === identityKeyFromRecord) {
+        return candidateTabId;
+      }
+
+      if (candidateIdentityKey && candidateIdentityKey === targetIdentity) {
+        return candidateTabId;
+      }
+
+      if (candidateEntry.documentRecord === targetIdentity) {
+        return candidateTabId;
+      }
+
+      if (candidateEntry.documentRecord?.path === targetIdentity) {
+        return candidateTabId;
       }
     }
+
+    return null;
+  }
+
+
+  async function closeTab(tabId, options = {}) {
+    const resolvedTabId = resolveTabId(tabId);
+    const entry = resolvedTabId ? tabs.get(resolvedTabId) : null;
 
     if (!entry) {
       return;
@@ -126,8 +149,8 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     await finalizeEditingBeforeContextTransition({
       activeEntry: entry,
       logger,
-      source: 'tabs',
-      reason: 'tab-close',
+      source: APP_CONFIG.ui.runtime.loggerSources.tabs,
+      reason: APP_CONFIG.ui.runtime.transitionReasons.tabClose,
       blockOnFailure: false
     });
 
@@ -135,7 +158,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       try {
         await syncEntryDocumentRecordToProject(entry);
       } catch (error) {
-        logger.error('tabs', 'Ошибка синхронизации snapshot перед закрытием вкладки', {
+        logger.error(APP_CONFIG.ui.runtime.loggerSources.tabs, 'Ошибка синхронизации snapshot перед закрытием вкладки', {
           tabId: resolvedTabId,
           message: error?.message || String(error)
         });
@@ -243,7 +266,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       const created = await onCommit?.({ moduleId, confirmedName: nextName });
 
       if (!created) {
-        logger.warn('tabs', 'Создание документа отклонено', { moduleId, name: nextName });
+        logger.warn(APP_CONFIG.ui.runtime.loggerSources.tabs, 'Создание документа отклонено', { moduleId, name: nextName });
         input.focus();
         input.select();
         return null;
@@ -330,12 +353,12 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
 
       if (commit) {
         if (!nextName) {
-          logger.warn('tabs', 'Пустое имя отклонено');
+          logger.warn(APP_CONFIG.ui.runtime.loggerSources.tabs, 'Пустое имя отклонено');
         } else {
           const renamed = await projectManager.renameDocument(getDocumentIdentityKey(entry.documentRecord), nextName);
 
           if (!renamed) {
-            logger.warn('tabs', 'Переименование отклонено', { name: nextName });
+            logger.warn(APP_CONFIG.ui.runtime.loggerSources.tabs, 'Переименование отклонено', { name: nextName });
           } else {
             if (renamed.nextPath !== renamed.previousPath) {
               entry.documentRecord.path = renamed.nextPath;
@@ -412,7 +435,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   }
 
   async function openDocument(documentRecord, { startRenameMode = false } = {}) {
-    const tabId = getDocumentIdentityKey(documentRecord) || documentRecord.path;
+    const tabId = getDocumentIdentityKey(documentRecord);
 
     const existingEntry = tabs.get(tabId) || findTabByDocument(documentRecord);
     if (existingEntry) {
@@ -465,7 +488,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       await startRename(entry.tabId);
     }
 
-    logger.info('tabs', 'Открыта вкладка', { tabId });
+    logger.info(APP_CONFIG.ui.runtime.loggerSources.tabs, 'Открыта вкладка', { tabId });
     return entry;
   }
 
@@ -473,7 +496,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     const output = [];
 
     await finalizeActiveEditorContextBeforeTransition({
-      reason: "collect-open-document-records",
+      reason: APP_CONFIG.ui.runtime.transitionReasons.collectOpenDocumentRecords,
       blockOnFailure: false
     });
 
@@ -482,7 +505,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
         const nextRecord = await syncEntryDocumentRecordToProject(entry);
         output.push(nextRecord || entry.documentRecord);
       } catch (error) {
-        logger.error('tabs', 'Ошибка синхронизации snapshot открытого документа', {
+        logger.error(APP_CONFIG.ui.runtime.loggerSources.tabs, 'Ошибка синхронизации snapshot открытого документа', {
           tabId: entry.tabId,
           message: error?.message || String(error)
         });

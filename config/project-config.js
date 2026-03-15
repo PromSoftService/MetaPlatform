@@ -40,5 +40,12 @@ export const PROJECT_CONFIG = {
 
   projectKinds: {
     root: 'metaplatform.project'
-  }
+  },
+
+  identity: {
+    documentPrefix: 'document:',
+    treeProjectPrefix: 'project:',
+    treeModulePrefix: 'module:'
+  },
+
 };

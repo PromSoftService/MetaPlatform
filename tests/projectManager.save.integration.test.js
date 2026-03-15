@@ -794,8 +794,9 @@ test('closeTab with skipProjectSync does not call replaceDocumentRecord and prev
     });
 
     await tabs.openDocument(baseRecord);
-    await manager.deleteDocument(baseRecord.path);
-    await tabs.closeTab(baseRecord.path, { skipProjectSync: true });
+    const identityKey = getDocumentIdentityKey(baseRecord);
+    await manager.deleteDocument(identityKey);
+    await tabs.closeTab(identityKey, { skipProjectSync: true });
 
     assert.deepEqual(replaceCalls, []);
     await manager.saveProject();
@@ -1079,12 +1080,78 @@ test('save-as path remap keeps active tab closable and document renameable', asy
     const remappedActiveRecord = tabs.getActiveDocumentRecord();
     assert.ok(remappedActiveRecord);
 
-    await tabs.closeTab(remappedActiveRecord.path);
+    await tabs.closeTab(getDocumentIdentityKey(remappedActiveRecord));
     assert.equal(tabs.getActiveDocumentRecord(), null);
 
     const reopened = manager.getDocumentsByModule('metagen')[0];
     const renamed = await manager.renameDocument(reopened.path, 'Pump After Save As');
     assert.ok(renamed);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
+
+
+test('delete flow resolves document by id after rename and stale path no longer matches', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-delete-id-after-rename-'));
+  await createFixtureProject(root);
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const record = manager.getDocumentsByModule('metagen')[0];
+  const identityKey = getDocumentIdentityKey(record);
+  const stalePath = record.path;
+
+  const renamed = await manager.renameDocument(identityKey, 'Pump After Rename');
+  assert.ok(renamed);
+  assert.notEqual(renamed.nextPath, stalePath);
+
+  const deleted = await manager.deleteDocument(identityKey);
+  assert.equal(deleted, true);
+  assert.equal(manager.getDocumentByPath(stalePath), null);
+  assert.equal(manager.getDocumentById(record.document.component.id), null);
+});
+
+test('close tab keeps id-first binding across rename and save-as remap', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-tabs-id-binding-'));
+  const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-tabs-id-binding-dst-'));
+  await createFixtureProject(root);
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+  const record = manager.getDocumentsByModule('metagen')[0];
+
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async (...args) => manager.renameDocument(...args),
+        replaceDocumentRecord: async (...args) => manager.replaceDocumentRecord(...args)
+      },
+      openEditor: async () => ({ dispose: () => {} })
+    });
+
+    const opened = await tabs.openDocument(record);
+    const identityKey = getDocumentIdentityKey(opened.documentRecord);
+
+    await tabs.startRename(identityKey);
+    const renameInput = opened.tabNode.querySelector(`.${APP_CONFIG.ui.classNames.inlineRenameInput}`);
+    renameInput.value = 'Pump Through Tab';
+    await renameInput.listeners.get('blur')();
+
+    const saveAsResult = await manager.saveProjectAs(path.join(targetRoot, 'project.yaml'));
+    tabs.updateTabPaths(saveAsResult.pathMap);
+
+    const active = tabs.getActiveDocumentRecord();
+    assert.equal(getDocumentIdentityKey(active), identityKey);
+    assert.ok(active.path.startsWith(targetRoot));
+
+    await tabs.closeTab(identityKey);
+    assert.equal(tabs.getActiveDocumentRecord(), null);
   } finally {
     globalThis.document = previousDocument;
   }
@@ -1188,4 +1255,40 @@ test('loading legacy document without id assigns runtime id and persists via sav
 
   const persisted = YAML.parse(await fs.readFile(legacyPath, 'utf-8'));
   assert.equal(persisted.component.id, legacyRecord.document.component.id);
+});
+
+
+test('legacy normalized id remains stable across save-as and reopen', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-legacy-id-stable-save-as-'));
+  const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-legacy-id-stable-save-as-dst-'));
+  await createFixtureProject(root);
+
+  const legacyPath = path.join(root, 'metagen', 'legacy_stable.yaml');
+  const legacy = {
+    kind: 'metagen.component',
+    version: 1,
+    component: { name: 'Legacy Stable', type: 'FB', module: 'Main', description: '' },
+    params: { format: 'header-plus-rows', header: [], rows: [] },
+    data: { format: 'table', columns: [], rows: [] },
+    instances: { format: 'list', rows: [] },
+    code: { format: 'template-text', language: 'st-template', text: '' },
+    generation: { engine: 'structured-text', entrypoint: 'Main', mode: 'component', output: { language: 'st', fileName: 'legacy-stable.st' } },
+    meta: { author: '', importedFrom: '', importedSheet: '' }
+  };
+
+  await fs.writeFile(legacyPath, YAML.stringify(legacy), 'utf-8');
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const legacyRecord = manager.getDocumentsByModule('metagen').find((entry) => entry.path.endsWith('legacy_stable.yaml'));
+  const normalizedId = legacyRecord.document.component.id;
+  assert.match(normalizedId, UUID_LIKE_REGEX);
+
+  await manager.saveProjectAs(path.join(targetRoot, 'project.yaml'));
+  await manager.closeProject();
+  await manager.openProject(path.join(targetRoot, 'project.yaml'));
+
+  const reopened = manager.getDocumentsByModule('metagen').find((entry) => entry.document.component.name === 'Legacy Stable');
+  assert.equal(reopened.document.component.id, normalizedId);
 });

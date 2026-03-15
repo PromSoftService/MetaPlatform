@@ -8,6 +8,7 @@ import { initWorkbenchLayout } from './core/layout.js';
 import { createWorkbenchTabs } from './ui/createWorkbenchTabs.js';
 import { createProjectTree } from './ui/createProjectTree.js';
 import { showSaveChangesDialog } from './ui/dialogs.js';
+import { getDocumentIdentityKey } from './runtime/documentRecordIdentity.js';
 import { createAppCloseCoordinator } from './runtime/appCloseCoordinator.js';
 
 import { createMetaGenModule } from './modules/metagen/metagenModule.js';
@@ -65,7 +66,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return module.openDocument({
         documentRecord,
         mountElement,
-        onDirty: () => projectManager?.markDocumentDirty(documentRecord.path)
+        onDirty: () => projectManager?.markDocumentDirty(getDocumentIdentityKey(documentRecord))
       });
     }
   });
@@ -102,8 +103,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function handleDeleteComponentRequest(documentRecord) {
-    await projectManager.deleteDocument(documentRecord.path);
-    await tabs.closeTab(documentRecord.path, { skipProjectSync: true });
+    const documentIdentity = getDocumentIdentityKey(documentRecord);
+    await projectManager.deleteDocument(documentIdentity);
+    await tabs.closeTab(documentIdentity, { skipProjectSync: true });
   }
 
   const tree = createProjectTree({
@@ -157,11 +159,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       title: APP_CONFIG.ui.text.saveChangesTitle
     });
 
-    if (decision === 'cancel') {
+    if (decision === APP_CONFIG.ui.runtime.dialogResults.cancel) {
       return 'cancel';
     }
 
-    if (decision === 'discard') {
+    if (decision === APP_CONFIG.ui.runtime.dialogResults.discard) {
       return 'continue';
     }
 
@@ -230,14 +232,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await appCloseCoordinator.handleWindowCloseRequested();
     } catch (error) {
-      logger.error('window-close', 'Ошибка обработки запроса закрытия окна', {
+      logger.error(APP_CONFIG.ui.runtime.loggerSources.windowClose, 'Ошибка обработки запроса закрытия окна', {
         message: error?.message || String(error)
       });
 
       try {
         await fileSystem.cancelWindowClose();
       } catch (cancelError) {
-        logger.error('window-close', 'Ошибка отмены закрытия окна', {
+        logger.error(APP_CONFIG.ui.runtime.loggerSources.windowClose, 'Ошибка отмены закрытия окна', {
           message: cancelError?.message || String(cancelError)
         });
       }
@@ -247,12 +249,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   fileSystem.onMenuAction(async (action) => {
     try {
       const transitionResult = await tabs.finalizeActiveEditorContextBeforeTransition({
-        reason: `menu-action:${action}`,
+        reason: `${APP_CONFIG.ui.runtime.transitionReasons.menuActionPrefix}${action}`,
         blockOnFailure: true
       });
 
       if (!transitionResult.continued) {
-        logger.error('menu', 'Действие меню заблокировано: не удалось завершить редактирование перед сменой контекста', {
+        logger.error(APP_CONFIG.ui.runtime.loggerSources.menu, 'Действие меню заблокировано: не удалось завершить редактирование перед сменой контекста', {
           action,
           outcome: transitionResult.outcome,
           reason: transitionResult.reason
@@ -260,14 +262,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      if (action === 'new-project') await newProjectFlow();
-      if (action === 'open-project') await openProjectFlow();
-      if (action === 'close-project') await closeProjectFlow();
-      if (action === 'save') await saveProjectFlow();
-      if (action === 'save-as') await saveProjectFlow({ forceSaveAs: true });
-      if (action === 'exit') await exitFlow();
+      if (action === APP_CONFIG.platform.app.menu.actionIds.newProject) await newProjectFlow();
+      if (action === APP_CONFIG.platform.app.menu.actionIds.openProject) await openProjectFlow();
+      if (action === APP_CONFIG.platform.app.menu.actionIds.closeProject) await closeProjectFlow();
+      if (action === APP_CONFIG.platform.app.menu.actionIds.save) await saveProjectFlow();
+      if (action === APP_CONFIG.platform.app.menu.actionIds.saveAs) await saveProjectFlow({ forceSaveAs: true });
+      if (action === APP_CONFIG.platform.app.menu.actionIds.exit) await exitFlow();
     } catch (error) {
-      logger.error('menu', 'Ошибка выполнения команды меню', {
+      logger.error(APP_CONFIG.ui.runtime.loggerSources.menu, 'Ошибка выполнения команды меню', {
         action,
         message: error?.message || String(error)
       });

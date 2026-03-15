@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { APP_CONFIG } from '../config/app-config.js';
 import {
   TREE_NODE_TYPES,
   TREE_ACTION_IDS,
@@ -34,6 +35,14 @@ function createModuleSections() {
     { moduleId: 'metaview', moduleName: 'metaview' }
   ];
 }
+
+
+
+test('tree adapter constants stay wired to config-backed node and action ids', () => {
+  assert.deepEqual(TREE_NODE_TYPES, APP_CONFIG.project.tree.nodeTypes);
+  assert.deepEqual(TREE_ACTION_IDS, APP_CONFIG.project.tree.actionIds);
+});
+
 
 test('document single click activates existing tab if already open', async () => {
   const calls = [];

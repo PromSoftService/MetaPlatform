@@ -60,7 +60,18 @@ export const PLATFORM_CONFIG = {
 
   app: {
     title: 'MetaPlatform',
-    topPanelTitle: '⚡ MetaPlatform'
+    topPanelTitle: '⚡ MetaPlatform',
+    menu: {
+      fileLabel: 'Файл',
+      actionIds: {
+        newProject: 'new-project',
+        openProject: 'open-project',
+        closeProject: 'close-project',
+        save: 'save',
+        saveAs: 'save-as',
+        exit: 'exit'
+      }
+    }
   },
 
   logging: {
@@ -70,6 +81,7 @@ export const PLATFORM_CONFIG = {
     captureGlobalErrors: true
   }
 };
+
 
 ==================================================
 FILE: config/project-config.js
@@ -117,7 +129,14 @@ export const PROJECT_CONFIG = {
 
   projectKinds: {
     root: 'metaplatform.project'
-  }
+  },
+
+  identity: {
+    documentPrefix: 'document:',
+    treeProjectPrefix: 'project:',
+    treeModulePrefix: 'module:'
+  },
+
 };
 
 
@@ -178,6 +197,27 @@ export const UI_CONFIG = {
     params: '📊 Параметры',
     data: '📈 Данные',
     code: '📝 Шаблон ST'
+  },
+
+
+
+  runtime: {
+    transitionReasons: {
+      tabClose: 'tab-close',
+      collectOpenDocumentRecords: 'collect-open-document-records',
+      menuActionPrefix: 'menu-action:'
+    },
+    dialogResults: {
+      save: 'save',
+      discard: 'discard',
+      cancel: 'cancel'
+    },
+    loggerSources: {
+      tabs: 'tabs',
+      menu: 'menu',
+      projectTree: 'project-tree',
+      windowClose: 'window-close'
+    }
   },
 
   text: {
@@ -466,16 +506,16 @@ function createAppMenu(mainWindow) {
 
   const template = [
     {
-      label: 'Файл',
+      label: APP_CONFIG.platform.app.menu.fileLabel,
       submenu: [
-        { label: '🆕 Создать проект', click: () => sendAction('new-project') },
-        { label: '📂 Открыть проект', click: () => sendAction('open-project') },
-        { label: '📁 Закрыть проект', click: () => sendAction('close-project') },
+        { label: '🆕 Создать проект', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.newProject) },
+        { label: '📂 Открыть проект', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.openProject) },
+        { label: '📁 Закрыть проект', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.closeProject) },
         { type: 'separator' },
-        { label: '💾 Сохранить', click: () => sendAction('save') },
-        { label: '📝 Сохранить как', click: () => sendAction('save-as') },
+        { label: '💾 Сохранить', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.save) },
+        { label: '📝 Сохранить как', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.saveAs) },
         { type: 'separator' },
-        { label: '🚪 Выход', click: () => sendAction('exit') }
+        { label: '🚪 Выход', click: () => sendAction(APP_CONFIG.platform.app.menu.actionIds.exit) }
       ]
     }
   ];
@@ -920,6 +960,7 @@ import { initWorkbenchLayout } from './core/layout.js';
 import { createWorkbenchTabs } from './ui/createWorkbenchTabs.js';
 import { createProjectTree } from './ui/createProjectTree.js';
 import { showSaveChangesDialog } from './ui/dialogs.js';
+import { getDocumentIdentityKey } from './runtime/documentRecordIdentity.js';
 import { createAppCloseCoordinator } from './runtime/appCloseCoordinator.js';
 
 import { createMetaGenModule } from './modules/metagen/metagenModule.js';
@@ -977,7 +1018,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return module.openDocument({
         documentRecord,
         mountElement,
-        onDirty: () => projectManager?.markDocumentDirty(documentRecord.path)
+        onDirty: () => projectManager?.markDocumentDirty(getDocumentIdentityKey(documentRecord))
       });
     }
   });
@@ -1014,8 +1055,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function handleDeleteComponentRequest(documentRecord) {
-    await projectManager.deleteDocument(documentRecord.path);
-    await tabs.closeTab(documentRecord.path, { skipProjectSync: true });
+    const documentIdentity = getDocumentIdentityKey(documentRecord);
+    await projectManager.deleteDocument(documentIdentity);
+    await tabs.closeTab(documentIdentity, { skipProjectSync: true });
   }
 
   const tree = createProjectTree({
@@ -1069,11 +1111,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       title: APP_CONFIG.ui.text.saveChangesTitle
     });
 
-    if (decision === 'cancel') {
+    if (decision === APP_CONFIG.ui.runtime.dialogResults.cancel) {
       return 'cancel';
     }
 
-    if (decision === 'discard') {
+    if (decision === APP_CONFIG.ui.runtime.dialogResults.discard) {
       return 'continue';
     }
 
@@ -1142,14 +1184,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await appCloseCoordinator.handleWindowCloseRequested();
     } catch (error) {
-      logger.error('window-close', 'Ошибка обработки запроса закрытия окна', {
+      logger.error(APP_CONFIG.ui.runtime.loggerSources.windowClose, 'Ошибка обработки запроса закрытия окна', {
         message: error?.message || String(error)
       });
 
       try {
         await fileSystem.cancelWindowClose();
       } catch (cancelError) {
-        logger.error('window-close', 'Ошибка отмены закрытия окна', {
+        logger.error(APP_CONFIG.ui.runtime.loggerSources.windowClose, 'Ошибка отмены закрытия окна', {
           message: cancelError?.message || String(cancelError)
         });
       }
@@ -1159,12 +1201,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   fileSystem.onMenuAction(async (action) => {
     try {
       const transitionResult = await tabs.finalizeActiveEditorContextBeforeTransition({
-        reason: `menu-action:${action}`,
+        reason: `${APP_CONFIG.ui.runtime.transitionReasons.menuActionPrefix}${action}`,
         blockOnFailure: true
       });
 
       if (!transitionResult.continued) {
-        logger.error('menu', 'Действие меню заблокировано: не удалось завершить редактирование перед сменой контекста', {
+        logger.error(APP_CONFIG.ui.runtime.loggerSources.menu, 'Действие меню заблокировано: не удалось завершить редактирование перед сменой контекста', {
           action,
           outcome: transitionResult.outcome,
           reason: transitionResult.reason
@@ -1172,14 +1214,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      if (action === 'new-project') await newProjectFlow();
-      if (action === 'open-project') await openProjectFlow();
-      if (action === 'close-project') await closeProjectFlow();
-      if (action === 'save') await saveProjectFlow();
-      if (action === 'save-as') await saveProjectFlow({ forceSaveAs: true });
-      if (action === 'exit') await exitFlow();
+      if (action === APP_CONFIG.platform.app.menu.actionIds.newProject) await newProjectFlow();
+      if (action === APP_CONFIG.platform.app.menu.actionIds.openProject) await openProjectFlow();
+      if (action === APP_CONFIG.platform.app.menu.actionIds.closeProject) await closeProjectFlow();
+      if (action === APP_CONFIG.platform.app.menu.actionIds.save) await saveProjectFlow();
+      if (action === APP_CONFIG.platform.app.menu.actionIds.saveAs) await saveProjectFlow({ forceSaveAs: true });
+      if (action === APP_CONFIG.platform.app.menu.actionIds.exit) await exitFlow();
     } catch (error) {
-      logger.error('menu', 'Ошибка выполнения команды меню', {
+      logger.error(APP_CONFIG.ui.runtime.loggerSources.menu, 'Ошибка выполнения команды меню', {
         action,
         message: error?.message || String(error)
       });
@@ -1602,7 +1644,7 @@ function createDefaultProjectRaw() {
     version: 1,
     project: {
       id: createDocumentGuid(),
-      name: 'Новый проект',
+      name: APP_CONFIG.project.defaultProjectName,
       description: ''
     },
     modules: ['MetaGen', 'MetaLab', 'MetaView'],
@@ -1977,6 +2019,42 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return getAllDocuments().find((entry) => ensureDocumentId(entry) === normalizedId) || null;
   }
 
+
+
+  function resolveDocumentRecord(targetIdentity) {
+    if (!targetIdentity) {
+      return null;
+    }
+
+    if (typeof targetIdentity === 'object') {
+      const identityKey = getDocumentIdentityKey(targetIdentity);
+
+      if (identityKey) {
+        return getAllDocuments().find((entry) => getDocumentIdentityKey(entry) === identityKey) || null;
+      }
+
+      if (targetIdentity.path) {
+        return getDocumentByPath(targetIdentity.path);
+      }
+
+      return null;
+    }
+
+    const normalizedIdentity = String(targetIdentity).trim();
+
+    if (!normalizedIdentity) {
+      return null;
+    }
+
+    const recordByIdentityKey = getAllDocuments().find((entry) => getDocumentIdentityKey(entry) === normalizedIdentity);
+
+    if (recordByIdentityKey) {
+      return recordByIdentityKey;
+    }
+
+    return getDocumentById(normalizedIdentity) || getDocumentByPath(normalizedIdentity);
+  }
+
   function replaceDocumentRecord(nextRecord) {
     if (!currentProject) {
       return null;
@@ -2010,7 +2088,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     return moduleDocuments.find((entry) => getDocumentIdentityKey(entry) === identityKey) || null;
   }
 
-  function isDocumentNameTaken(moduleId, name, excludePath = null) {
+  function isDocumentNameTaken(moduleId, name, excludeIdentity = null) {
     if (!currentProject) {
       return false;
     }
@@ -2022,7 +2100,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     return getDocumentsByModule(moduleId).some((record) => {
-      if (excludePath && record.path === excludePath) {
+      if (excludeIdentity && getDocumentIdentityKey(record) === excludeIdentity) {
         return false;
       }
 
@@ -2030,8 +2108,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     });
   }
 
-  function isMetaGenNameTaken(name, excludePath = null) {
-    return isDocumentNameTaken('metagen', name, excludePath);
+  function isMetaGenNameTaken(name, excludeIdentity = null) {
+    return isDocumentNameTaken('metagen', name, excludeIdentity);
   }
 
   function getNextMetaGenDefaultName() {
@@ -2094,7 +2172,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    const record = getDocumentById(targetIdentity) || getDocumentByPath(targetIdentity);
+    const record = resolveDocumentRecord(targetIdentity);
 
     if (!record) {
       return null;
@@ -2106,7 +2184,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return null;
     }
 
-    if (isDocumentNameTaken(record.moduleId, resolvedName, record.path)) {
+    if (isDocumentNameTaken(record.moduleId, resolvedName, getDocumentIdentityKey(record))) {
       logger.warn('project', 'Имя документа уже занято', { moduleId: record.moduleId, name: resolvedName });
       return null;
     }
@@ -2150,7 +2228,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     };
   }
 
-  function markDocumentDirty() {
+  function markDocumentDirty(_targetIdentity = null) {
     setDirty(true);
   }
 
@@ -2187,7 +2265,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return false;
     }
 
-    const record = getDocumentById(targetIdentity) || getDocumentByPath(targetIdentity);
+    const record = resolveDocumentRecord(targetIdentity);
 
     if (!record) {
       return false;
@@ -2201,7 +2279,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     setDirty(true);
-    logger.info('project', 'Документ удалён', { path: record.path });
+    logger.info('project', 'Документ удалён', { identityKey, path: record.path });
     return true;
   }
 
@@ -2397,6 +2475,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     getDocumentsByModule,
     getDocumentByPath,
     getDocumentById,
+    resolveDocumentRecord,
     replaceDocumentRecord,
     createDocument,
     renameDocument,
@@ -4672,7 +4751,7 @@ export function ensureDocumentId(documentRecord, { force = false } = {}) {
 
 export function getDocumentIdentityKey(documentRecord) {
   const documentId = ensureDocumentId(documentRecord);
-  return documentId ? `document:${documentId}` : '';
+  return documentId ? `${APP_CONFIG.project.identity.documentPrefix}${documentId}` : '';
 }
 
 export function setDocumentName(documentRecord, nextName) {
@@ -5569,7 +5648,7 @@ export function createProjectTree({
       const sectionConfig = moduleSections.find((section) => section.moduleId === moduleId);
 
       if (!sectionConfig) {
-        logger.warn('project-tree', 'Не найден модуль для создания компонента', {
+        logger.warn(APP_CONFIG.ui.runtime.loggerSources.projectTree, 'Не найден модуль для создания компонента', {
           moduleId,
           nodeData
         });
@@ -5578,9 +5657,10 @@ export function createProjectTree({
 
       await startDocumentCreation(sectionConfig);
     }),
-    onDeleteComponentRequest: onDeleteComponentRequest || (async (documentRecord) => {
-      tabs.closeTab(documentRecord.path);
-      await projectManager.deleteDocument(documentRecord);
+    onDeleteComponentRequest: onDeleteComponentRequest || (async (documentRecord, nodeData) => {
+      const documentIdentity = nodeData?.id || documentRecord;
+      await tabs.closeTab(documentIdentity, { skipProjectSync: true });
+      await projectManager.deleteDocument(documentIdentity);
     })
   });
 
@@ -5681,7 +5761,7 @@ export function createProjectTree({
       }
     }
 
-    logger.info('project-tree', 'Дерево проекта обновлено', {
+    logger.info(APP_CONFIG.ui.runtime.loggerSources.projectTree, 'Дерево проекта обновлено', {
       inlineRenameEnabled: behaviorConfig.inlineRenameEnabled,
       slowDoubleClickRenameEnabled: behaviorConfig.slowDoubleClickRenameEnabled
     });
@@ -5689,7 +5769,7 @@ export function createProjectTree({
 
   projectManager.subscribe(() => {
     render().catch((error) => {
-      logger.error('project-tree', 'Ошибка рендера дерева проекта', {
+      logger.error(APP_CONFIG.ui.runtime.loggerSources.projectTree, 'Ошибка рендера дерева проекта', {
         message: error?.message || String(error)
       });
     });
@@ -5724,13 +5804,13 @@ export function buildProjectTreeNodes({ project, moduleSections, getDocumentsByM
   return [
     {
       nodeType: TREE_NODE_TYPES.project,
-      id: `project:${project.project?.name || 'unnamed'}`,
+      id: `${APP_CONFIG.project.identity.treeProjectPrefix}${project.project?.name || 'unnamed'}`,
       label: project.project?.name || APP_CONFIG.ui.text.untitled,
       project
     },
     ...moduleSections.map((sectionConfig) => ({
       nodeType: TREE_NODE_TYPES.module,
-      id: `module:${sectionConfig.moduleId}`,
+      id: `${APP_CONFIG.project.identity.treeModulePrefix}${sectionConfig.moduleId}`,
       moduleId: sectionConfig.moduleId,
       moduleName: sectionConfig.moduleName,
       label: sectionConfig.moduleName,
@@ -5839,7 +5919,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     const result = await finalizeEditingBeforeContextTransition({
       activeEntry: currentEntry,
       logger,
-      source: 'tabs',
+      source: APP_CONFIG.ui.runtime.loggerSources.tabs,
       reason,
       blockOnFailure
     });
@@ -5900,19 +5980,42 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     return nextRecord;
   }
 
-  async function closeTab(tabId, options = {}) {
-    let resolvedTabId = tabId;
-    let entry = tabs.get(resolvedTabId);
+  function resolveTabId(targetIdentity) {
+    if (tabs.has(targetIdentity)) {
+      return targetIdentity;
+    }
 
-    if (!entry) {
-      for (const [candidateTabId, candidateEntry] of tabs.entries()) {
-        if (candidateEntry.documentRecord?.path === tabId || candidateEntry.documentRecord === tabId) {
-          resolvedTabId = candidateTabId;
-          entry = candidateEntry;
-          break;
-        }
+    const identityKeyFromRecord = targetIdentity && typeof targetIdentity === 'object'
+      ? getDocumentIdentityKey(targetIdentity)
+      : '';
+
+    for (const [candidateTabId, candidateEntry] of tabs.entries()) {
+      const candidateIdentityKey = getDocumentIdentityKey(candidateEntry.documentRecord);
+
+      if (identityKeyFromRecord && candidateIdentityKey === identityKeyFromRecord) {
+        return candidateTabId;
+      }
+
+      if (candidateIdentityKey && candidateIdentityKey === targetIdentity) {
+        return candidateTabId;
+      }
+
+      if (candidateEntry.documentRecord === targetIdentity) {
+        return candidateTabId;
+      }
+
+      if (candidateEntry.documentRecord?.path === targetIdentity) {
+        return candidateTabId;
       }
     }
+
+    return null;
+  }
+
+
+  async function closeTab(tabId, options = {}) {
+    const resolvedTabId = resolveTabId(tabId);
+    const entry = resolvedTabId ? tabs.get(resolvedTabId) : null;
 
     if (!entry) {
       return;
@@ -5924,8 +6027,8 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     await finalizeEditingBeforeContextTransition({
       activeEntry: entry,
       logger,
-      source: 'tabs',
-      reason: 'tab-close',
+      source: APP_CONFIG.ui.runtime.loggerSources.tabs,
+      reason: APP_CONFIG.ui.runtime.transitionReasons.tabClose,
       blockOnFailure: false
     });
 
@@ -5933,7 +6036,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       try {
         await syncEntryDocumentRecordToProject(entry);
       } catch (error) {
-        logger.error('tabs', 'Ошибка синхронизации snapshot перед закрытием вкладки', {
+        logger.error(APP_CONFIG.ui.runtime.loggerSources.tabs, 'Ошибка синхронизации snapshot перед закрытием вкладки', {
           tabId: resolvedTabId,
           message: error?.message || String(error)
         });
@@ -6041,7 +6144,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       const created = await onCommit?.({ moduleId, confirmedName: nextName });
 
       if (!created) {
-        logger.warn('tabs', 'Создание документа отклонено', { moduleId, name: nextName });
+        logger.warn(APP_CONFIG.ui.runtime.loggerSources.tabs, 'Создание документа отклонено', { moduleId, name: nextName });
         input.focus();
         input.select();
         return null;
@@ -6128,12 +6231,12 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
 
       if (commit) {
         if (!nextName) {
-          logger.warn('tabs', 'Пустое имя отклонено');
+          logger.warn(APP_CONFIG.ui.runtime.loggerSources.tabs, 'Пустое имя отклонено');
         } else {
           const renamed = await projectManager.renameDocument(getDocumentIdentityKey(entry.documentRecord), nextName);
 
           if (!renamed) {
-            logger.warn('tabs', 'Переименование отклонено', { name: nextName });
+            logger.warn(APP_CONFIG.ui.runtime.loggerSources.tabs, 'Переименование отклонено', { name: nextName });
           } else {
             if (renamed.nextPath !== renamed.previousPath) {
               entry.documentRecord.path = renamed.nextPath;
@@ -6210,7 +6313,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
   }
 
   async function openDocument(documentRecord, { startRenameMode = false } = {}) {
-    const tabId = getDocumentIdentityKey(documentRecord) || documentRecord.path;
+    const tabId = getDocumentIdentityKey(documentRecord);
 
     const existingEntry = tabs.get(tabId) || findTabByDocument(documentRecord);
     if (existingEntry) {
@@ -6263,7 +6366,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
       await startRename(entry.tabId);
     }
 
-    logger.info('tabs', 'Открыта вкладка', { tabId });
+    logger.info(APP_CONFIG.ui.runtime.loggerSources.tabs, 'Открыта вкладка', { tabId });
     return entry;
   }
 
@@ -6271,7 +6374,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
     const output = [];
 
     await finalizeActiveEditorContextBeforeTransition({
-      reason: "collect-open-document-records",
+      reason: APP_CONFIG.ui.runtime.transitionReasons.collectOpenDocumentRecords,
       blockOnFailure: false
     });
 
@@ -6280,7 +6383,7 @@ export function createWorkbenchTabs({ logger, openEditor, projectManager }) {
         const nextRecord = await syncEntryDocumentRecordToProject(entry);
         output.push(nextRecord || entry.documentRecord);
       } catch (error) {
-        logger.error('tabs', 'Ошибка синхронизации snapshot открытого документа', {
+        logger.error(APP_CONFIG.ui.runtime.loggerSources.tabs, 'Ошибка синхронизации snapshot открытого документа', {
           tabId: entry.tabId,
           message: error?.message || String(error)
         });
@@ -7878,8 +7981,9 @@ test('closeTab with skipProjectSync does not call replaceDocumentRecord and prev
     });
 
     await tabs.openDocument(baseRecord);
-    await manager.deleteDocument(baseRecord.path);
-    await tabs.closeTab(baseRecord.path, { skipProjectSync: true });
+    const identityKey = getDocumentIdentityKey(baseRecord);
+    await manager.deleteDocument(identityKey);
+    await tabs.closeTab(identityKey, { skipProjectSync: true });
 
     assert.deepEqual(replaceCalls, []);
     await manager.saveProject();
@@ -8163,12 +8267,78 @@ test('save-as path remap keeps active tab closable and document renameable', asy
     const remappedActiveRecord = tabs.getActiveDocumentRecord();
     assert.ok(remappedActiveRecord);
 
-    await tabs.closeTab(remappedActiveRecord.path);
+    await tabs.closeTab(getDocumentIdentityKey(remappedActiveRecord));
     assert.equal(tabs.getActiveDocumentRecord(), null);
 
     const reopened = manager.getDocumentsByModule('metagen')[0];
     const renamed = await manager.renameDocument(reopened.path, 'Pump After Save As');
     assert.ok(renamed);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
+
+
+test('delete flow resolves document by id after rename and stale path no longer matches', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-delete-id-after-rename-'));
+  await createFixtureProject(root);
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const record = manager.getDocumentsByModule('metagen')[0];
+  const identityKey = getDocumentIdentityKey(record);
+  const stalePath = record.path;
+
+  const renamed = await manager.renameDocument(identityKey, 'Pump After Rename');
+  assert.ok(renamed);
+  assert.notEqual(renamed.nextPath, stalePath);
+
+  const deleted = await manager.deleteDocument(identityKey);
+  assert.equal(deleted, true);
+  assert.equal(manager.getDocumentByPath(stalePath), null);
+  assert.equal(manager.getDocumentById(record.document.component.id), null);
+});
+
+test('close tab keeps id-first binding across rename and save-as remap', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-tabs-id-binding-'));
+  const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-tabs-id-binding-dst-'));
+  await createFixtureProject(root);
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+  const record = manager.getDocumentsByModule('metagen')[0];
+
+  const { document } = createFakeDocument();
+  const previousDocument = globalThis.document;
+  globalThis.document = document;
+
+  try {
+    const tabs = createWorkbenchTabs({
+      logger: createLogger(),
+      projectManager: {
+        renameDocument: async (...args) => manager.renameDocument(...args),
+        replaceDocumentRecord: async (...args) => manager.replaceDocumentRecord(...args)
+      },
+      openEditor: async () => ({ dispose: () => {} })
+    });
+
+    const opened = await tabs.openDocument(record);
+    const identityKey = getDocumentIdentityKey(opened.documentRecord);
+
+    await tabs.startRename(identityKey);
+    const renameInput = opened.tabNode.querySelector(`.${APP_CONFIG.ui.classNames.inlineRenameInput}`);
+    renameInput.value = 'Pump Through Tab';
+    await renameInput.listeners.get('blur')();
+
+    const saveAsResult = await manager.saveProjectAs(path.join(targetRoot, 'project.yaml'));
+    tabs.updateTabPaths(saveAsResult.pathMap);
+
+    const active = tabs.getActiveDocumentRecord();
+    assert.equal(getDocumentIdentityKey(active), identityKey);
+    assert.ok(active.path.startsWith(targetRoot));
+
+    await tabs.closeTab(identityKey);
+    assert.equal(tabs.getActiveDocumentRecord(), null);
   } finally {
     globalThis.document = previousDocument;
   }
@@ -8272,6 +8442,42 @@ test('loading legacy document without id assigns runtime id and persists via sav
 
   const persisted = YAML.parse(await fs.readFile(legacyPath, 'utf-8'));
   assert.equal(persisted.component.id, legacyRecord.document.component.id);
+});
+
+
+test('legacy normalized id remains stable across save-as and reopen', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-legacy-id-stable-save-as-'));
+  const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-legacy-id-stable-save-as-dst-'));
+  await createFixtureProject(root);
+
+  const legacyPath = path.join(root, 'metagen', 'legacy_stable.yaml');
+  const legacy = {
+    kind: 'metagen.component',
+    version: 1,
+    component: { name: 'Legacy Stable', type: 'FB', module: 'Main', description: '' },
+    params: { format: 'header-plus-rows', header: [], rows: [] },
+    data: { format: 'table', columns: [], rows: [] },
+    instances: { format: 'list', rows: [] },
+    code: { format: 'template-text', language: 'st-template', text: '' },
+    generation: { engine: 'structured-text', entrypoint: 'Main', mode: 'component', output: { language: 'st', fileName: 'legacy-stable.st' } },
+    meta: { author: '', importedFrom: '', importedSheet: '' }
+  };
+
+  await fs.writeFile(legacyPath, YAML.stringify(legacy), 'utf-8');
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+
+  const legacyRecord = manager.getDocumentsByModule('metagen').find((entry) => entry.path.endsWith('legacy_stable.yaml'));
+  const normalizedId = legacyRecord.document.component.id;
+  assert.match(normalizedId, UUID_LIKE_REGEX);
+
+  await manager.saveProjectAs(path.join(targetRoot, 'project.yaml'));
+  await manager.closeProject();
+  await manager.openProject(path.join(targetRoot, 'project.yaml'));
+
+  const reopened = manager.getDocumentsByModule('metagen').find((entry) => entry.document.component.name === 'Legacy Stable');
+  assert.equal(reopened.document.component.id, normalizedId);
 });
 
 
@@ -8661,6 +8867,7 @@ FILE: tests/projectTreeAdapter.test.js
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { APP_CONFIG } from '../config/app-config.js';
 import {
   TREE_NODE_TYPES,
   TREE_ACTION_IDS,
@@ -8694,6 +8901,14 @@ function createModuleSections() {
     { moduleId: 'metaview', moduleName: 'metaview' }
   ];
 }
+
+
+
+test('tree adapter constants stay wired to config-backed node and action ids', () => {
+  assert.deepEqual(TREE_NODE_TYPES, APP_CONFIG.project.tree.nodeTypes);
+  assert.deepEqual(TREE_ACTION_IDS, APP_CONFIG.project.tree.actionIds);
+});
+
 
 test('document single click activates existing tab if already open', async () => {
   const calls = [];
