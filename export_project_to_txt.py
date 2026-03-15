@@ -12,6 +12,7 @@ PROJECT_FILES = [
   'config/platform-config.js',
   'config/project-config.js',
   'config/ui-config.js',
+  'config/ipc-config.cjs',
   'create_project_structure.py',
   'export_project_to_txt.py',
   'main.js',
@@ -85,6 +86,7 @@ PROJECT_FILES = [
   'renderer/core/loggerSinks.js',
   'renderer/runtime/projectPaths.js',
   'tests/logger.test.js',
+  'tests/configWiring.integration.test.js',
   'vite.config.js',
   'main/runtime/windowCloseGuard.js',
 ]

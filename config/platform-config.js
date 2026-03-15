@@ -1,3 +1,5 @@
+import IPC_CONFIG from './ipc-config.cjs';
+
 export const PLATFORM_CONFIG = {
   locale: 'ru-RU',
 
@@ -16,7 +18,7 @@ export const PLATFORM_CONFIG = {
     topPanelTitle: '⚡ MetaPlatform',
     menu: {
       fileLabel: 'Файл',
-      menuEventChannel: 'menu:action',
+      menuEventChannel: IPC_CONFIG.channels.menuAction,
       items: {
         newProject: '🆕 Создать проект',
         openProject: '📂 Открыть проект',
@@ -43,6 +45,8 @@ export const PLATFORM_CONFIG = {
       yamlFilterExtensions: ['yaml', 'yml']
     }
   },
+
+  ipc: IPC_CONFIG,
 
   logging: {
     defaultSource: 'app',

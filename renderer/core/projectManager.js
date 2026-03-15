@@ -157,19 +157,19 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   function buildSaveStagingRoot(targetRoot) {
-    return joinProjectPath(targetRoot, '.save-staging');
+    return joinProjectPath(targetRoot, APP_CONFIG.project.save.stagingFolderName);
   }
 
   function buildModuleStagingDir(targetRoot, moduleFolder) {
-    return joinProjectPath(targetRoot, '.save-staging', moduleFolder);
+    return joinProjectPath(targetRoot, APP_CONFIG.project.save.stagingFolderName, moduleFolder);
   }
 
   function buildModuleBackupDir(targetRoot, moduleFolder) {
-    return joinProjectPath(targetRoot, `.backup-${moduleFolder}`);
+    return joinProjectPath(targetRoot, `${APP_CONFIG.project.save.backupPrefix}${moduleFolder}`);
   }
 
   function buildProjectFileBackupPath(targetRoot, projectFileName) {
-    return joinProjectPath(targetRoot, `.backup-${projectFileName}`);
+    return joinProjectPath(targetRoot, `${APP_CONFIG.project.save.backupPrefix}${projectFileName}`);
   }
 
   async function removeDirectoryIfExists(targetPath) {
@@ -443,10 +443,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
         return getAllDocuments().find((entry) => getDocumentIdentityKey(entry) === identityKey) || null;
       }
 
-      if (targetIdentity.path) {
-        return getDocumentByPath(targetIdentity.path);
-      }
-
       return null;
     }
 
@@ -468,7 +464,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return recordById;
     }
 
-    return getDocumentByPath(normalizedIdentity);
+    return null;
   }
 
   function replaceDocumentRecord(nextRecord) {
@@ -695,7 +691,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     setDirty(true);
-    logger.info('project', 'Документ удалён', { identityKey, path: record.path });
+    logger.info(APP_CONFIG.ui.runtime.loggerSources.project, 'Документ удалён', { identityKey, path: record.path });
     return true;
   }
 
@@ -829,13 +825,13 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     // cleanup (best-effort только после полного успешного commit)
     await cleanupSaveBackups(projectOwnedPaths).catch((error) => {
-      logger.warn('project', 'Cleanup backup-файлов завершился с ошибкой', {
+      logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Cleanup backup-файлов завершился с ошибкой', {
         targetRoot,
         message: error?.message || String(error)
       });
     });
     await cleanupSaveStaging(targetRoot).catch((error) => {
-      logger.warn('project', 'Cleanup staging завершился с ошибкой', {
+      logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Cleanup staging завершился с ошибкой', {
         targetRoot,
         message: error?.message || String(error)
       });
@@ -869,7 +865,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const normalizedProjectFilePath = normalizeProjectFilePath(newProjectFilePath);
 
     const result = await saveProjectToRoot(normalizedProjectFilePath, openDocuments);
-    logger.info('project', 'Проект сохранен как', {
+    logger.info(APP_CONFIG.ui.runtime.loggerSources.project, 'Проект сохранен как', {
       rootPath: getProjectRootFromProjectFile(normalizedProjectFilePath),
       projectFilePath: normalizedProjectFilePath
     });

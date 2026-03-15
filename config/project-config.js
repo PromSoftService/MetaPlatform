@@ -54,5 +54,11 @@ export const PROJECT_CONFIG = {
 
   defaults: {
     unnamedProject: 'unnamed'
-  }
+  },
+
+  save: {
+    stagingFolderName: '.save-staging',
+    backupPrefix: '.backup-'
+  },
+
 };

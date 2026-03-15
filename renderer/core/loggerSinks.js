@@ -1,8 +1,8 @@
 import { APP_CONFIG } from '../../config/app-config.js';
 
-const LOG_ENTRY_CLASS = 'log-entry';
-const LOG_LINE_CLASS = 'log-line';
-const LOG_DETAILS_CLASS = 'log-details';
+const LOG_ENTRY_CLASS = APP_CONFIG.ui.classNames.logEntry;
+const LOG_LINE_CLASS = APP_CONFIG.ui.classNames.logLine;
+const LOG_DETAILS_CLASS = APP_CONFIG.ui.classNames.logDetails;
 
 export function normalizeLogDetails(details) {
   if (details == null) {

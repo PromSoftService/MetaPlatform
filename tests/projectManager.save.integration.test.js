@@ -451,7 +451,7 @@ test('rename of unsaved component with future project path skips fs.rename and u
 
   assert.equal(await fs.access(oldPath).then(() => true).catch(() => false), false);
 
-  const renamed = await manager.renameDocument(oldPath, 'Renamed Future Component');
+  const renamed = await manager.renameDocument(getDocumentIdentityKey(created), 'Renamed Future Component');
 
   assert.ok(renamed);
   assert.equal(renamed.previousPath, oldPath);
@@ -474,7 +474,7 @@ test('rename of unsaved component updates future save path and save persists onl
 
   const created = await manager.createDocument('metagen', 'Future Save Name');
   const oldPath = created.path;
-  const renamed = await manager.renameDocument(oldPath, 'Future Saved Name');
+  const renamed = await manager.renameDocument(getDocumentIdentityKey(created), 'Future Saved Name');
 
   assert.ok(renamed);
   await manager.saveProject();
@@ -502,7 +502,7 @@ test('rename of existing persisted component renames file on disk and updates pa
   const persisted = manager.getDocumentsByModule('metagen')[0];
   const oldPath = persisted.path;
 
-  const renamed = await manager.renameDocument(oldPath, 'Pump Renamed');
+  const renamed = await manager.renameDocument(getDocumentIdentityKey(persisted), 'Pump Renamed');
 
   assert.ok(renamed);
   assert.equal(renameCalls.length, 1);
@@ -527,7 +527,7 @@ test('rename failure on persisted component leaves runtime and disk paths unchan
   const persisted = manager.getDocumentsByModule('metagen')[0];
   const oldPath = persisted.path;
 
-  await assert.rejects(() => manager.renameDocument(oldPath, 'Pump Rename Fails'), /Injected rename failure/);
+  await assert.rejects(() => manager.renameDocument(getDocumentIdentityKey(persisted), 'Pump Rename Fails'), /Injected rename failure/);
 
   const stillOld = manager.getDocumentByPath(oldPath);
   assert.ok(stillOld);
@@ -651,7 +651,7 @@ test('deleting opened component and saving project does not resurrect deleted do
     }
   };
 
-  await manager.deleteDocument(record.path);
+  await manager.deleteDocument(getDocumentIdentityKey(record));
   await manager.saveProject([staleOpenRecord]);
 
   assert.equal(manager.getDocumentByPath(record.path), null);
@@ -669,7 +669,7 @@ test('deleted existing component is absent after save and reopen', async () => {
   await manager.openProject(getProjectFilePath(root));
   const record = manager.getDocumentsByModule('metagen')[0];
 
-  await manager.deleteDocument(record.path);
+  await manager.deleteDocument(getDocumentIdentityKey(record));
   await manager.saveProject();
 
   await manager.closeProject();
@@ -689,7 +689,7 @@ test('deleting unsaved/new component does not throw and does not survive save', 
   const created = await manager.createDocument('metagen', 'Temp Unsaved');
   assert.ok(created.path.startsWith('unsaved://'));
 
-  await assert.doesNotReject(() => manager.deleteDocument(created.path));
+  await assert.doesNotReject(() => manager.deleteDocument(getDocumentIdentityKey(created)));
   const targetProjectFilePath = path.join(root, 'target.yaml');
   await manager.saveProjectAs(targetProjectFilePath, [created]);
 
@@ -1084,7 +1084,7 @@ test('save-as path remap keeps active tab closable and document renameable', asy
     assert.equal(tabs.getActiveDocumentRecord(), null);
 
     const reopened = manager.getDocumentsByModule('metagen')[0];
-    const renamed = await manager.renameDocument(reopened.path, 'Pump After Save As');
+    const renamed = await manager.renameDocument(getDocumentIdentityKey(reopened), 'Pump After Save As');
     assert.ok(renamed);
   } finally {
     globalThis.document = previousDocument;

@@ -117,16 +117,8 @@ export function createProjectTree({
     const nodeIcon = nodeData.nodeType === TREE_NODE_TYPES.project
       ? APP_CONFIG.ui.tree.icons.project
       : nodeData.nodeType === TREE_NODE_TYPES.module
-        ? (nodeData.moduleId === APP_CONFIG.project.moduleIds.metagen
-          ? APP_CONFIG.ui.tree.icons.metagenModule
-          : nodeData.moduleId === APP_CONFIG.project.moduleIds.metalab
-            ? APP_CONFIG.ui.tree.icons.metalabModule
-            : APP_CONFIG.ui.tree.icons.metaviewModule)
-        : (nodeData.moduleId === APP_CONFIG.project.moduleIds.metagen
-          ? APP_CONFIG.ui.tree.icons.metagenDocument
-          : nodeData.moduleId === APP_CONFIG.project.moduleIds.metalab
-            ? APP_CONFIG.ui.tree.icons.metalabDocument
-            : APP_CONFIG.ui.tree.icons.metaviewDocument);
+        ? APP_CONFIG.ui.tree.icons.moduleById[nodeData.moduleId]
+        : APP_CONFIG.ui.tree.icons.documentById[nodeData.moduleId];
     label.textContent = `${nodeIcon} ${nodeData.label}`;
 
     label.addEventListener('click', async (event) => {

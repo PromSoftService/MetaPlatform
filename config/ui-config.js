@@ -49,7 +49,10 @@ export const UI_CONFIG = {
     dialogInput: 'meta-dialog-input',
     dialogActions: 'meta-dialog-actions',
     dialogButton: 'meta-dialog-button',
-    dialogPrimaryButton: 'meta-dialog-button-primary'
+    dialogPrimaryButton: 'meta-dialog-button-primary',
+    logEntry: 'log-entry',
+    logLine: 'log-line',
+    logDetails: 'log-details'
   },
 
 
@@ -88,12 +91,16 @@ export const UI_CONFIG = {
     },
     icons: {
       project: '📦',
-      metagenModule: '🧩',
-      metalabModule: '⚙️',
-      metaviewModule: '🖥️',
-      metagenDocument: '▸',
-      metalabDocument: '◆',
-      metaviewDocument: '◉'
+      moduleById: {
+        metagen: '🧩',
+        metalab: '⚙️',
+        metaview: '🖥️'
+      },
+      documentById: {
+        metagen: '▸',
+        metalab: '◆',
+        metaview: '◉'
+      }
     },
     actions: {
       createComponent: {

@@ -47,6 +47,8 @@ export const APP_CONFIG = {
 FILE: config/platform-config.js
 ==================================================
 
+import IPC_CONFIG from './ipc-config.cjs';
+
 export const PLATFORM_CONFIG = {
   locale: 'ru-RU',
 
@@ -65,7 +67,7 @@ export const PLATFORM_CONFIG = {
     topPanelTitle: '⚡ MetaPlatform',
     menu: {
       fileLabel: 'Файл',
-      menuEventChannel: 'menu:action',
+      menuEventChannel: IPC_CONFIG.channels.menuAction,
       items: {
         newProject: '🆕 Создать проект',
         openProject: '📂 Открыть проект',
@@ -92,6 +94,8 @@ export const PLATFORM_CONFIG = {
       yamlFilterExtensions: ['yaml', 'yml']
     }
   },
+
+  ipc: IPC_CONFIG,
 
   logging: {
     defaultSource: 'app',
@@ -162,7 +166,13 @@ export const PROJECT_CONFIG = {
 
   defaults: {
     unnamedProject: 'unnamed'
-  }
+  },
+
+  save: {
+    stagingFolderName: '.save-staging',
+    backupPrefix: '.backup-'
+  },
+
 };
 
 
@@ -221,7 +231,10 @@ export const UI_CONFIG = {
     dialogInput: 'meta-dialog-input',
     dialogActions: 'meta-dialog-actions',
     dialogButton: 'meta-dialog-button',
-    dialogPrimaryButton: 'meta-dialog-button-primary'
+    dialogPrimaryButton: 'meta-dialog-button-primary',
+    logEntry: 'log-entry',
+    logLine: 'log-line',
+    logDetails: 'log-details'
   },
 
 
@@ -260,12 +273,16 @@ export const UI_CONFIG = {
     },
     icons: {
       project: '📦',
-      metagenModule: '🧩',
-      metalabModule: '⚙️',
-      metaviewModule: '🖥️',
-      metagenDocument: '▸',
-      metalabDocument: '◆',
-      metaviewDocument: '◉'
+      moduleById: {
+        metagen: '🧩',
+        metalab: '⚙️',
+        metaview: '🖥️'
+      },
+      documentById: {
+        metagen: '▸',
+        metalab: '◆',
+        metaview: '◉'
+      }
     },
     actions: {
       createComponent: {
@@ -314,6 +331,33 @@ export const UI_CONFIG = {
 
 
 ==================================================
+FILE: config/ipc-config.cjs
+==================================================
+
+module.exports = {
+  channels: {
+    menuAction: 'menu:action',
+    windowCloseRequested: 'window:close-requested'
+  },
+  handlers: {
+    openProjectDialog: 'dialog:open-project',
+    saveProjectAsDialog: 'dialog:save-project-as',
+    appQuit: 'app:quit',
+    windowCloseApproved: 'window:close-approved',
+    windowCloseCancelled: 'window:close-cancelled',
+    fsEnsureDir: 'fs:ensure-dir',
+    fsExists: 'fs:exists',
+    fsReadText: 'fs:read-text',
+    fsWriteText: 'fs:write-text',
+    fsRename: 'fs:rename',
+    fsDeleteFile: 'fs:delete-file',
+    fsDeleteDir: 'fs:delete-dir',
+    fsListFiles: 'fs:list-files'
+  }
+};
+
+
+==================================================
 FILE: create_project_structure.py
 ==================================================
 
@@ -330,6 +374,7 @@ PROJECT_FILES = [
   'config/platform-config.js',
   'config/project-config.js',
   'config/ui-config.js',
+  'config/ipc-config.cjs',
   'create_project_structure.py',
   'export_project_to_txt.py',
   'main.js',
@@ -403,6 +448,7 @@ PROJECT_FILES = [
   'renderer/core/loggerSinks.js',
   'renderer/runtime/projectPaths.js',
   'tests/logger.test.js',
+  'tests/configWiring.integration.test.js',
   'vite.config.js',
   'main/runtime/windowCloseGuard.js',
 ]
@@ -464,6 +510,7 @@ PROJECT_FILES = [
   'config/platform-config.js',
   'config/project-config.js',
   'config/ui-config.js',
+  'config/ipc-config.cjs',
   'create_project_structure.py',
   'export_project_to_txt.py',
   'main.js',
@@ -537,6 +584,7 @@ PROJECT_FILES = [
   'renderer/core/loggerSinks.js',
   'renderer/runtime/projectPaths.js',
   'tests/logger.test.js',
+  'tests/configWiring.integration.test.js',
   'vite.config.js',
   'main/runtime/windowCloseGuard.js',
 ]
@@ -652,7 +700,7 @@ function createWindow() {
     }
 
     if (decision.requestRendererConfirmation) {
-      win.webContents.send('window:close-requested');
+      win.webContents.send(APP_CONFIG.platform.ipc.channels.windowCloseRequested);
     }
   });
 
@@ -668,7 +716,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle('dialog:open-project', async () => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.openProjectDialog, async () => {
     const result = await dialog.showOpenDialog({
       title: APP_CONFIG.platform.app.dialogs.openProjectTitle,
       properties: ['openFile'],
@@ -687,7 +735,7 @@ app.whenReady().then(() => {
     return result.filePaths[0];
   });
 
-  ipcMain.handle('dialog:save-project-as', async (_event, defaultPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.saveProjectAsDialog, async (_event, defaultPath) => {
     const result = await dialog.showSaveDialog({
       title: APP_CONFIG.platform.app.dialogs.saveProjectAsTitle,
       defaultPath,
@@ -707,13 +755,13 @@ app.whenReady().then(() => {
     return result.filePath;
   });
 
-  ipcMain.handle('app:quit', async () => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.appQuit, async () => {
     windowCloseGuard.approveClose();
     app.quit();
     return true;
   });
 
-  ipcMain.handle('window:close-approved', async () => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.windowCloseApproved, async () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       return false;
     }
@@ -723,17 +771,17 @@ app.whenReady().then(() => {
     return true;
   });
 
-  ipcMain.handle('window:close-cancelled', async () => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.windowCloseCancelled, async () => {
     windowCloseGuard.cancelClose();
     return true;
   });
 
-  ipcMain.handle('fs:ensure-dir', async (_event, targetPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsEnsureDir, async (_event, targetPath) => {
     await fs.mkdir(targetPath, { recursive: true });
     return true;
   });
 
-  ipcMain.handle('fs:exists', async (_event, targetPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsExists, async (_event, targetPath) => {
     try {
       await fs.access(targetPath);
       return true;
@@ -742,33 +790,33 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('fs:read-text', async (_event, targetPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsReadText, async (_event, targetPath) => {
     return fs.readFile(targetPath, 'utf-8');
   });
 
-  ipcMain.handle('fs:write-text', async (_event, targetPath, text) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsWriteText, async (_event, targetPath, text) => {
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
     await fs.writeFile(targetPath, text, 'utf-8');
     return true;
   });
 
-  ipcMain.handle('fs:rename', async (_event, fromPath, toPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsRename, async (_event, fromPath, toPath) => {
     await fs.mkdir(path.dirname(toPath), { recursive: true });
     await fs.rename(fromPath, toPath);
     return true;
   });
 
-  ipcMain.handle('fs:delete-file', async (_event, targetPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsDeleteFile, async (_event, targetPath) => {
     await fs.rm(targetPath, { force: true });
     return true;
   });
 
-  ipcMain.handle('fs:delete-dir', async (_event, targetPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsDeleteDir, async (_event, targetPath) => {
     await fs.rm(targetPath, { recursive: true, force: true });
     return true;
   });
 
-  ipcMain.handle('fs:list-files', async (_event, targetDir, extensions = []) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsListFiles, async (_event, targetDir, extensions = []) => {
     const output = [];
 
     async function walk(currentDir) {
@@ -852,30 +900,32 @@ FILE: package.json
 FILE: preload.cjs
 ==================================================
 
+const path = require('path');
 const { contextBridge, ipcRenderer } = require('electron');
+const IPC_CONFIG = require(path.join(__dirname, 'config', 'ipc-config.cjs'));
 
 contextBridge.exposeInMainWorld('MetaPlatformFS', {
-  openProjectFileDialog: () => ipcRenderer.invoke('dialog:open-project'),
-  saveProjectFileAsDialog: (defaultPath) => ipcRenderer.invoke('dialog:save-project-as', defaultPath),
-  requestAppQuit: () => ipcRenderer.invoke('app:quit'),
-  approveWindowClose: () => ipcRenderer.invoke('window:close-approved'),
-  cancelWindowClose: () => ipcRenderer.invoke('window:close-cancelled'),
-  ensureDir: (targetPath) => ipcRenderer.invoke('fs:ensure-dir', targetPath),
-  exists: (targetPath) => ipcRenderer.invoke('fs:exists', targetPath),
-  readText: (targetPath) => ipcRenderer.invoke('fs:read-text', targetPath),
-  writeText: (targetPath, text) => ipcRenderer.invoke('fs:write-text', targetPath, text),
-  rename: (fromPath, toPath) => ipcRenderer.invoke('fs:rename', fromPath, toPath),
-  deleteFile: (targetPath) => ipcRenderer.invoke('fs:delete-file', targetPath),
-  deleteDir: (targetPath) => ipcRenderer.invoke('fs:delete-dir', targetPath),
-  listFiles: (targetDir, extensions) => ipcRenderer.invoke('fs:list-files', targetDir, extensions),
+  openProjectFileDialog: () => ipcRenderer.invoke(IPC_CONFIG.handlers.openProjectDialog),
+  saveProjectFileAsDialog: (defaultPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.saveProjectAsDialog, defaultPath),
+  requestAppQuit: () => ipcRenderer.invoke(IPC_CONFIG.handlers.appQuit),
+  approveWindowClose: () => ipcRenderer.invoke(IPC_CONFIG.handlers.windowCloseApproved),
+  cancelWindowClose: () => ipcRenderer.invoke(IPC_CONFIG.handlers.windowCloseCancelled),
+  ensureDir: (targetPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsEnsureDir, targetPath),
+  exists: (targetPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsExists, targetPath),
+  readText: (targetPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsReadText, targetPath),
+  writeText: (targetPath, text) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsWriteText, targetPath, text),
+  rename: (fromPath, toPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsRename, fromPath, toPath),
+  deleteFile: (targetPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsDeleteFile, targetPath),
+  deleteDir: (targetPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsDeleteDir, targetPath),
+  listFiles: (targetDir, extensions) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsListFiles, targetDir, extensions),
   onWindowCloseRequested: (listener) => {
     const wrapped = () => listener();
-    ipcRenderer.on('window:close-requested', wrapped);
-    return () => ipcRenderer.off('window:close-requested', wrapped);
+    ipcRenderer.on(IPC_CONFIG.channels.windowCloseRequested, wrapped);
+    return () => ipcRenderer.off(IPC_CONFIG.channels.windowCloseRequested, wrapped);
   },
   onMenuAction: (listener) => {
     const wrapped = (_event, action) => listener(action);
-    const menuEventChannel = 'menu:action';
+    const menuEventChannel = IPC_CONFIG.channels.menuAction;
     ipcRenderer.on(menuEventChannel, wrapped);
     return () => ipcRenderer.off(menuEventChannel, wrapped);
   }
@@ -1722,19 +1772,19 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   function buildSaveStagingRoot(targetRoot) {
-    return joinProjectPath(targetRoot, '.save-staging');
+    return joinProjectPath(targetRoot, APP_CONFIG.project.save.stagingFolderName);
   }
 
   function buildModuleStagingDir(targetRoot, moduleFolder) {
-    return joinProjectPath(targetRoot, '.save-staging', moduleFolder);
+    return joinProjectPath(targetRoot, APP_CONFIG.project.save.stagingFolderName, moduleFolder);
   }
 
   function buildModuleBackupDir(targetRoot, moduleFolder) {
-    return joinProjectPath(targetRoot, `.backup-${moduleFolder}`);
+    return joinProjectPath(targetRoot, `${APP_CONFIG.project.save.backupPrefix}${moduleFolder}`);
   }
 
   function buildProjectFileBackupPath(targetRoot, projectFileName) {
-    return joinProjectPath(targetRoot, `.backup-${projectFileName}`);
+    return joinProjectPath(targetRoot, `${APP_CONFIG.project.save.backupPrefix}${projectFileName}`);
   }
 
   async function removeDirectoryIfExists(targetPath) {
@@ -2008,10 +2058,6 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
         return getAllDocuments().find((entry) => getDocumentIdentityKey(entry) === identityKey) || null;
       }
 
-      if (targetIdentity.path) {
-        return getDocumentByPath(targetIdentity.path);
-      }
-
       return null;
     }
 
@@ -2033,7 +2079,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       return recordById;
     }
 
-    return getDocumentByPath(normalizedIdentity);
+    return null;
   }
 
   function replaceDocumentRecord(nextRecord) {
@@ -2260,7 +2306,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     }
 
     setDirty(true);
-    logger.info('project', 'Документ удалён', { identityKey, path: record.path });
+    logger.info(APP_CONFIG.ui.runtime.loggerSources.project, 'Документ удалён', { identityKey, path: record.path });
     return true;
   }
 
@@ -2394,13 +2440,13 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     // cleanup (best-effort только после полного успешного commit)
     await cleanupSaveBackups(projectOwnedPaths).catch((error) => {
-      logger.warn('project', 'Cleanup backup-файлов завершился с ошибкой', {
+      logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Cleanup backup-файлов завершился с ошибкой', {
         targetRoot,
         message: error?.message || String(error)
       });
     });
     await cleanupSaveStaging(targetRoot).catch((error) => {
-      logger.warn('project', 'Cleanup staging завершился с ошибкой', {
+      logger.warn(APP_CONFIG.ui.runtime.loggerSources.project, 'Cleanup staging завершился с ошибкой', {
         targetRoot,
         message: error?.message || String(error)
       });
@@ -2434,7 +2480,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     const normalizedProjectFilePath = normalizeProjectFilePath(newProjectFilePath);
 
     const result = await saveProjectToRoot(normalizedProjectFilePath, openDocuments);
-    logger.info('project', 'Проект сохранен как', {
+    logger.info(APP_CONFIG.ui.runtime.loggerSources.project, 'Проект сохранен как', {
       rootPath: getProjectRootFromProjectFile(normalizedProjectFilePath),
       projectFilePath: normalizedProjectFilePath
     });
@@ -5676,16 +5722,8 @@ export function createProjectTree({
     const nodeIcon = nodeData.nodeType === TREE_NODE_TYPES.project
       ? APP_CONFIG.ui.tree.icons.project
       : nodeData.nodeType === TREE_NODE_TYPES.module
-        ? (nodeData.moduleId === APP_CONFIG.project.moduleIds.metagen
-          ? APP_CONFIG.ui.tree.icons.metagenModule
-          : nodeData.moduleId === APP_CONFIG.project.moduleIds.metalab
-            ? APP_CONFIG.ui.tree.icons.metalabModule
-            : APP_CONFIG.ui.tree.icons.metaviewModule)
-        : (nodeData.moduleId === APP_CONFIG.project.moduleIds.metagen
-          ? APP_CONFIG.ui.tree.icons.metagenDocument
-          : nodeData.moduleId === APP_CONFIG.project.moduleIds.metalab
-            ? APP_CONFIG.ui.tree.icons.metalabDocument
-            : APP_CONFIG.ui.tree.icons.metaviewDocument);
+        ? APP_CONFIG.ui.tree.icons.moduleById[nodeData.moduleId]
+        : APP_CONFIG.ui.tree.icons.documentById[nodeData.moduleId];
     label.textContent = `${nodeIcon} ${nodeData.label}`;
 
     label.addEventListener('click', async (event) => {
@@ -7703,7 +7741,7 @@ test('rename of unsaved component with future project path skips fs.rename and u
 
   assert.equal(await fs.access(oldPath).then(() => true).catch(() => false), false);
 
-  const renamed = await manager.renameDocument(oldPath, 'Renamed Future Component');
+  const renamed = await manager.renameDocument(getDocumentIdentityKey(created), 'Renamed Future Component');
 
   assert.ok(renamed);
   assert.equal(renamed.previousPath, oldPath);
@@ -7726,7 +7764,7 @@ test('rename of unsaved component updates future save path and save persists onl
 
   const created = await manager.createDocument('metagen', 'Future Save Name');
   const oldPath = created.path;
-  const renamed = await manager.renameDocument(oldPath, 'Future Saved Name');
+  const renamed = await manager.renameDocument(getDocumentIdentityKey(created), 'Future Saved Name');
 
   assert.ok(renamed);
   await manager.saveProject();
@@ -7754,7 +7792,7 @@ test('rename of existing persisted component renames file on disk and updates pa
   const persisted = manager.getDocumentsByModule('metagen')[0];
   const oldPath = persisted.path;
 
-  const renamed = await manager.renameDocument(oldPath, 'Pump Renamed');
+  const renamed = await manager.renameDocument(getDocumentIdentityKey(persisted), 'Pump Renamed');
 
   assert.ok(renamed);
   assert.equal(renameCalls.length, 1);
@@ -7779,7 +7817,7 @@ test('rename failure on persisted component leaves runtime and disk paths unchan
   const persisted = manager.getDocumentsByModule('metagen')[0];
   const oldPath = persisted.path;
 
-  await assert.rejects(() => manager.renameDocument(oldPath, 'Pump Rename Fails'), /Injected rename failure/);
+  await assert.rejects(() => manager.renameDocument(getDocumentIdentityKey(persisted), 'Pump Rename Fails'), /Injected rename failure/);
 
   const stillOld = manager.getDocumentByPath(oldPath);
   assert.ok(stillOld);
@@ -7903,7 +7941,7 @@ test('deleting opened component and saving project does not resurrect deleted do
     }
   };
 
-  await manager.deleteDocument(record.path);
+  await manager.deleteDocument(getDocumentIdentityKey(record));
   await manager.saveProject([staleOpenRecord]);
 
   assert.equal(manager.getDocumentByPath(record.path), null);
@@ -7921,7 +7959,7 @@ test('deleted existing component is absent after save and reopen', async () => {
   await manager.openProject(getProjectFilePath(root));
   const record = manager.getDocumentsByModule('metagen')[0];
 
-  await manager.deleteDocument(record.path);
+  await manager.deleteDocument(getDocumentIdentityKey(record));
   await manager.saveProject();
 
   await manager.closeProject();
@@ -7941,7 +7979,7 @@ test('deleting unsaved/new component does not throw and does not survive save', 
   const created = await manager.createDocument('metagen', 'Temp Unsaved');
   assert.ok(created.path.startsWith('unsaved://'));
 
-  await assert.doesNotReject(() => manager.deleteDocument(created.path));
+  await assert.doesNotReject(() => manager.deleteDocument(getDocumentIdentityKey(created)));
   const targetProjectFilePath = path.join(root, 'target.yaml');
   await manager.saveProjectAs(targetProjectFilePath, [created]);
 
@@ -8336,7 +8374,7 @@ test('save-as path remap keeps active tab closable and document renameable', asy
     assert.equal(tabs.getActiveDocumentRecord(), null);
 
     const reopened = manager.getDocumentsByModule('metagen')[0];
-    const renamed = await manager.renameDocument(reopened.path, 'Pump After Save As');
+    const renamed = await manager.renameDocument(getDocumentIdentityKey(reopened), 'Pump After Save As');
     assert.ok(renamed);
   } finally {
     globalThis.document = previousDocument;
@@ -9442,9 +9480,9 @@ FILE: renderer/core/loggerSinks.js
 
 import { APP_CONFIG } from '../../config/app-config.js';
 
-const LOG_ENTRY_CLASS = 'log-entry';
-const LOG_LINE_CLASS = 'log-line';
-const LOG_DETAILS_CLASS = 'log-details';
+const LOG_ENTRY_CLASS = APP_CONFIG.ui.classNames.logEntry;
+const LOG_LINE_CLASS = APP_CONFIG.ui.classNames.logLine;
+const LOG_DETAILS_CLASS = APP_CONFIG.ui.classNames.logDetails;
 
 export function normalizeLogDetails(details) {
   if (details == null) {
@@ -9711,6 +9749,39 @@ test('logger console sink mirrors output when enabled', () => {
   } finally {
     console.log = originalConsoleLog;
   }
+});
+
+
+==================================================
+FILE: tests/configWiring.integration.test.js
+==================================================
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+
+import { APP_CONFIG } from '../config/app-config.js';
+import IPC_CONFIG from '../config/ipc-config.cjs';
+
+const MAIN_FILE = 'main.js';
+const PRELOAD_FILE = 'preload.cjs';
+
+test('platform IPC config is a single source of truth for main/preload wiring', async () => {
+  const mainSource = await fs.readFile(MAIN_FILE, 'utf-8');
+  const preloadSource = await fs.readFile(PRELOAD_FILE, 'utf-8');
+
+  assert.equal(APP_CONFIG.platform.ipc.channels.menuAction, IPC_CONFIG.channels.menuAction);
+  assert.equal(APP_CONFIG.platform.ipc.channels.windowCloseRequested, IPC_CONFIG.channels.windowCloseRequested);
+
+  assert.match(mainSource, /APP_CONFIG\.platform\.ipc\.channels\.windowCloseRequested/);
+  assert.match(mainSource, /APP_CONFIG\.platform\.ipc\.handlers\.fsListFiles/);
+
+  assert.match(preloadSource, /IPC_CONFIG\.channels\.menuAction/);
+  assert.match(preloadSource, /IPC_CONFIG\.channels\.windowCloseRequested/);
+  assert.match(preloadSource, /IPC_CONFIG\.handlers\.fsListFiles/);
+
+  assert.doesNotMatch(preloadSource, /['"]menu:action['"]/);
+  assert.doesNotMatch(preloadSource, /['"]window:close-requested['"]/);
 });
 
 

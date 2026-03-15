@@ -69,7 +69,7 @@ function createWindow() {
     }
 
     if (decision.requestRendererConfirmation) {
-      win.webContents.send('window:close-requested');
+      win.webContents.send(APP_CONFIG.platform.ipc.channels.windowCloseRequested);
     }
   });
 
@@ -85,7 +85,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle('dialog:open-project', async () => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.openProjectDialog, async () => {
     const result = await dialog.showOpenDialog({
       title: APP_CONFIG.platform.app.dialogs.openProjectTitle,
       properties: ['openFile'],
@@ -104,7 +104,7 @@ app.whenReady().then(() => {
     return result.filePaths[0];
   });
 
-  ipcMain.handle('dialog:save-project-as', async (_event, defaultPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.saveProjectAsDialog, async (_event, defaultPath) => {
     const result = await dialog.showSaveDialog({
       title: APP_CONFIG.platform.app.dialogs.saveProjectAsTitle,
       defaultPath,
@@ -124,13 +124,13 @@ app.whenReady().then(() => {
     return result.filePath;
   });
 
-  ipcMain.handle('app:quit', async () => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.appQuit, async () => {
     windowCloseGuard.approveClose();
     app.quit();
     return true;
   });
 
-  ipcMain.handle('window:close-approved', async () => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.windowCloseApproved, async () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       return false;
     }
@@ -140,17 +140,17 @@ app.whenReady().then(() => {
     return true;
   });
 
-  ipcMain.handle('window:close-cancelled', async () => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.windowCloseCancelled, async () => {
     windowCloseGuard.cancelClose();
     return true;
   });
 
-  ipcMain.handle('fs:ensure-dir', async (_event, targetPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsEnsureDir, async (_event, targetPath) => {
     await fs.mkdir(targetPath, { recursive: true });
     return true;
   });
 
-  ipcMain.handle('fs:exists', async (_event, targetPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsExists, async (_event, targetPath) => {
     try {
       await fs.access(targetPath);
       return true;
@@ -159,33 +159,33 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('fs:read-text', async (_event, targetPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsReadText, async (_event, targetPath) => {
     return fs.readFile(targetPath, 'utf-8');
   });
 
-  ipcMain.handle('fs:write-text', async (_event, targetPath, text) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsWriteText, async (_event, targetPath, text) => {
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
     await fs.writeFile(targetPath, text, 'utf-8');
     return true;
   });
 
-  ipcMain.handle('fs:rename', async (_event, fromPath, toPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsRename, async (_event, fromPath, toPath) => {
     await fs.mkdir(path.dirname(toPath), { recursive: true });
     await fs.rename(fromPath, toPath);
     return true;
   });
 
-  ipcMain.handle('fs:delete-file', async (_event, targetPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsDeleteFile, async (_event, targetPath) => {
     await fs.rm(targetPath, { force: true });
     return true;
   });
 
-  ipcMain.handle('fs:delete-dir', async (_event, targetPath) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsDeleteDir, async (_event, targetPath) => {
     await fs.rm(targetPath, { recursive: true, force: true });
     return true;
   });
 
-  ipcMain.handle('fs:list-files', async (_event, targetDir, extensions = []) => {
+  ipcMain.handle(APP_CONFIG.platform.ipc.handlers.fsListFiles, async (_event, targetDir, extensions = []) => {
     const output = [];
 
     async function walk(currentDir) {
