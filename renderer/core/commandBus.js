@@ -1,3 +1,7 @@
+import { APP_CONFIG } from '../../config/app-config.js';
+
+const COMMAND_BUS_LOG_SOURCE = APP_CONFIG.ui.runtime.loggerSources.commandBus;
+
 export function createCommandBus({ logger }) {
   const handlers = new Map();
 
@@ -15,18 +19,18 @@ export function createCommandBus({ logger }) {
     const handler = handlers.get(type);
 
     if (!handler) {
-      logger.warn('command-bus', `Не найден обработчик команды: ${type}`);
+      logger.warn(COMMAND_BUS_LOG_SOURCE, `Не найден обработчик команды: ${type}`);
       return null;
     }
 
-    logger.info('command-bus', `Выполнение команды: ${type}`, command?.meta || null);
+    logger.info(COMMAND_BUS_LOG_SOURCE, `Выполнение команды: ${type}`, command?.meta || null);
 
     try {
       const result = await handler(command);
-      logger.info('command-bus', `Команда выполнена: ${type}`);
+      logger.info(COMMAND_BUS_LOG_SOURCE, `Команда выполнена: ${type}`);
       return result;
     } catch (error) {
-      logger.error('command-bus', `Ошибка команды: ${type}`, {
+      logger.error(COMMAND_BUS_LOG_SOURCE, `Ошибка команды: ${type}`, {
         message: error?.message || String(error)
       });
       throw error;

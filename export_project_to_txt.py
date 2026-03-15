@@ -13,6 +13,8 @@ PROJECT_FILES = [
   'config/project-config.js',
   'config/ui-config.js',
   'config/ipc-config.cjs',
+  'config/ipc-config.js',
+  'config/ipc-config.json',
   'create_project_structure.py',
   'export_project_to_txt.py',
   'main.js',

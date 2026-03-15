@@ -28,6 +28,7 @@ codex.patch
 package-lock.json
 tech_spec.txt
 todo.txt
+code_overview.txt
 
 ==================================================
 FILE: config/app-config.js
@@ -47,7 +48,7 @@ export const APP_CONFIG = {
 FILE: config/platform-config.js
 ==================================================
 
-import IPC_CONFIG from './ipc-config.cjs';
+import IPC_CONFIG from './ipc-config.js';
 
 export const PLATFORM_CONFIG = {
   locale: 'ru-RU',
@@ -313,7 +314,9 @@ export const UI_CONFIG = {
       projectTree: 'project-tree',
       windowClose: 'window-close',
       project: 'project',
-      platform: 'platform'
+      platform: 'platform',
+      commandBus: 'command-bus',
+      moduleRegistry: 'module-registry'
     }
   },
 
@@ -334,27 +337,47 @@ export const UI_CONFIG = {
 FILE: config/ipc-config.cjs
 ==================================================
 
-module.exports = {
-  channels: {
-    menuAction: 'menu:action',
-    windowCloseRequested: 'window:close-requested'
+module.exports = require('./ipc-config.json');
+
+
+==================================================
+FILE: config/ipc-config.js
+==================================================
+
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+
+const IPC_CONFIG = require('./ipc-config.json');
+
+export default IPC_CONFIG;
+
+
+==================================================
+FILE: config/ipc-config.json
+==================================================
+
+{
+  "channels": {
+    "menuAction": "menu:action",
+    "windowCloseRequested": "window:close-requested"
   },
-  handlers: {
-    openProjectDialog: 'dialog:open-project',
-    saveProjectAsDialog: 'dialog:save-project-as',
-    appQuit: 'app:quit',
-    windowCloseApproved: 'window:close-approved',
-    windowCloseCancelled: 'window:close-cancelled',
-    fsEnsureDir: 'fs:ensure-dir',
-    fsExists: 'fs:exists',
-    fsReadText: 'fs:read-text',
-    fsWriteText: 'fs:write-text',
-    fsRename: 'fs:rename',
-    fsDeleteFile: 'fs:delete-file',
-    fsDeleteDir: 'fs:delete-dir',
-    fsListFiles: 'fs:list-files'
+  "handlers": {
+    "openProjectDialog": "dialog:open-project",
+    "saveProjectAsDialog": "dialog:save-project-as",
+    "appQuit": "app:quit",
+    "windowCloseApproved": "window:close-approved",
+    "windowCloseCancelled": "window:close-cancelled",
+    "fsEnsureDir": "fs:ensure-dir",
+    "fsExists": "fs:exists",
+    "fsReadText": "fs:read-text",
+    "fsWriteText": "fs:write-text",
+    "fsRename": "fs:rename",
+    "fsDeleteFile": "fs:delete-file",
+    "fsDeleteDir": "fs:delete-dir",
+    "fsListFiles": "fs:list-files"
   }
-};
+}
 
 
 ==================================================
@@ -375,6 +398,8 @@ PROJECT_FILES = [
   'config/project-config.js',
   'config/ui-config.js',
   'config/ipc-config.cjs',
+  'config/ipc-config.js',
+  'config/ipc-config.json',
   'create_project_structure.py',
   'export_project_to_txt.py',
   'main.js',
@@ -511,6 +536,8 @@ PROJECT_FILES = [
   'config/project-config.js',
   'config/ui-config.js',
   'config/ipc-config.cjs',
+  'config/ipc-config.js',
+  'config/ipc-config.json',
   'create_project_structure.py',
   'export_project_to_txt.py',
   'main.js',
@@ -900,9 +927,8 @@ FILE: package.json
 FILE: preload.cjs
 ==================================================
 
-const path = require('path');
 const { contextBridge, ipcRenderer } = require('electron');
-const IPC_CONFIG = require(path.join(__dirname, 'config', 'ipc-config.cjs'));
+const IPC_CONFIG = require('./config/ipc-config.cjs');
 
 contextBridge.exposeInMainWorld('MetaPlatformFS', {
   openProjectFileDialog: () => ipcRenderer.invoke(IPC_CONFIG.handlers.openProjectDialog),
@@ -1397,6 +1423,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 FILE: renderer/core/commandBus.js
 ==================================================
 
+import { APP_CONFIG } from '../../config/app-config.js';
+
+const COMMAND_BUS_LOG_SOURCE = APP_CONFIG.ui.runtime.loggerSources.commandBus;
+
 export function createCommandBus({ logger }) {
   const handlers = new Map();
 
@@ -1414,18 +1444,18 @@ export function createCommandBus({ logger }) {
     const handler = handlers.get(type);
 
     if (!handler) {
-      logger.warn('command-bus', `Не найден обработчик команды: ${type}`);
+      logger.warn(COMMAND_BUS_LOG_SOURCE, `Не найден обработчик команды: ${type}`);
       return null;
     }
 
-    logger.info('command-bus', `Выполнение команды: ${type}`, command?.meta || null);
+    logger.info(COMMAND_BUS_LOG_SOURCE, `Выполнение команды: ${type}`, command?.meta || null);
 
     try {
       const result = await handler(command);
-      logger.info('command-bus', `Команда выполнена: ${type}`);
+      logger.info(COMMAND_BUS_LOG_SOURCE, `Команда выполнена: ${type}`);
       return result;
     } catch (error) {
-      logger.error('command-bus', `Ошибка команды: ${type}`, {
+      logger.error(COMMAND_BUS_LOG_SOURCE, `Ошибка команды: ${type}`, {
         message: error?.message || String(error)
       });
       throw error;
@@ -1437,6 +1467,7 @@ export function createCommandBus({ logger }) {
     execute
   };
 }
+
 
 ==================================================
 FILE: renderer/core/layout.js
@@ -1550,6 +1581,10 @@ export { shouldWrite };
 FILE: renderer/core/moduleRegistry.js
 ==================================================
 
+import { APP_CONFIG } from '../../config/app-config.js';
+
+const MODULE_REGISTRY_LOG_SOURCE = APP_CONFIG.ui.runtime.loggerSources.moduleRegistry;
+
 export function createModuleRegistry({ logger }) {
   const modulesById = new Map();
   const documentKindToModuleId = new Map();
@@ -1565,7 +1600,7 @@ export function createModuleRegistry({ logger }) {
       documentKindToModuleId.set(kind, module.id);
     }
 
-    logger.info('module-registry', 'Модуль зарегистрирован', {
+    logger.info(MODULE_REGISTRY_LOG_SOURCE, 'Модуль зарегистрирован', {
       id: module.id,
       name: module.name,
       documentKinds: module.documentKinds || []
@@ -1593,21 +1628,29 @@ export function createModuleRegistry({ logger }) {
   };
 }
 
+
 ==================================================
 FILE: renderer/core/platformCommands.js
 ==================================================
 
-export const PLATFORM_COMMANDS = {
-  createProject: 'PLATFORM_CREATE_PROJECT',
-  openProject: 'PLATFORM_OPEN_PROJECT',
-  saveProject: 'PLATFORM_SAVE_PROJECT',
-  closeProject: 'PLATFORM_CLOSE_PROJECT',
-  openDocument: 'PLATFORM_OPEN_DOCUMENT',
-  renameDocument: 'PLATFORM_RENAME_DOCUMENT',
-  deleteDocument: 'PLATFORM_DELETE_DOCUMENT',
-  activateTab: 'PLATFORM_ACTIVATE_TAB',
-  closeTab: 'PLATFORM_CLOSE_TAB'
+const PLATFORM_COMMAND_PREFIX = 'PLATFORM_';
+
+const PLATFORM_COMMAND_TOKENS = {
+  createProject: 'CREATE_PROJECT',
+  openProject: 'OPEN_PROJECT',
+  saveProject: 'SAVE_PROJECT',
+  closeProject: 'CLOSE_PROJECT',
+  openDocument: 'OPEN_DOCUMENT',
+  renameDocument: 'RENAME_DOCUMENT',
+  deleteDocument: 'DELETE_DOCUMENT',
+  activateTab: 'ACTIVATE_TAB',
+  closeTab: 'CLOSE_TAB'
 };
+
+export const PLATFORM_COMMANDS = Object.fromEntries(
+  Object.entries(PLATFORM_COMMAND_TOKENS).map(([key, token]) => [key, `${PLATFORM_COMMAND_PREFIX}${token}`])
+);
+
 
 ==================================================
 FILE: renderer/core/projectManager.js
@@ -9759,9 +9802,13 @@ FILE: tests/configWiring.integration.test.js
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import { createRequire } from 'node:module';
 
 import { APP_CONFIG } from '../config/app-config.js';
-import IPC_CONFIG from '../config/ipc-config.cjs';
+import IPC_CONFIG from '../config/ipc-config.js';
+
+const require = createRequire(import.meta.url);
+const IPC_CONFIG_CJS = require('../config/ipc-config.cjs');
 
 const MAIN_FILE = 'main.js';
 const PRELOAD_FILE = 'preload.cjs';
@@ -9770,6 +9817,7 @@ test('platform IPC config is a single source of truth for main/preload wiring', 
   const mainSource = await fs.readFile(MAIN_FILE, 'utf-8');
   const preloadSource = await fs.readFile(PRELOAD_FILE, 'utf-8');
 
+  assert.deepEqual(IPC_CONFIG, IPC_CONFIG_CJS);
   assert.equal(APP_CONFIG.platform.ipc.channels.menuAction, IPC_CONFIG.channels.menuAction);
   assert.equal(APP_CONFIG.platform.ipc.channels.windowCloseRequested, IPC_CONFIG.channels.windowCloseRequested);
 

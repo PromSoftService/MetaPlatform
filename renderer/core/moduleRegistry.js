@@ -1,3 +1,7 @@
+import { APP_CONFIG } from '../../config/app-config.js';
+
+const MODULE_REGISTRY_LOG_SOURCE = APP_CONFIG.ui.runtime.loggerSources.moduleRegistry;
+
 export function createModuleRegistry({ logger }) {
   const modulesById = new Map();
   const documentKindToModuleId = new Map();
@@ -13,7 +17,7 @@ export function createModuleRegistry({ logger }) {
       documentKindToModuleId.set(kind, module.id);
     }
 
-    logger.info('module-registry', 'Модуль зарегистрирован', {
+    logger.info(MODULE_REGISTRY_LOG_SOURCE, 'Модуль зарегистрирован', {
       id: module.id,
       name: module.name,
       documentKinds: module.documentKinds || []

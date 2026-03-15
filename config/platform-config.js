@@ -1,4 +1,4 @@
-import IPC_CONFIG from './ipc-config.cjs';
+import IPC_CONFIG from './ipc-config.js';
 
 export const PLATFORM_CONFIG = {
   locale: 'ru-RU',

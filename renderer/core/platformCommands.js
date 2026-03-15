@@ -1,11 +1,17 @@
-export const PLATFORM_COMMANDS = {
-  createProject: 'PLATFORM_CREATE_PROJECT',
-  openProject: 'PLATFORM_OPEN_PROJECT',
-  saveProject: 'PLATFORM_SAVE_PROJECT',
-  closeProject: 'PLATFORM_CLOSE_PROJECT',
-  openDocument: 'PLATFORM_OPEN_DOCUMENT',
-  renameDocument: 'PLATFORM_RENAME_DOCUMENT',
-  deleteDocument: 'PLATFORM_DELETE_DOCUMENT',
-  activateTab: 'PLATFORM_ACTIVATE_TAB',
-  closeTab: 'PLATFORM_CLOSE_TAB'
+const PLATFORM_COMMAND_PREFIX = 'PLATFORM_';
+
+const PLATFORM_COMMAND_TOKENS = {
+  createProject: 'CREATE_PROJECT',
+  openProject: 'OPEN_PROJECT',
+  saveProject: 'SAVE_PROJECT',
+  closeProject: 'CLOSE_PROJECT',
+  openDocument: 'OPEN_DOCUMENT',
+  renameDocument: 'RENAME_DOCUMENT',
+  deleteDocument: 'DELETE_DOCUMENT',
+  activateTab: 'ACTIVATE_TAB',
+  closeTab: 'CLOSE_TAB'
 };
+
+export const PLATFORM_COMMANDS = Object.fromEntries(
+  Object.entries(PLATFORM_COMMAND_TOKENS).map(([key, token]) => [key, `${PLATFORM_COMMAND_PREFIX}${token}`])
+);

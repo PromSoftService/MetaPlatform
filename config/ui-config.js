@@ -131,7 +131,9 @@ export const UI_CONFIG = {
       projectTree: 'project-tree',
       windowClose: 'window-close',
       project: 'project',
-      platform: 'platform'
+      platform: 'platform',
+      commandBus: 'command-bus',
+      moduleRegistry: 'module-registry'
     }
   },
 
