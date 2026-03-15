@@ -1,4 +1,24 @@
-import IPC_CONFIG from './ipc-config.js';
+const IPC = {
+  channels: {
+    menuAction: 'menu:action',
+    windowCloseRequested: 'window:close-requested'
+  },
+  handlers: {
+    openProjectDialog: 'dialog:open-project',
+    saveProjectAsDialog: 'dialog:save-project-as',
+    appQuit: 'app:quit',
+    windowCloseApproved: 'window:close-approved',
+    windowCloseCancelled: 'window:close-cancelled',
+    fsEnsureDir: 'fs:ensure-dir',
+    fsExists: 'fs:exists',
+    fsReadText: 'fs:read-text',
+    fsWriteText: 'fs:write-text',
+    fsRename: 'fs:rename',
+    fsDeleteFile: 'fs:delete-file',
+    fsDeleteDir: 'fs:delete-dir',
+    fsListFiles: 'fs:list-files'
+  }
+};
 
 export const PLATFORM_CONFIG = {
   locale: 'ru-RU',
@@ -18,7 +38,7 @@ export const PLATFORM_CONFIG = {
     topPanelTitle: '⚡ MetaPlatform',
     menu: {
       fileLabel: 'Файл',
-      menuEventChannel: IPC_CONFIG.channels.menuAction,
+      menuEventChannel: IPC.channels.menuAction,
       items: {
         newProject: '🆕 Создать проект',
         openProject: '📂 Открыть проект',
@@ -46,7 +66,7 @@ export const PLATFORM_CONFIG = {
     }
   },
 
-  ipc: IPC_CONFIG,
+  ipc: IPC,
 
   logging: {
     defaultSource: 'app',

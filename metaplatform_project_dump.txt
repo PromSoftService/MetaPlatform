@@ -48,7 +48,27 @@ export const APP_CONFIG = {
 FILE: config/platform-config.js
 ==================================================
 
-import IPC_CONFIG from './ipc-config.js';
+const IPC = {
+  channels: {
+    menuAction: 'menu:action',
+    windowCloseRequested: 'window:close-requested'
+  },
+  handlers: {
+    openProjectDialog: 'dialog:open-project',
+    saveProjectAsDialog: 'dialog:save-project-as',
+    appQuit: 'app:quit',
+    windowCloseApproved: 'window:close-approved',
+    windowCloseCancelled: 'window:close-cancelled',
+    fsEnsureDir: 'fs:ensure-dir',
+    fsExists: 'fs:exists',
+    fsReadText: 'fs:read-text',
+    fsWriteText: 'fs:write-text',
+    fsRename: 'fs:rename',
+    fsDeleteFile: 'fs:delete-file',
+    fsDeleteDir: 'fs:delete-dir',
+    fsListFiles: 'fs:list-files'
+  }
+};
 
 export const PLATFORM_CONFIG = {
   locale: 'ru-RU',
@@ -68,7 +88,7 @@ export const PLATFORM_CONFIG = {
     topPanelTitle: '⚡ MetaPlatform',
     menu: {
       fileLabel: 'Файл',
-      menuEventChannel: IPC_CONFIG.channels.menuAction,
+      menuEventChannel: IPC.channels.menuAction,
       items: {
         newProject: '🆕 Создать проект',
         openProject: '📂 Открыть проект',
@@ -96,7 +116,7 @@ export const PLATFORM_CONFIG = {
     }
   },
 
-  ipc: IPC_CONFIG,
+  ipc: IPC,
 
   logging: {
     defaultSource: 'app',
@@ -334,53 +354,6 @@ export const UI_CONFIG = {
 
 
 ==================================================
-FILE: config/ipc-config.cjs
-==================================================
-
-module.exports = require('./ipc-config.json');
-
-
-==================================================
-FILE: config/ipc-config.js
-==================================================
-
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-
-const IPC_CONFIG = require('./ipc-config.json');
-
-export default IPC_CONFIG;
-
-
-==================================================
-FILE: config/ipc-config.json
-==================================================
-
-{
-  "channels": {
-    "menuAction": "menu:action",
-    "windowCloseRequested": "window:close-requested"
-  },
-  "handlers": {
-    "openProjectDialog": "dialog:open-project",
-    "saveProjectAsDialog": "dialog:save-project-as",
-    "appQuit": "app:quit",
-    "windowCloseApproved": "window:close-approved",
-    "windowCloseCancelled": "window:close-cancelled",
-    "fsEnsureDir": "fs:ensure-dir",
-    "fsExists": "fs:exists",
-    "fsReadText": "fs:read-text",
-    "fsWriteText": "fs:write-text",
-    "fsRename": "fs:rename",
-    "fsDeleteFile": "fs:delete-file",
-    "fsDeleteDir": "fs:delete-dir",
-    "fsListFiles": "fs:list-files"
-  }
-}
-
-
-==================================================
 FILE: create_project_structure.py
 ==================================================
 
@@ -397,9 +370,6 @@ PROJECT_FILES = [
   'config/platform-config.js',
   'config/project-config.js',
   'config/ui-config.js',
-  'config/ipc-config.cjs',
-  'config/ipc-config.js',
-  'config/ipc-config.json',
   'create_project_structure.py',
   'export_project_to_txt.py',
   'main.js',
@@ -517,6 +487,7 @@ def main() -> None:
 if __name__ == '__main__':
   main()
 
+
 ==================================================
 FILE: export_project_to_txt.py
 ==================================================
@@ -535,9 +506,6 @@ PROJECT_FILES = [
   'config/platform-config.js',
   'config/project-config.js',
   'config/ui-config.js',
-  'config/ipc-config.cjs',
-  'config/ipc-config.js',
-  'config/ipc-config.json',
   'create_project_structure.py',
   'export_project_to_txt.py',
   'main.js',
@@ -651,6 +619,7 @@ def export_files() -> None:
 
 if __name__ == '__main__':
   export_files()
+
 
 ==================================================
 FILE: main.js
@@ -928,30 +897,51 @@ FILE: preload.cjs
 ==================================================
 
 const { contextBridge, ipcRenderer } = require('electron');
-const IPC_CONFIG = require('./config/ipc-config.cjs');
+
+const IPC = {
+  channels: {
+    menuAction: 'menu:action',
+    windowCloseRequested: 'window:close-requested'
+  },
+  handlers: {
+    openProjectDialog: 'dialog:open-project',
+    saveProjectAsDialog: 'dialog:save-project-as',
+    appQuit: 'app:quit',
+    windowCloseApproved: 'window:close-approved',
+    windowCloseCancelled: 'window:close-cancelled',
+    fsEnsureDir: 'fs:ensure-dir',
+    fsExists: 'fs:exists',
+    fsReadText: 'fs:read-text',
+    fsWriteText: 'fs:write-text',
+    fsRename: 'fs:rename',
+    fsDeleteFile: 'fs:delete-file',
+    fsDeleteDir: 'fs:delete-dir',
+    fsListFiles: 'fs:list-files'
+  }
+};
 
 contextBridge.exposeInMainWorld('MetaPlatformFS', {
-  openProjectFileDialog: () => ipcRenderer.invoke(IPC_CONFIG.handlers.openProjectDialog),
-  saveProjectFileAsDialog: (defaultPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.saveProjectAsDialog, defaultPath),
-  requestAppQuit: () => ipcRenderer.invoke(IPC_CONFIG.handlers.appQuit),
-  approveWindowClose: () => ipcRenderer.invoke(IPC_CONFIG.handlers.windowCloseApproved),
-  cancelWindowClose: () => ipcRenderer.invoke(IPC_CONFIG.handlers.windowCloseCancelled),
-  ensureDir: (targetPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsEnsureDir, targetPath),
-  exists: (targetPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsExists, targetPath),
-  readText: (targetPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsReadText, targetPath),
-  writeText: (targetPath, text) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsWriteText, targetPath, text),
-  rename: (fromPath, toPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsRename, fromPath, toPath),
-  deleteFile: (targetPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsDeleteFile, targetPath),
-  deleteDir: (targetPath) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsDeleteDir, targetPath),
-  listFiles: (targetDir, extensions) => ipcRenderer.invoke(IPC_CONFIG.handlers.fsListFiles, targetDir, extensions),
+  openProjectFileDialog: () => ipcRenderer.invoke(IPC.handlers.openProjectDialog),
+  saveProjectFileAsDialog: (defaultPath) => ipcRenderer.invoke(IPC.handlers.saveProjectAsDialog, defaultPath),
+  requestAppQuit: () => ipcRenderer.invoke(IPC.handlers.appQuit),
+  approveWindowClose: () => ipcRenderer.invoke(IPC.handlers.windowCloseApproved),
+  cancelWindowClose: () => ipcRenderer.invoke(IPC.handlers.windowCloseCancelled),
+  ensureDir: (targetPath) => ipcRenderer.invoke(IPC.handlers.fsEnsureDir, targetPath),
+  exists: (targetPath) => ipcRenderer.invoke(IPC.handlers.fsExists, targetPath),
+  readText: (targetPath) => ipcRenderer.invoke(IPC.handlers.fsReadText, targetPath),
+  writeText: (targetPath, text) => ipcRenderer.invoke(IPC.handlers.fsWriteText, targetPath, text),
+  rename: (fromPath, toPath) => ipcRenderer.invoke(IPC.handlers.fsRename, fromPath, toPath),
+  deleteFile: (targetPath) => ipcRenderer.invoke(IPC.handlers.fsDeleteFile, targetPath),
+  deleteDir: (targetPath) => ipcRenderer.invoke(IPC.handlers.fsDeleteDir, targetPath),
+  listFiles: (targetDir, extensions) => ipcRenderer.invoke(IPC.handlers.fsListFiles, targetDir, extensions),
   onWindowCloseRequested: (listener) => {
     const wrapped = () => listener();
-    ipcRenderer.on(IPC_CONFIG.channels.windowCloseRequested, wrapped);
-    return () => ipcRenderer.off(IPC_CONFIG.channels.windowCloseRequested, wrapped);
+    ipcRenderer.on(IPC.channels.windowCloseRequested, wrapped);
+    return () => ipcRenderer.off(IPC.channels.windowCloseRequested, wrapped);
   },
   onMenuAction: (listener) => {
     const wrapped = (_event, action) => listener(action);
-    const menuEventChannel = IPC_CONFIG.channels.menuAction;
+    const menuEventChannel = IPC.channels.menuAction;
     ipcRenderer.on(menuEventChannel, wrapped);
     return () => ipcRenderer.off(menuEventChannel, wrapped);
   }
@@ -9802,34 +9792,58 @@ FILE: tests/configWiring.integration.test.js
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { createRequire } from 'node:module';
 
 import { APP_CONFIG } from '../config/app-config.js';
-import IPC_CONFIG from '../config/ipc-config.js';
-
-const require = createRequire(import.meta.url);
-const IPC_CONFIG_CJS = require('../config/ipc-config.cjs');
 
 const MAIN_FILE = 'main.js';
 const PRELOAD_FILE = 'preload.cjs';
 
-test('platform IPC config is a single source of truth for main/preload wiring', async () => {
+const EXPECTED_IPC = {
+  channels: {
+    menuAction: 'menu:action',
+    windowCloseRequested: 'window:close-requested'
+  },
+  handlers: {
+    openProjectDialog: 'dialog:open-project',
+    saveProjectAsDialog: 'dialog:save-project-as',
+    appQuit: 'app:quit',
+    windowCloseApproved: 'window:close-approved',
+    windowCloseCancelled: 'window:close-cancelled',
+    fsEnsureDir: 'fs:ensure-dir',
+    fsExists: 'fs:exists',
+    fsReadText: 'fs:read-text',
+    fsWriteText: 'fs:write-text',
+    fsRename: 'fs:rename',
+    fsDeleteFile: 'fs:delete-file',
+    fsDeleteDir: 'fs:delete-dir',
+    fsListFiles: 'fs:list-files'
+  }
+};
+
+test('platform IPC config and preload IPC object stay aligned for main/preload wiring', async () => {
   const mainSource = await fs.readFile(MAIN_FILE, 'utf-8');
   const preloadSource = await fs.readFile(PRELOAD_FILE, 'utf-8');
 
-  assert.deepEqual(IPC_CONFIG, IPC_CONFIG_CJS);
-  assert.equal(APP_CONFIG.platform.ipc.channels.menuAction, IPC_CONFIG.channels.menuAction);
-  assert.equal(APP_CONFIG.platform.ipc.channels.windowCloseRequested, IPC_CONFIG.channels.windowCloseRequested);
+  assert.deepEqual(APP_CONFIG.platform.ipc, EXPECTED_IPC);
 
   assert.match(mainSource, /APP_CONFIG\.platform\.ipc\.channels\.windowCloseRequested/);
   assert.match(mainSource, /APP_CONFIG\.platform\.ipc\.handlers\.fsListFiles/);
 
-  assert.match(preloadSource, /IPC_CONFIG\.channels\.menuAction/);
-  assert.match(preloadSource, /IPC_CONFIG\.channels\.windowCloseRequested/);
-  assert.match(preloadSource, /IPC_CONFIG\.handlers\.fsListFiles/);
+  assert.match(preloadSource, /const IPC = \{/);
+  assert.match(preloadSource, /IPC\.channels\.menuAction/);
+  assert.match(preloadSource, /IPC\.channels\.windowCloseRequested/);
+  assert.match(preloadSource, /IPC\.handlers\.fsListFiles/);
 
-  assert.doesNotMatch(preloadSource, /['"]menu:action['"]/);
-  assert.doesNotMatch(preloadSource, /['"]window:close-requested['"]/);
+  for (const [key, value] of Object.entries(EXPECTED_IPC.channels)) {
+    assert.match(preloadSource, new RegExp(`\\b${key}: ['\"]${value}['\"]`));
+  }
+
+  for (const [key, value] of Object.entries(EXPECTED_IPC.handlers)) {
+    assert.match(preloadSource, new RegExp(`\\b${key}: ['\"]${value}['\"]`));
+  }
+
+  assert.doesNotMatch(preloadSource, /IPC_CONFIG/);
+  assert.doesNotMatch(preloadSource, /require\(\s*['\"]\.\/config\//);
 });
 
 
