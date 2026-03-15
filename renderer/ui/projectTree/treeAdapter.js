@@ -4,6 +4,20 @@ import { getDocumentLabel, getDocumentIdentityKey } from '../../runtime/document
 export const TREE_NODE_TYPES = APP_CONFIG.project.tree.nodeTypes;
 export const TREE_ACTION_IDS = APP_CONFIG.project.tree.actionIds;
 
+const TREE_CLASS_NAMES = APP_CONFIG.ui.classNames;
+
+const MODULE_ROW_CLASS_BY_MODULE = {
+  [APP_CONFIG.project.moduleIds.metagen]: TREE_CLASS_NAMES.treeNodeModuleMetagen,
+  [APP_CONFIG.project.moduleIds.metalab]: TREE_CLASS_NAMES.treeNodeModuleMetalab,
+  [APP_CONFIG.project.moduleIds.metaview]: TREE_CLASS_NAMES.treeNodeModuleMetaview
+};
+
+const DOCUMENT_ROW_CLASS_BY_MODULE = {
+  [APP_CONFIG.project.moduleIds.metagen]: TREE_CLASS_NAMES.treeNodeDocumentMetagen,
+  [APP_CONFIG.project.moduleIds.metalab]: TREE_CLASS_NAMES.treeNodeDocumentMetalab,
+  [APP_CONFIG.project.moduleIds.metaview]: TREE_CLASS_NAMES.treeNodeDocumentMetaview
+};
+
 export function createTreeBehaviorConfig() {
   return {
     inlineRenameEnabled: false,
@@ -19,8 +33,8 @@ export function buildProjectTreeNodes({ project, moduleSections, getDocumentsByM
   return [
     {
       nodeType: TREE_NODE_TYPES.project,
-      id: `${APP_CONFIG.project.identity.treeProjectPrefix}${project.project?.name || APP_CONFIG.project.defaults.unnamedProject}`,
-      label: project.project?.name || APP_CONFIG.ui.text.untitled,
+      id: `${APP_CONFIG.project.identity.treeProjectPrefix}${project.project?.id || APP_CONFIG.project.defaults.unnamedProject}`,
+      label: APP_CONFIG.project.tree.labels.root,
       project
     },
     ...moduleSections.map((sectionConfig) => ({
@@ -59,6 +73,22 @@ export function getNodeActions(nodeData) {
       icon: APP_CONFIG.ui.tree.actions.deleteComponent.icon,
       visible: true
     }];
+  }
+
+  return [];
+}
+
+export function getNodeRowClassNames(nodeData) {
+  if (nodeData?.nodeType === TREE_NODE_TYPES.project) {
+    return [TREE_CLASS_NAMES.treeNodeProjectRow];
+  }
+
+  if (nodeData?.nodeType === TREE_NODE_TYPES.module) {
+    return [MODULE_ROW_CLASS_BY_MODULE[nodeData.moduleId]].filter(Boolean);
+  }
+
+  if (nodeData?.nodeType === TREE_NODE_TYPES.document) {
+    return [DOCUMENT_ROW_CLASS_BY_MODULE[nodeData.moduleId]].filter(Boolean);
   }
 
   return [];

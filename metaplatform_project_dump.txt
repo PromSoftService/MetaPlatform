@@ -26,6 +26,8 @@ Thumbs.db
 !.vscode/settings.json
 codex.patch
 package-lock.json
+tech_spec.txt
+todo.txt
 
 ==================================================
 FILE: config/app-config.js
@@ -141,7 +143,11 @@ export const PROJECT_CONFIG = {
     actionIds: {
       createComponent: 'create-component',
       deleteComponent: 'delete-component'
-    }
+    },
+
+    labels: {
+      root: 'Проект'
+    },
   },
 
   projectKinds: {
@@ -190,6 +196,13 @@ export const UI_CONFIG = {
     treeNodeRow: 'tree-node-row',
     treeSectionHeader: 'tree-section-header',
     treeNodeDocumentRow: 'tree-node-document-row',
+    treeNodeProjectRow: 'tree-node-project-row',
+    treeNodeModuleMetagen: 'tree-node-module-metagen',
+    treeNodeModuleMetalab: 'tree-node-module-metalab',
+    treeNodeModuleMetaview: 'tree-node-module-metaview',
+    treeNodeDocumentMetagen: 'tree-node-document-metagen',
+    treeNodeDocumentMetalab: 'tree-node-document-metalab',
+    treeNodeDocumentMetaview: 'tree-node-document-metaview',
     treeNodeLabel: 'tree-node-label',
     treeNodeActions: 'tree-node-actions',
     treeNodeActionButton: 'tree-node-action-button',
@@ -242,6 +255,18 @@ export const UI_CONFIG = {
 
 
   tree: {
+    labels: {
+      root: 'Проект'
+    },
+    icons: {
+      project: '📦',
+      metagenModule: '🧩',
+      metalabModule: '⚙️',
+      metaviewModule: '🖥️',
+      metagenDocument: '▸',
+      metalabDocument: '◆',
+      metaviewDocument: '◉'
+    },
     actions: {
       createComponent: {
         title: 'Добавить компонент',
@@ -375,6 +400,9 @@ PROJECT_FILES = [
   'tests/projectTreeAdapter.test.js',
   'tests/tabEditLifecycle.test.js',
   'tests/windowCloseGuard.test.js',
+  'renderer/core/loggerSinks.js',
+  'renderer/runtime/projectPaths.js',
+  'tests/logger.test.js',
   'vite.config.js',
   'main/runtime/windowCloseGuard.js',
 ]
@@ -383,18 +411,22 @@ PROJECT_FILES = [
 def ensure_project_structure() -> tuple[int, int]:
   created_dirs = 0
   created_files = 0
-  created_dir_paths: set[Path] = set()
 
   for relative_path in PROJECT_FILES:
     file_path = ROOT / relative_path
     parent_dir = file_path.parent
 
-    if not parent_dir.exists():
-      parent_dir.mkdir(parents=True, exist_ok=True)
+    if parent_dir != ROOT:
+      missing_chain: list[Path] = []
+      current = parent_dir
 
-    if parent_dir != ROOT and parent_dir not in created_dir_paths:
-      created_dirs += 1
-      created_dir_paths.add(parent_dir)
+      while current != ROOT and not current.exists():
+        missing_chain.append(current)
+        current = current.parent
+
+      if missing_chain:
+        parent_dir.mkdir(parents=True, exist_ok=True)
+        created_dirs += len(missing_chain)
 
     if not file_path.exists():
       file_path.touch()
@@ -502,6 +534,9 @@ PROJECT_FILES = [
   'tests/projectTreeAdapter.test.js',
   'tests/tabEditLifecycle.test.js',
   'tests/windowCloseGuard.test.js',
+  'renderer/core/loggerSinks.js',
+  'renderer/runtime/projectPaths.js',
+  'tests/logger.test.js',
   'vite.config.js',
   'main/runtime/windowCloseGuard.js',
 ]
@@ -1042,18 +1077,7 @@ import { createMetaGenModule } from './modules/metagen/metagenModule.js';
 import { createMetaLabModule } from './modules/metalab/metalabModule.js';
 import { createMetaViewModule } from './modules/metaview/metaviewModule.js';
 import { APP_CONFIG } from '../config/app-config.js';
-
-function joinPaths(...parts) {
-  return parts
-    .filter(Boolean)
-    .join('/')
-    .replace(/\\/g, '/')
-    .replace(/\/{2,}/g, '/');
-}
-
-function buildProjectFilePath(projectRoot, projectFileName = APP_CONFIG.project.defaultProjectFileName) {
-  return joinPaths(projectRoot, projectFileName);
-}
+import { buildProjectFilePath } from './runtime/projectPaths.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   applyStaticText();
@@ -1407,6 +1431,11 @@ FILE: renderer/core/logger.js
 ==================================================
 
 import { APP_CONFIG } from '../../config/app-config.js';
+import {
+  createConsoleLogSink,
+  createDomLogSink,
+  normalizeLogDetails
+} from './loggerSinks.js';
 
 const LEVELS = {
   debug: 10,
@@ -1427,39 +1456,7 @@ function shouldWrite(level) {
   return entryPriority >= targetPriority && targetPriority < LEVELS.none;
 }
 
-export function createLogger() {
-  const output = document.getElementById(APP_CONFIG.ui.dom.logContainerId);
-
-  function normalizeDetails(details) {
-    if (details == null) {
-      return '';
-    }
-
-    if (typeof details === 'string') {
-      return details;
-    }
-
-    try {
-      return JSON.stringify(details, null, 2);
-    } catch {
-      return String(details);
-    }
-  }
-
-  function writeToConsole(level, line, detailsText) {
-    if (!APP_CONFIG.platform?.logging?.mirrorToConsole) {
-      return;
-    }
-
-    const methodName = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
-    const method = console[methodName]?.bind(console) ?? console.log.bind(console);
-    method(line);
-
-    if (detailsText) {
-      method(detailsText);
-    }
-  }
-
+export function createCoreLogger({ sinks = [] } = {}) {
   function write(level, source, message, details = null) {
     if (!shouldWrite(level)) {
       return;
@@ -1467,32 +1464,14 @@ export function createLogger() {
 
     const ts = new Date().toLocaleTimeString(APP_CONFIG.platform.locale);
     const line = `[${ts}] [${source}] ${level.toUpperCase()} ${message}`;
-    const detailsText = details != null ? normalizeDetails(details) : '';
+    const detailsText = details != null ? normalizeLogDetails(details) : '';
+    const entry = { level, source, message, line, details, detailsText, ts };
 
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-
-    const lineNode = document.createElement('div');
-    lineNode.className = 'log-line';
-    lineNode.textContent = line;
-    entry.appendChild(lineNode);
-
-    if (details != null) {
-      const detailsNode = document.createElement('pre');
-      detailsNode.className = 'log-details';
-      detailsNode.textContent = detailsText;
-      entry.appendChild(detailsNode);
-    }
-
-    output?.appendChild(entry);
-    output?.scrollTo({ top: output.scrollHeight });
-    writeToConsole(level, line, detailsText);
+    sinks.forEach((sink) => sink?.write?.(entry));
   }
 
   function clear() {
-    if (output) {
-      output.innerHTML = '';
-    }
+    sinks.forEach((sink) => sink?.clear?.());
   }
 
   return {
@@ -1503,6 +1482,19 @@ export function createLogger() {
     clear
   };
 }
+
+export function createLogger() {
+  const output = document.getElementById(APP_CONFIG.ui.dom.logContainerId);
+  const sinks = [
+    createDomLogSink({ output }),
+    createConsoleLogSink()
+  ];
+
+  return createCoreLogger({ sinks });
+}
+
+export { shouldWrite };
+
 
 ==================================================
 FILE: renderer/core/moduleRegistry.js
@@ -1584,104 +1576,18 @@ import {
 } from '../runtime/documentRecordIdentity.js';
 import { areDocumentSnapshotsSemanticallyEqual } from '../runtime/documentSnapshot.js';
 import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
+import {
+  buildProjectFilePath,
+  getDefaultProjectModuleDirectories,
+  getFileExtension,
+  getProjectOwnedPaths,
+  getProjectRootFromProjectFile,
+  joinProjectPath,
+  normalizeProjectFilePath,
+  stripFileExtension
+} from '../runtime/projectPaths.js';
 
-function joinPaths(...parts) {
-  return parts
-    .filter(Boolean)
-    .join('/')
-    .replace(/\\/g, '/')
-    .replace(/\/{2,}/g, '/');
-}
-
-function buildProjectFilePath(projectRoot, projectFileName = APP_CONFIG.project.defaultProjectFileName) {
-  return joinPaths(projectRoot, projectFileName);
-}
-
-function getDefaultProjectModuleDirectories(projectRoot) {
-  return {
-    metagen: joinPaths(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metagen]),
-    metalab: joinPaths(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metalab]),
-    metaview: joinPaths(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metaview])
-  };
-}
-
-export function getProjectOwnedPaths(targetProjectFilePath) {
-  const normalizedProjectFilePath = normalizeProjectFilePath(targetProjectFilePath);
-  const targetRoot = getProjectRootFromProjectFile(normalizedProjectFilePath);
-  const targetProjectFileName = normalizedProjectFilePath.split('/').pop();
-  const moduleDirectories = getDefaultProjectModuleDirectories(targetRoot);
-
-  return {
-    rootPath: targetRoot,
-    projectFileName: targetProjectFileName,
-    projectFilePath: buildProjectFilePath(targetRoot, targetProjectFileName),
-    moduleDirectories,
-    moduleFolders: {
-      metagen: APP_CONFIG.project.folders.metagen,
-      metalab: APP_CONFIG.project.folders.metalab,
-      metaview: APP_CONFIG.project.folders.metaview
-    }
-  };
-}
-
-function dirnameOf(targetPath) {
-  const normalized = String(targetPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
-  const index = normalized.lastIndexOf('/');
-
-  if (index < 0) {
-    return '';
-  }
-
-  if (index === 0) {
-    return '/';
-  }
-
-  return normalized.slice(0, index);
-}
-
-function normalizeProjectFilePath(projectFilePath) {
-  const normalized = String(projectFilePath || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
-
-  if (!normalized) {
-    throw new Error('Project file path is required');
-  }
-
-  const baseName = normalized.split('/').pop() || '';
-  if (!baseName || !baseName.includes('.')) {
-    throw new Error(`Project file path must point to a YAML file: ${projectFilePath}`);
-  }
-
-  const ext = getFileExtension(baseName).toLowerCase();
-  const allowed = APP_CONFIG.project.allowedProjectFileExtensions || ['.yaml', '.yml'];
-
-  if (!allowed.includes(ext)) {
-    throw new Error(`Project file path must point to a YAML file: ${projectFilePath}`);
-  }
-
-  return normalized;
-}
-
-function getProjectRootFromProjectFile(projectFilePath) {
-  const root = dirnameOf(projectFilePath);
-
-  if (!root) {
-    return '.';
-  }
-
-  return root;
-}
-
-function getFileExtension(fileName) {
-  const normalized = String(fileName || '');
-  const lastDotIndex = normalized.lastIndexOf('.');
-  return lastDotIndex > 0 ? normalized.slice(lastDotIndex) : '';
-}
-
-function stripFileExtension(fileName) {
-  const normalized = String(fileName || '');
-  const lastDotIndex = normalized.lastIndexOf('.');
-  return lastDotIndex > 0 ? normalized.slice(0, lastDotIndex) : normalized;
-}
+export { getProjectOwnedPaths } from '../runtime/projectPaths.js';
 
 function getModuleFolder(moduleId) {
   const folderMap = {
@@ -1771,7 +1677,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function scanModuleDocuments(projectRoot, moduleFolder, moduleId) {
-    const dir = joinPaths(projectRoot, moduleFolder);
+    const dir = joinProjectPath(projectRoot, moduleFolder);
     const paths = await fileSystem.listFiles(dir, APP_CONFIG.project.fileExtensions.yaml);
     const output = [];
 
@@ -1812,23 +1718,23 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     await fileSystem.ensureDir(moduleDirectories.metagen);
     await fileSystem.ensureDir(moduleDirectories.metalab);
     await fileSystem.ensureDir(moduleDirectories.metaview);
-    await fileSystem.ensureDir(joinPaths(projectRoot, APP_CONFIG.project.folders.generated));
+    await fileSystem.ensureDir(joinProjectPath(projectRoot, APP_CONFIG.project.folders.generated));
   }
 
   function buildSaveStagingRoot(targetRoot) {
-    return joinPaths(targetRoot, '.save-staging');
+    return joinProjectPath(targetRoot, '.save-staging');
   }
 
   function buildModuleStagingDir(targetRoot, moduleFolder) {
-    return joinPaths(targetRoot, '.save-staging', moduleFolder);
+    return joinProjectPath(targetRoot, '.save-staging', moduleFolder);
   }
 
   function buildModuleBackupDir(targetRoot, moduleFolder) {
-    return joinPaths(targetRoot, `.backup-${moduleFolder}`);
+    return joinProjectPath(targetRoot, `.backup-${moduleFolder}`);
   }
 
   function buildProjectFileBackupPath(targetRoot, projectFileName) {
-    return joinPaths(targetRoot, `.backup-${projectFileName}`);
+    return joinProjectPath(targetRoot, `.backup-${projectFileName}`);
   }
 
   async function removeDirectoryIfExists(targetPath) {
@@ -1843,7 +1749,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function promoteModuleDirectory(targetRoot, moduleFolder) {
-    const moduleDir = joinPaths(targetRoot, moduleFolder);
+    const moduleDir = joinProjectPath(targetRoot, moduleFolder);
     const stagingDir = buildModuleStagingDir(targetRoot, moduleFolder);
     const backupDir = buildModuleBackupDir(targetRoot, moduleFolder);
 
@@ -1871,7 +1777,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function rollbackPromotedModuleDirectory(targetRoot, moduleFolder) {
-    const moduleDir = joinPaths(targetRoot, moduleFolder);
+    const moduleDir = joinProjectPath(targetRoot, moduleFolder);
     const backupDir = buildModuleBackupDir(targetRoot, moduleFolder);
 
     if (await fileSystem.exists(moduleDir)) {
@@ -1884,7 +1790,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function promoteProjectFile(targetRoot, projectFileName) {
-    const stagingProjectFilePath = joinPaths(buildSaveStagingRoot(targetRoot), projectFileName);
+    const stagingProjectFilePath = joinProjectPath(buildSaveStagingRoot(targetRoot), projectFileName);
     const finalProjectFilePath = buildProjectFilePath(targetRoot, projectFileName);
     const backupProjectFilePath = buildProjectFileBackupPath(targetRoot, projectFileName);
 
@@ -2229,7 +2135,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     const document = module.createDefaultDocument({ name: resolvedName });
     const virtualPath = currentProject.rootPath
-      ? joinPaths(currentProject.rootPath, getModuleFolder(moduleId), module.getFileName(document))
+      ? joinProjectPath(currentProject.rootPath, getModuleFolder(moduleId), module.getFileName(document))
       : `${APP_CONFIG.project.unsavedDocumentPathPrefix}${moduleId}/${++unsavedCounter}${APP_CONFIG.project.fileExtensions.default}`;
 
     const record = { moduleId, path: virtualPath, document };
@@ -2274,7 +2180,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       setDocumentName({ document: renamedDocument }, resolvedName);
 
       const nextFileName = module.getFileName(renamedDocument);
-      nextPath = joinPaths(currentProject.rootPath, moduleFolder, nextFileName);
+      nextPath = joinProjectPath(currentProject.rootPath, moduleFolder, nextFileName);
 
       if (nextPath !== previousPath) {
         const hasPhysicalSource = await fileSystem.exists(previousPath);
@@ -2452,27 +2358,24 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
         continue;
       }
 
-      let fileName = module.getFileName(record.document);
-      const ext = getFileExtension(fileName) || '.yaml';
-      const base = stripFileExtension(fileName);
-      let index = 1;
+      const fileName = module.getFileName(record.document);
+      const moduleRelativePath = `${moduleFolder}/${fileName}`;
 
-      while (occupied.has(`${moduleFolder}/${fileName}`)) {
-        fileName = `${base}-${index}${ext}`;
-        index += 1;
+      if (occupied.has(moduleRelativePath)) {
+        throw new Error(`Filename collision detected during project save: ${moduleRelativePath}`);
       }
 
-      occupied.add(`${moduleFolder}/${fileName}`);
+      occupied.add(moduleRelativePath);
 
-      const finalPath = joinPaths(targetRoot, moduleFolder, fileName);
-      const stagingPath = joinPaths(stagingRoot, moduleFolder, fileName);
+      const finalPath = joinProjectPath(targetRoot, moduleFolder, fileName);
+      const stagingPath = joinProjectPath(stagingRoot, moduleFolder, fileName);
 
       await saveDocumentSnapshot(stagingPath, record);
       pathMap.set(getDocumentIdentityKey(record), finalPath);
     }
 
     // stage project.yaml
-    const stagingProjectFilePath = joinPaths(stagingRoot, targetProjectFileName);
+    const stagingProjectFilePath = joinProjectPath(stagingRoot, targetProjectFileName);
     await documentLoader.saveYaml(stagingProjectFilePath, finalProjectPayload);
 
     // commit promoted entities
@@ -5039,7 +4942,16 @@ FILE: renderer/styles/styles.css
   --tree-module-row-font-size: 12px;
   --tree-module-row-letter-spacing: 0.04em;
   --tree-component-indent: 16px;
+  --tree-hover-bg: #e7edf5;
+  --tree-selected-bg: #d3deec;
+  --tree-metagen-accent: #0ea5e9;
+  --tree-metalab-accent: #f59e0b;
+  --tree-metaview-accent: #8b5cf6;
+  --tree-metagen-text: #0369a1;
+  --tree-metalab-text: #92400e;
+  --tree-metaview-text: #5b21b6;
 }
+
 
 
 html,
@@ -5246,6 +5158,11 @@ body {
   margin-bottom: 12px;
 }
 
+.tree-node-project-row {
+  border-color: var(--color-border);
+  background: var(--color-bg-subtle);
+}
+
 .tree-module-block {
   margin-top: 12px;
 }
@@ -5287,12 +5204,12 @@ body {
 }
 
 .tree-node-row:hover {
-  background: var(--color-tab-hover);
+  background: var(--tree-hover-bg);
   border-color: var(--color-border-soft);
 }
 
 .tree-node-row.is-selected {
-  background: var(--color-tab-bg-active);
+  background: var(--tree-selected-bg);
   border-color: var(--color-border);
 }
 
@@ -5344,6 +5261,15 @@ body {
   background: var(--color-tab-hover);
   color: var(--color-text);
 }
+
+
+.tree-node-module-metagen { border-left: 3px solid var(--tree-metagen-accent); }
+.tree-node-module-metalab { border-left: 3px solid var(--tree-metalab-accent); }
+.tree-node-module-metaview { border-left: 3px solid var(--tree-metaview-accent); }
+.tree-node-document-metagen .tree-node-label { color: var(--tree-metagen-text); }
+.tree-node-document-metalab .tree-node-label { color: var(--tree-metalab-text); }
+.tree-node-document-metaview .tree-node-label { color: var(--tree-metaview-text); }
+
 
 .workbench-inline-rename-input,
 .tree-inline-rename-input {
@@ -5640,7 +5566,8 @@ import {
   buildProjectTreeNodes,
   createTreeBehaviorConfig,
   createTreeInteractionController,
-  getNodeActions
+  getNodeActions,
+  getNodeRowClassNames
 } from './projectTree/treeAdapter.js';
 
 const TREE_CLASSNAMES = APP_CONFIG.ui.classNames;
@@ -5740,13 +5667,26 @@ export function createProjectTree({
   });
 
   function renderNodeRow(nodeData, rowClassNames = [TREE_CLASSNAMES.treeNodeRow]) {
-    const row = createElement('div', rowClassNames);
+    const row = createElement('div', [...rowClassNames, ...getNodeRowClassNames(nodeData)]);
     row.dataset.nodeType = nodeData.nodeType;
     row.dataset.nodeId = nodeData.id;
 
     const label = createElement('button', [TREE_CLASSNAMES.treeNodeLabel]);
     label.type = 'button';
-    label.textContent = nodeData.label;
+    const nodeIcon = nodeData.nodeType === TREE_NODE_TYPES.project
+      ? APP_CONFIG.ui.tree.icons.project
+      : nodeData.nodeType === TREE_NODE_TYPES.module
+        ? (nodeData.moduleId === APP_CONFIG.project.moduleIds.metagen
+          ? APP_CONFIG.ui.tree.icons.metagenModule
+          : nodeData.moduleId === APP_CONFIG.project.moduleIds.metalab
+            ? APP_CONFIG.ui.tree.icons.metalabModule
+            : APP_CONFIG.ui.tree.icons.metaviewModule)
+        : (nodeData.moduleId === APP_CONFIG.project.moduleIds.metagen
+          ? APP_CONFIG.ui.tree.icons.metagenDocument
+          : nodeData.moduleId === APP_CONFIG.project.moduleIds.metalab
+            ? APP_CONFIG.ui.tree.icons.metalabDocument
+            : APP_CONFIG.ui.tree.icons.metaviewDocument);
+    label.textContent = `${nodeIcon} ${nodeData.label}`;
 
     label.addEventListener('click', async (event) => {
       event.preventDefault();
@@ -5814,26 +5754,36 @@ export function createProjectTree({
       getDocumentsByModule: (moduleId) => projectManager.getDocumentsByModule(moduleId)
     });
 
+    const projectNode = treeNodes.find((node) => node.nodeType === TREE_NODE_TYPES.project);
+
+    if (projectNode) {
+      const projectRootNode = createElement('div', [TREE_CLASSNAMES.projectNode]);
+      projectRootNode.appendChild(renderNodeRow(projectNode, [TREE_CLASSNAMES.treeNodeRow]));
+      treeRoot.appendChild(projectRootNode);
+    }
+
     for (const nodeData of treeNodes) {
-      if (nodeData.nodeType === TREE_NODE_TYPES.module) {
-        const moduleBlock = createElement('div', [TREE_CLASSNAMES.treeModuleBlock]);
-        moduleBlock.appendChild(
-          renderNodeRow(nodeData, [TREE_CLASSNAMES.treeSectionHeader, TREE_CLASSNAMES.treeNodeRow])
-        );
-
-        const documentsContainer = createElement('div', [TREE_CLASSNAMES.treeModuleChildren]);
-
-        for (const documentNode of nodeData.children || []) {
-          const item = createElement('div', [TREE_CLASSNAMES.treeItem]);
-          item.appendChild(
-            renderNodeRow(documentNode, [TREE_CLASSNAMES.treeNodeRow, TREE_CLASSNAMES.treeNodeDocumentRow])
-          );
-          documentsContainer.appendChild(item);
-        }
-
-        moduleBlock.appendChild(documentsContainer);
-        treeRoot.appendChild(moduleBlock);
+      if (nodeData.nodeType !== TREE_NODE_TYPES.module) {
+        continue;
       }
+
+      const moduleBlock = createElement('div', [TREE_CLASSNAMES.treeModuleBlock]);
+      moduleBlock.appendChild(
+        renderNodeRow(nodeData, [TREE_CLASSNAMES.treeSectionHeader, TREE_CLASSNAMES.treeNodeRow])
+      );
+
+      const documentsContainer = createElement('div', [TREE_CLASSNAMES.treeModuleChildren]);
+
+      for (const documentNode of nodeData.children || []) {
+        const item = createElement('div', [TREE_CLASSNAMES.treeItem]);
+        item.appendChild(
+          renderNodeRow(documentNode, [TREE_CLASSNAMES.treeNodeRow, TREE_CLASSNAMES.treeNodeDocumentRow])
+        );
+        documentsContainer.appendChild(item);
+      }
+
+      moduleBlock.appendChild(documentsContainer);
+      treeRoot.appendChild(moduleBlock);
     }
 
     logger.info(APP_CONFIG.ui.runtime.loggerSources.projectTree, 'Дерево проекта обновлено', {
@@ -5864,6 +5814,20 @@ import { getDocumentLabel, getDocumentIdentityKey } from '../../runtime/document
 export const TREE_NODE_TYPES = APP_CONFIG.project.tree.nodeTypes;
 export const TREE_ACTION_IDS = APP_CONFIG.project.tree.actionIds;
 
+const TREE_CLASS_NAMES = APP_CONFIG.ui.classNames;
+
+const MODULE_ROW_CLASS_BY_MODULE = {
+  [APP_CONFIG.project.moduleIds.metagen]: TREE_CLASS_NAMES.treeNodeModuleMetagen,
+  [APP_CONFIG.project.moduleIds.metalab]: TREE_CLASS_NAMES.treeNodeModuleMetalab,
+  [APP_CONFIG.project.moduleIds.metaview]: TREE_CLASS_NAMES.treeNodeModuleMetaview
+};
+
+const DOCUMENT_ROW_CLASS_BY_MODULE = {
+  [APP_CONFIG.project.moduleIds.metagen]: TREE_CLASS_NAMES.treeNodeDocumentMetagen,
+  [APP_CONFIG.project.moduleIds.metalab]: TREE_CLASS_NAMES.treeNodeDocumentMetalab,
+  [APP_CONFIG.project.moduleIds.metaview]: TREE_CLASS_NAMES.treeNodeDocumentMetaview
+};
+
 export function createTreeBehaviorConfig() {
   return {
     inlineRenameEnabled: false,
@@ -5879,8 +5843,8 @@ export function buildProjectTreeNodes({ project, moduleSections, getDocumentsByM
   return [
     {
       nodeType: TREE_NODE_TYPES.project,
-      id: `${APP_CONFIG.project.identity.treeProjectPrefix}${project.project?.name || APP_CONFIG.project.defaults.unnamedProject}`,
-      label: project.project?.name || APP_CONFIG.ui.text.untitled,
+      id: `${APP_CONFIG.project.identity.treeProjectPrefix}${project.project?.id || APP_CONFIG.project.defaults.unnamedProject}`,
+      label: APP_CONFIG.project.tree.labels.root,
       project
     },
     ...moduleSections.map((sectionConfig) => ({
@@ -5919,6 +5883,22 @@ export function getNodeActions(nodeData) {
       icon: APP_CONFIG.ui.tree.actions.deleteComponent.icon,
       visible: true
     }];
+  }
+
+  return [];
+}
+
+export function getNodeRowClassNames(nodeData) {
+  if (nodeData?.nodeType === TREE_NODE_TYPES.project) {
+    return [TREE_CLASS_NAMES.treeNodeProjectRow];
+  }
+
+  if (nodeData?.nodeType === TREE_NODE_TYPES.module) {
+    return [MODULE_ROW_CLASS_BY_MODULE[nodeData.moduleId]].filter(Boolean);
+  }
+
+  if (nodeData?.nodeType === TREE_NODE_TYPES.document) {
+    return [DOCUMENT_ROW_CLASS_BY_MODULE[nodeData.moduleId]].filter(Boolean);
   }
 
   return [];
@@ -7024,7 +7004,7 @@ test('tree row render accepts multiple classes as separate tokens', async () => 
       await tree.render();
     });
 
-    const moduleBlock = treeRoot.children[0];
+    const moduleBlock = treeRoot.children[1];
     const sectionHeaderRow = moduleBlock.children[0];
 
     assert.equal(sectionHeaderRow.classList.contains('tree-section-header'), true);
@@ -7065,7 +7045,7 @@ test('module and component nodes get distinct row classes and hierarchy markers'
 
     await tree.render();
 
-    const metagenModuleBlock = treeRoot.children[0];
+    const metagenModuleBlock = treeRoot.children[1];
     const sectionHeaderRow = metagenModuleBlock.children[0];
     const documentRow = metagenModuleBlock.children[1].children[0].children[0];
 
@@ -7231,7 +7211,7 @@ test('project panel title does not show marker for clean opened project', async 
   }
 });
 
-test('project title is not rendered as a dedicated tree node', async () => {
+test('project root node is rendered as dedicated tree node with static label', async () => {
   const originalDocument = global.document;
   const { document, treeRoot } = createFakeDocument();
   global.document = document;
@@ -7255,8 +7235,11 @@ test('project title is not rendered as a dedicated tree node', async () => {
     });
 
     await tree.render();
-    assert.equal(treeRoot.children.length, 3);
-    assert.equal(treeRoot.children.every((child) => !child.classList.contains('project-node')), true);
+    assert.equal(treeRoot.children.length, 4);
+    assert.equal(treeRoot.children[0].classList.contains('project-node'), true);
+    const projectRow = treeRoot.children[0].children[0];
+    assert.equal(projectRow.dataset.nodeType, 'project');
+    assert.equal(projectRow.children[0].textContent.includes('Проект'), true);
   } finally {
     global.document = originalDocument;
   }
@@ -8597,6 +8580,39 @@ test('legacy normalized id remains stable across save-as and reopen', async () =
   assert.equal(reopened.document.component.id, normalizedId);
 });
 
+test('save project does not clear generated folder and preserves user files outside module folders', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-generated-'));
+  await createFixtureProject(root);
+  await fs.writeFile(path.join(root, 'generated', 'artifact.txt'), 'generated-result', 'utf-8');
+  await fs.writeFile(path.join(root, 'notes.txt'), 'user-note', 'utf-8');
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+  manager.getDocumentsByModule('metagen')[0].document.component.description = 'updated';
+
+  await manager.saveProject();
+
+  assert.equal(await fs.readFile(path.join(root, 'generated', 'artifact.txt'), 'utf-8'), 'generated-result');
+  assert.equal(await fs.readFile(path.join(root, 'notes.txt'), 'utf-8'), 'user-note');
+});
+
+test('save project rejects file-name collisions instead of auto-suffix renaming', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-collision-'));
+  await createFixtureProject(root);
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+  const first = manager.getDocumentsByModule('metagen')[0];
+  const second = await manager.createDocument('metagen', 'Pump!');
+
+  assert.ok(second);
+  first.document.component.name = 'Pump';
+
+  await assert.rejects(() => manager.saveProject(), /Filename collision detected during project save/);
+  const files = await fs.readdir(path.join(root, 'metagen'));
+  assert.equal(files.some((name) => /-1\.ya?ml$/.test(name)), false);
+});
+
 
 ==================================================
 FILE: tests/finalizeActiveTableEditing.test.js
@@ -8996,7 +9012,7 @@ import {
 
 function createProjectFixture() {
   return {
-    project: { name: 'Demo' },
+    project: { id: 'project-guid', name: 'Demo' },
     documents: {
       metagen: [
         {
@@ -9184,6 +9200,7 @@ test('tree node mapping keeps node typing and metadata for future context menu s
   });
 
   assert.equal(nodes[0].nodeType, TREE_NODE_TYPES.project);
+  assert.equal(nodes[0].label, APP_CONFIG.project.tree.labels.root);
   const moduleNode = nodes.find((node) => node.nodeType === TREE_NODE_TYPES.module && node.moduleId === 'metagen');
   assert.ok(moduleNode);
   assert.equal(moduleNode.label, 'metagen');
@@ -9220,7 +9237,7 @@ test('unsupported action returns no-op result and does not call handlers', async
 
 test('tree document node identity is based on document GUID and remains stable for path changes', () => {
   const project = {
-    project: { name: 'Demo' },
+    project: { id: 'project-guid', name: 'Demo' },
     documents: {
       metagen: [{ moduleId: 'metagen', path: '/tmp/metagen/a.yaml', document: { component: { id: '11111111-1111-4111-8111-111111111111', name: 'A' } } }],
       metalab: [],
@@ -9416,6 +9433,284 @@ test('cancel close clears pending state and allows a new confirmation cycle', ()
     preventDefault: true,
     requestRendererConfirmation: true
   });
+});
+
+
+==================================================
+FILE: renderer/core/loggerSinks.js
+==================================================
+
+import { APP_CONFIG } from '../../config/app-config.js';
+
+const LOG_ENTRY_CLASS = 'log-entry';
+const LOG_LINE_CLASS = 'log-line';
+const LOG_DETAILS_CLASS = 'log-details';
+
+export function normalizeLogDetails(details) {
+  if (details == null) {
+    return '';
+  }
+
+  if (typeof details === 'string') {
+    return details;
+  }
+
+  try {
+    return JSON.stringify(details, null, 2);
+  } catch {
+    return String(details);
+  }
+}
+
+export function createDomLogSink({ output }) {
+  return {
+    write(entry) {
+      if (!output) {
+        return;
+      }
+
+      const node = document.createElement('div');
+      node.className = LOG_ENTRY_CLASS;
+
+      const lineNode = document.createElement('div');
+      lineNode.className = LOG_LINE_CLASS;
+      lineNode.textContent = entry.line;
+      node.appendChild(lineNode);
+
+      if (entry.detailsText) {
+        const detailsNode = document.createElement('pre');
+        detailsNode.className = LOG_DETAILS_CLASS;
+        detailsNode.textContent = entry.detailsText;
+        node.appendChild(detailsNode);
+      }
+
+      output.appendChild(node);
+      output.scrollTo({ top: output.scrollHeight });
+    },
+    clear() {
+      if (output) {
+        output.innerHTML = '';
+      }
+    }
+  };
+}
+
+export function createConsoleLogSink({ mirrorToConsole = APP_CONFIG.platform?.logging?.mirrorToConsole } = {}) {
+  return {
+    write(entry) {
+      if (!mirrorToConsole) {
+        return;
+      }
+
+      const methodName = entry.level === 'error' ? 'error' : entry.level === 'warn' ? 'warn' : 'log';
+      const method = console[methodName]?.bind(console) ?? console.log.bind(console);
+      method(entry.line);
+
+      if (entry.detailsText) {
+        method(entry.detailsText);
+      }
+    },
+    clear() {}
+  };
+}
+
+export function createMemoryLogSink() {
+  const entries = [];
+
+  return {
+    write(entry) {
+      entries.push(entry);
+    },
+    clear() {
+      entries.length = 0;
+    },
+    getEntries() {
+      return [...entries];
+    }
+  };
+}
+
+
+==================================================
+FILE: renderer/runtime/projectPaths.js
+==================================================
+
+import { APP_CONFIG } from '../../config/app-config.js';
+
+export function joinProjectPath(...parts) {
+  return parts
+    .filter(Boolean)
+    .join('/')
+    .replace(/\\/g, '/')
+    .replace(/\/{2,}/g, '/');
+}
+
+export function getFileExtension(fileName) {
+  const normalized = String(fileName || '');
+  const lastDotIndex = normalized.lastIndexOf('.');
+  return lastDotIndex > 0 ? normalized.slice(lastDotIndex) : '';
+}
+
+export function stripFileExtension(fileName) {
+  const normalized = String(fileName || '');
+  const lastDotIndex = normalized.lastIndexOf('.');
+  return lastDotIndex > 0 ? normalized.slice(0, lastDotIndex) : normalized;
+}
+
+export function dirnameOf(targetPath) {
+  const normalized = String(targetPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  const index = normalized.lastIndexOf('/');
+
+  if (index < 0) {
+    return '';
+  }
+
+  if (index === 0) {
+    return '/';
+  }
+
+  return normalized.slice(0, index);
+}
+
+export function normalizeProjectFilePath(projectFilePath) {
+  const normalized = String(projectFilePath || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+
+  if (!normalized) {
+    throw new Error('Project file path is required');
+  }
+
+  const baseName = normalized.split('/').pop() || '';
+  if (!baseName || !baseName.includes('.')) {
+    throw new Error(`Project file path must point to a YAML file: ${projectFilePath}`);
+  }
+
+  const ext = getFileExtension(baseName).toLowerCase();
+  const allowed = APP_CONFIG.project.allowedProjectFileExtensions || ['.yaml', '.yml'];
+
+  if (!allowed.includes(ext)) {
+    throw new Error(`Project file path must point to a YAML file: ${projectFilePath}`);
+  }
+
+  return normalized;
+}
+
+export function getProjectRootFromProjectFile(projectFilePath) {
+  const root = dirnameOf(projectFilePath);
+  return root || '.';
+}
+
+export function buildProjectFilePath(projectRoot, projectFileName = APP_CONFIG.project.defaultProjectFileName) {
+  return joinProjectPath(projectRoot, projectFileName);
+}
+
+export function getDefaultProjectModuleDirectories(projectRoot) {
+  return {
+    metagen: joinProjectPath(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metagen]),
+    metalab: joinProjectPath(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metalab]),
+    metaview: joinProjectPath(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metaview])
+  };
+}
+
+export function getProjectOwnedPaths(targetProjectFilePath) {
+  const normalizedProjectFilePath = normalizeProjectFilePath(targetProjectFilePath);
+  const targetRoot = getProjectRootFromProjectFile(normalizedProjectFilePath);
+  const targetProjectFileName = normalizedProjectFilePath.split('/').pop();
+  const moduleDirectories = getDefaultProjectModuleDirectories(targetRoot);
+
+  return {
+    rootPath: targetRoot,
+    projectFileName: targetProjectFileName,
+    projectFilePath: buildProjectFilePath(targetRoot, targetProjectFileName),
+    moduleDirectories,
+    moduleFolders: {
+      metagen: APP_CONFIG.project.folders.metagen,
+      metalab: APP_CONFIG.project.folders.metalab,
+      metaview: APP_CONFIG.project.folders.metaview
+    }
+  };
+}
+
+
+==================================================
+FILE: tests/logger.test.js
+==================================================
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { createCoreLogger } from '../renderer/core/logger.js';
+import { createConsoleLogSink, createDomLogSink, createMemoryLogSink } from '../renderer/core/loggerSinks.js';
+
+test('logger core respects level filtering and can run without DOM', () => {
+  const memorySink = createMemoryLogSink();
+  const logger = createCoreLogger({ sinks: [memorySink] });
+
+  logger.debug('test', 'debug message');
+  logger.info('test', 'info message');
+
+  const entries = memorySink.getEntries();
+  assert.equal(entries.some((entry) => entry.message === 'info message'), true);
+  assert.equal(entries.some((entry) => entry.message === 'debug message'), false);
+});
+
+test('logger DOM sink renders entries and clear resets output', () => {
+  const output = {
+    children: [],
+    scrollHeight: 100,
+    appendChild(node) {
+      this.children.push(node);
+    },
+    scrollTo() {},
+    set innerHTML(value) {
+      this._innerHTML = value;
+      this.children = [];
+    }
+  };
+
+  const originalDocument = global.document;
+  global.document = {
+    createElement(tagName) {
+      return {
+        tagName,
+        className: '',
+        textContent: '',
+        children: [],
+        appendChild(child) {
+          this.children.push(child);
+        }
+      };
+    }
+  };
+
+  try {
+    const domSink = createDomLogSink({ output });
+    const logger = createCoreLogger({ sinks: [domSink] });
+
+    logger.info('tree', 'rendered', { a: 1 });
+    assert.equal(output.children.length, 1);
+
+    logger.clear();
+    assert.equal(output.children.length, 0);
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
+test('logger console sink mirrors output when enabled', () => {
+  const calls = [];
+  const originalConsoleLog = console.log;
+
+  console.log = (...args) => {
+    calls.push(args.join(' '));
+  };
+
+  try {
+    const logger = createCoreLogger({ sinks: [createConsoleLogSink({ mirrorToConsole: true })] });
+    logger.info('project', 'saved');
+    assert.equal(calls.some((line) => line.includes('saved')), true);
+  } finally {
+    console.log = originalConsoleLog;
+  }
 });
 
 

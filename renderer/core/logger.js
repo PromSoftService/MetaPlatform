@@ -1,4 +1,9 @@
 import { APP_CONFIG } from '../../config/app-config.js';
+import {
+  createConsoleLogSink,
+  createDomLogSink,
+  normalizeLogDetails
+} from './loggerSinks.js';
 
 const LEVELS = {
   debug: 10,
@@ -19,39 +24,7 @@ function shouldWrite(level) {
   return entryPriority >= targetPriority && targetPriority < LEVELS.none;
 }
 
-export function createLogger() {
-  const output = document.getElementById(APP_CONFIG.ui.dom.logContainerId);
-
-  function normalizeDetails(details) {
-    if (details == null) {
-      return '';
-    }
-
-    if (typeof details === 'string') {
-      return details;
-    }
-
-    try {
-      return JSON.stringify(details, null, 2);
-    } catch {
-      return String(details);
-    }
-  }
-
-  function writeToConsole(level, line, detailsText) {
-    if (!APP_CONFIG.platform?.logging?.mirrorToConsole) {
-      return;
-    }
-
-    const methodName = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
-    const method = console[methodName]?.bind(console) ?? console.log.bind(console);
-    method(line);
-
-    if (detailsText) {
-      method(detailsText);
-    }
-  }
-
+export function createCoreLogger({ sinks = [] } = {}) {
   function write(level, source, message, details = null) {
     if (!shouldWrite(level)) {
       return;
@@ -59,32 +32,14 @@ export function createLogger() {
 
     const ts = new Date().toLocaleTimeString(APP_CONFIG.platform.locale);
     const line = `[${ts}] [${source}] ${level.toUpperCase()} ${message}`;
-    const detailsText = details != null ? normalizeDetails(details) : '';
+    const detailsText = details != null ? normalizeLogDetails(details) : '';
+    const entry = { level, source, message, line, details, detailsText, ts };
 
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-
-    const lineNode = document.createElement('div');
-    lineNode.className = 'log-line';
-    lineNode.textContent = line;
-    entry.appendChild(lineNode);
-
-    if (details != null) {
-      const detailsNode = document.createElement('pre');
-      detailsNode.className = 'log-details';
-      detailsNode.textContent = detailsText;
-      entry.appendChild(detailsNode);
-    }
-
-    output?.appendChild(entry);
-    output?.scrollTo({ top: output.scrollHeight });
-    writeToConsole(level, line, detailsText);
+    sinks.forEach((sink) => sink?.write?.(entry));
   }
 
   function clear() {
-    if (output) {
-      output.innerHTML = '';
-    }
+    sinks.forEach((sink) => sink?.clear?.());
   }
 
   return {
@@ -95,3 +50,15 @@ export function createLogger() {
     clear
   };
 }
+
+export function createLogger() {
+  const output = document.getElementById(APP_CONFIG.ui.dom.logContainerId);
+  const sinks = [
+    createDomLogSink({ output }),
+    createConsoleLogSink()
+  ];
+
+  return createCoreLogger({ sinks });
+}
+
+export { shouldWrite };

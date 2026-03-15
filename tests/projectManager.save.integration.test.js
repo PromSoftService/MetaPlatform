@@ -1327,3 +1327,36 @@ test('legacy normalized id remains stable across save-as and reopen', async () =
   const reopened = manager.getDocumentsByModule('metagen').find((entry) => entry.document.component.name === 'Legacy Stable');
   assert.equal(reopened.document.component.id, normalizedId);
 });
+
+test('save project does not clear generated folder and preserves user files outside module folders', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-generated-'));
+  await createFixtureProject(root);
+  await fs.writeFile(path.join(root, 'generated', 'artifact.txt'), 'generated-result', 'utf-8');
+  await fs.writeFile(path.join(root, 'notes.txt'), 'user-note', 'utf-8');
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+  manager.getDocumentsByModule('metagen')[0].document.component.description = 'updated';
+
+  await manager.saveProject();
+
+  assert.equal(await fs.readFile(path.join(root, 'generated', 'artifact.txt'), 'utf-8'), 'generated-result');
+  assert.equal(await fs.readFile(path.join(root, 'notes.txt'), 'utf-8'), 'user-note');
+});
+
+test('save project rejects file-name collisions instead of auto-suffix renaming', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mp-save-collision-'));
+  await createFixtureProject(root);
+
+  const manager = createManager();
+  await manager.openProject(getProjectFilePath(root));
+  const first = manager.getDocumentsByModule('metagen')[0];
+  const second = await manager.createDocument('metagen', 'Pump!');
+
+  assert.ok(second);
+  first.document.component.name = 'Pump';
+
+  await assert.rejects(() => manager.saveProject(), /Filename collision detected during project save/);
+  const files = await fs.readdir(path.join(root, 'metagen'));
+  assert.equal(files.some((name) => /-1\.ya?ml$/.test(name)), false);
+});

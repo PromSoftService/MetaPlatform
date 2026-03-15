@@ -7,7 +7,8 @@ import {
   buildProjectTreeNodes,
   createTreeBehaviorConfig,
   createTreeInteractionController,
-  getNodeActions
+  getNodeActions,
+  getNodeRowClassNames
 } from './projectTree/treeAdapter.js';
 
 const TREE_CLASSNAMES = APP_CONFIG.ui.classNames;
@@ -107,13 +108,26 @@ export function createProjectTree({
   });
 
   function renderNodeRow(nodeData, rowClassNames = [TREE_CLASSNAMES.treeNodeRow]) {
-    const row = createElement('div', rowClassNames);
+    const row = createElement('div', [...rowClassNames, ...getNodeRowClassNames(nodeData)]);
     row.dataset.nodeType = nodeData.nodeType;
     row.dataset.nodeId = nodeData.id;
 
     const label = createElement('button', [TREE_CLASSNAMES.treeNodeLabel]);
     label.type = 'button';
-    label.textContent = nodeData.label;
+    const nodeIcon = nodeData.nodeType === TREE_NODE_TYPES.project
+      ? APP_CONFIG.ui.tree.icons.project
+      : nodeData.nodeType === TREE_NODE_TYPES.module
+        ? (nodeData.moduleId === APP_CONFIG.project.moduleIds.metagen
+          ? APP_CONFIG.ui.tree.icons.metagenModule
+          : nodeData.moduleId === APP_CONFIG.project.moduleIds.metalab
+            ? APP_CONFIG.ui.tree.icons.metalabModule
+            : APP_CONFIG.ui.tree.icons.metaviewModule)
+        : (nodeData.moduleId === APP_CONFIG.project.moduleIds.metagen
+          ? APP_CONFIG.ui.tree.icons.metagenDocument
+          : nodeData.moduleId === APP_CONFIG.project.moduleIds.metalab
+            ? APP_CONFIG.ui.tree.icons.metalabDocument
+            : APP_CONFIG.ui.tree.icons.metaviewDocument);
+    label.textContent = `${nodeIcon} ${nodeData.label}`;
 
     label.addEventListener('click', async (event) => {
       event.preventDefault();
@@ -181,26 +195,36 @@ export function createProjectTree({
       getDocumentsByModule: (moduleId) => projectManager.getDocumentsByModule(moduleId)
     });
 
+    const projectNode = treeNodes.find((node) => node.nodeType === TREE_NODE_TYPES.project);
+
+    if (projectNode) {
+      const projectRootNode = createElement('div', [TREE_CLASSNAMES.projectNode]);
+      projectRootNode.appendChild(renderNodeRow(projectNode, [TREE_CLASSNAMES.treeNodeRow]));
+      treeRoot.appendChild(projectRootNode);
+    }
+
     for (const nodeData of treeNodes) {
-      if (nodeData.nodeType === TREE_NODE_TYPES.module) {
-        const moduleBlock = createElement('div', [TREE_CLASSNAMES.treeModuleBlock]);
-        moduleBlock.appendChild(
-          renderNodeRow(nodeData, [TREE_CLASSNAMES.treeSectionHeader, TREE_CLASSNAMES.treeNodeRow])
-        );
-
-        const documentsContainer = createElement('div', [TREE_CLASSNAMES.treeModuleChildren]);
-
-        for (const documentNode of nodeData.children || []) {
-          const item = createElement('div', [TREE_CLASSNAMES.treeItem]);
-          item.appendChild(
-            renderNodeRow(documentNode, [TREE_CLASSNAMES.treeNodeRow, TREE_CLASSNAMES.treeNodeDocumentRow])
-          );
-          documentsContainer.appendChild(item);
-        }
-
-        moduleBlock.appendChild(documentsContainer);
-        treeRoot.appendChild(moduleBlock);
+      if (nodeData.nodeType !== TREE_NODE_TYPES.module) {
+        continue;
       }
+
+      const moduleBlock = createElement('div', [TREE_CLASSNAMES.treeModuleBlock]);
+      moduleBlock.appendChild(
+        renderNodeRow(nodeData, [TREE_CLASSNAMES.treeSectionHeader, TREE_CLASSNAMES.treeNodeRow])
+      );
+
+      const documentsContainer = createElement('div', [TREE_CLASSNAMES.treeModuleChildren]);
+
+      for (const documentNode of nodeData.children || []) {
+        const item = createElement('div', [TREE_CLASSNAMES.treeItem]);
+        item.appendChild(
+          renderNodeRow(documentNode, [TREE_CLASSNAMES.treeNodeRow, TREE_CLASSNAMES.treeNodeDocumentRow])
+        );
+        documentsContainer.appendChild(item);
+      }
+
+      moduleBlock.appendChild(documentsContainer);
+      treeRoot.appendChild(moduleBlock);
     }
 
     logger.info(APP_CONFIG.ui.runtime.loggerSources.projectTree, 'Дерево проекта обновлено', {

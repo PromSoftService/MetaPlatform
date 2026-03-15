@@ -81,6 +81,9 @@ PROJECT_FILES = [
   'tests/projectTreeAdapter.test.js',
   'tests/tabEditLifecycle.test.js',
   'tests/windowCloseGuard.test.js',
+  'renderer/core/loggerSinks.js',
+  'renderer/runtime/projectPaths.js',
+  'tests/logger.test.js',
   'vite.config.js',
   'main/runtime/windowCloseGuard.js',
 ]
@@ -89,18 +92,22 @@ PROJECT_FILES = [
 def ensure_project_structure() -> tuple[int, int]:
   created_dirs = 0
   created_files = 0
-  created_dir_paths: set[Path] = set()
 
   for relative_path in PROJECT_FILES:
     file_path = ROOT / relative_path
     parent_dir = file_path.parent
 
-    if not parent_dir.exists():
-      parent_dir.mkdir(parents=True, exist_ok=True)
+    if parent_dir != ROOT:
+      missing_chain: list[Path] = []
+      current = parent_dir
 
-    if parent_dir != ROOT and parent_dir not in created_dir_paths:
-      created_dirs += 1
-      created_dir_paths.add(parent_dir)
+      while current != ROOT and not current.exists():
+        missing_chain.append(current)
+        current = current.parent
+
+      if missing_chain:
+        parent_dir.mkdir(parents=True, exist_ok=True)
+        created_dirs += len(missing_chain)
 
     if not file_path.exists():
       file_path.touch()

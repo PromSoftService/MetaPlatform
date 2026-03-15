@@ -13,7 +13,7 @@ import {
 
 function createProjectFixture() {
   return {
-    project: { name: 'Demo' },
+    project: { id: 'project-guid', name: 'Demo' },
     documents: {
       metagen: [
         {
@@ -201,6 +201,7 @@ test('tree node mapping keeps node typing and metadata for future context menu s
   });
 
   assert.equal(nodes[0].nodeType, TREE_NODE_TYPES.project);
+  assert.equal(nodes[0].label, APP_CONFIG.project.tree.labels.root);
   const moduleNode = nodes.find((node) => node.nodeType === TREE_NODE_TYPES.module && node.moduleId === 'metagen');
   assert.ok(moduleNode);
   assert.equal(moduleNode.label, 'metagen');
@@ -237,7 +238,7 @@ test('unsupported action returns no-op result and does not call handlers', async
 
 test('tree document node identity is based on document GUID and remains stable for path changes', () => {
   const project = {
-    project: { name: 'Demo' },
+    project: { id: 'project-guid', name: 'Demo' },
     documents: {
       metagen: [{ moduleId: 'metagen', path: '/tmp/metagen/a.yaml', document: { component: { id: '11111111-1111-4111-8111-111111111111', name: 'A' } } }],
       metalab: [],

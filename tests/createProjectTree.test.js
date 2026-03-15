@@ -132,7 +132,7 @@ test('tree row render accepts multiple classes as separate tokens', async () => 
       await tree.render();
     });
 
-    const moduleBlock = treeRoot.children[0];
+    const moduleBlock = treeRoot.children[1];
     const sectionHeaderRow = moduleBlock.children[0];
 
     assert.equal(sectionHeaderRow.classList.contains('tree-section-header'), true);
@@ -173,7 +173,7 @@ test('module and component nodes get distinct row classes and hierarchy markers'
 
     await tree.render();
 
-    const metagenModuleBlock = treeRoot.children[0];
+    const metagenModuleBlock = treeRoot.children[1];
     const sectionHeaderRow = metagenModuleBlock.children[0];
     const documentRow = metagenModuleBlock.children[1].children[0].children[0];
 
@@ -339,7 +339,7 @@ test('project panel title does not show marker for clean opened project', async 
   }
 });
 
-test('project title is not rendered as a dedicated tree node', async () => {
+test('project root node is rendered as dedicated tree node with static label', async () => {
   const originalDocument = global.document;
   const { document, treeRoot } = createFakeDocument();
   global.document = document;
@@ -363,8 +363,11 @@ test('project title is not rendered as a dedicated tree node', async () => {
     });
 
     await tree.render();
-    assert.equal(treeRoot.children.length, 3);
-    assert.equal(treeRoot.children.every((child) => !child.classList.contains('project-node')), true);
+    assert.equal(treeRoot.children.length, 4);
+    assert.equal(treeRoot.children[0].classList.contains('project-node'), true);
+    const projectRow = treeRoot.children[0].children[0];
+    assert.equal(projectRow.dataset.nodeType, 'project');
+    assert.equal(projectRow.children[0].textContent.includes('Проект'), true);
   } finally {
     global.document = originalDocument;
   }

@@ -24,6 +24,13 @@ export const UI_CONFIG = {
     treeNodeRow: 'tree-node-row',
     treeSectionHeader: 'tree-section-header',
     treeNodeDocumentRow: 'tree-node-document-row',
+    treeNodeProjectRow: 'tree-node-project-row',
+    treeNodeModuleMetagen: 'tree-node-module-metagen',
+    treeNodeModuleMetalab: 'tree-node-module-metalab',
+    treeNodeModuleMetaview: 'tree-node-module-metaview',
+    treeNodeDocumentMetagen: 'tree-node-document-metagen',
+    treeNodeDocumentMetalab: 'tree-node-document-metalab',
+    treeNodeDocumentMetaview: 'tree-node-document-metaview',
     treeNodeLabel: 'tree-node-label',
     treeNodeActions: 'tree-node-actions',
     treeNodeActionButton: 'tree-node-action-button',
@@ -76,6 +83,18 @@ export const UI_CONFIG = {
 
 
   tree: {
+    labels: {
+      root: 'Проект'
+    },
+    icons: {
+      project: '📦',
+      metagenModule: '🧩',
+      metalabModule: '⚙️',
+      metaviewModule: '🖥️',
+      metagenDocument: '▸',
+      metalabDocument: '◆',
+      metaviewDocument: '◉'
+    },
     actions: {
       createComponent: {
         title: 'Добавить компонент',

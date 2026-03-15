@@ -82,6 +82,9 @@ PROJECT_FILES = [
   'tests/projectTreeAdapter.test.js',
   'tests/tabEditLifecycle.test.js',
   'tests/windowCloseGuard.test.js',
+  'renderer/core/loggerSinks.js',
+  'renderer/runtime/projectPaths.js',
+  'tests/logger.test.js',
   'vite.config.js',
   'main/runtime/windowCloseGuard.js',
 ]

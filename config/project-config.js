@@ -35,7 +35,11 @@ export const PROJECT_CONFIG = {
     actionIds: {
       createComponent: 'create-component',
       deleteComponent: 'delete-component'
-    }
+    },
+
+    labels: {
+      root: 'Проект'
+    },
   },
 
   projectKinds: {

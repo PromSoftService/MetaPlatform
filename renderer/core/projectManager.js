@@ -11,104 +11,18 @@ import {
 } from '../runtime/documentRecordIdentity.js';
 import { areDocumentSnapshotsSemanticallyEqual } from '../runtime/documentSnapshot.js';
 import { METAGEN_CONFIG } from '../modules/metagen/metagenConfig.js';
+import {
+  buildProjectFilePath,
+  getDefaultProjectModuleDirectories,
+  getFileExtension,
+  getProjectOwnedPaths,
+  getProjectRootFromProjectFile,
+  joinProjectPath,
+  normalizeProjectFilePath,
+  stripFileExtension
+} from '../runtime/projectPaths.js';
 
-function joinPaths(...parts) {
-  return parts
-    .filter(Boolean)
-    .join('/')
-    .replace(/\\/g, '/')
-    .replace(/\/{2,}/g, '/');
-}
-
-function buildProjectFilePath(projectRoot, projectFileName = APP_CONFIG.project.defaultProjectFileName) {
-  return joinPaths(projectRoot, projectFileName);
-}
-
-function getDefaultProjectModuleDirectories(projectRoot) {
-  return {
-    metagen: joinPaths(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metagen]),
-    metalab: joinPaths(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metalab]),
-    metaview: joinPaths(projectRoot, APP_CONFIG.project.folders[APP_CONFIG.project.moduleIds.metaview])
-  };
-}
-
-export function getProjectOwnedPaths(targetProjectFilePath) {
-  const normalizedProjectFilePath = normalizeProjectFilePath(targetProjectFilePath);
-  const targetRoot = getProjectRootFromProjectFile(normalizedProjectFilePath);
-  const targetProjectFileName = normalizedProjectFilePath.split('/').pop();
-  const moduleDirectories = getDefaultProjectModuleDirectories(targetRoot);
-
-  return {
-    rootPath: targetRoot,
-    projectFileName: targetProjectFileName,
-    projectFilePath: buildProjectFilePath(targetRoot, targetProjectFileName),
-    moduleDirectories,
-    moduleFolders: {
-      metagen: APP_CONFIG.project.folders.metagen,
-      metalab: APP_CONFIG.project.folders.metalab,
-      metaview: APP_CONFIG.project.folders.metaview
-    }
-  };
-}
-
-function dirnameOf(targetPath) {
-  const normalized = String(targetPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
-  const index = normalized.lastIndexOf('/');
-
-  if (index < 0) {
-    return '';
-  }
-
-  if (index === 0) {
-    return '/';
-  }
-
-  return normalized.slice(0, index);
-}
-
-function normalizeProjectFilePath(projectFilePath) {
-  const normalized = String(projectFilePath || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
-
-  if (!normalized) {
-    throw new Error('Project file path is required');
-  }
-
-  const baseName = normalized.split('/').pop() || '';
-  if (!baseName || !baseName.includes('.')) {
-    throw new Error(`Project file path must point to a YAML file: ${projectFilePath}`);
-  }
-
-  const ext = getFileExtension(baseName).toLowerCase();
-  const allowed = APP_CONFIG.project.allowedProjectFileExtensions || ['.yaml', '.yml'];
-
-  if (!allowed.includes(ext)) {
-    throw new Error(`Project file path must point to a YAML file: ${projectFilePath}`);
-  }
-
-  return normalized;
-}
-
-function getProjectRootFromProjectFile(projectFilePath) {
-  const root = dirnameOf(projectFilePath);
-
-  if (!root) {
-    return '.';
-  }
-
-  return root;
-}
-
-function getFileExtension(fileName) {
-  const normalized = String(fileName || '');
-  const lastDotIndex = normalized.lastIndexOf('.');
-  return lastDotIndex > 0 ? normalized.slice(lastDotIndex) : '';
-}
-
-function stripFileExtension(fileName) {
-  const normalized = String(fileName || '');
-  const lastDotIndex = normalized.lastIndexOf('.');
-  return lastDotIndex > 0 ? normalized.slice(0, lastDotIndex) : normalized;
-}
+export { getProjectOwnedPaths } from '../runtime/projectPaths.js';
 
 function getModuleFolder(moduleId) {
   const folderMap = {
@@ -198,7 +112,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function scanModuleDocuments(projectRoot, moduleFolder, moduleId) {
-    const dir = joinPaths(projectRoot, moduleFolder);
+    const dir = joinProjectPath(projectRoot, moduleFolder);
     const paths = await fileSystem.listFiles(dir, APP_CONFIG.project.fileExtensions.yaml);
     const output = [];
 
@@ -239,23 +153,23 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     await fileSystem.ensureDir(moduleDirectories.metagen);
     await fileSystem.ensureDir(moduleDirectories.metalab);
     await fileSystem.ensureDir(moduleDirectories.metaview);
-    await fileSystem.ensureDir(joinPaths(projectRoot, APP_CONFIG.project.folders.generated));
+    await fileSystem.ensureDir(joinProjectPath(projectRoot, APP_CONFIG.project.folders.generated));
   }
 
   function buildSaveStagingRoot(targetRoot) {
-    return joinPaths(targetRoot, '.save-staging');
+    return joinProjectPath(targetRoot, '.save-staging');
   }
 
   function buildModuleStagingDir(targetRoot, moduleFolder) {
-    return joinPaths(targetRoot, '.save-staging', moduleFolder);
+    return joinProjectPath(targetRoot, '.save-staging', moduleFolder);
   }
 
   function buildModuleBackupDir(targetRoot, moduleFolder) {
-    return joinPaths(targetRoot, `.backup-${moduleFolder}`);
+    return joinProjectPath(targetRoot, `.backup-${moduleFolder}`);
   }
 
   function buildProjectFileBackupPath(targetRoot, projectFileName) {
-    return joinPaths(targetRoot, `.backup-${projectFileName}`);
+    return joinProjectPath(targetRoot, `.backup-${projectFileName}`);
   }
 
   async function removeDirectoryIfExists(targetPath) {
@@ -270,7 +184,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function promoteModuleDirectory(targetRoot, moduleFolder) {
-    const moduleDir = joinPaths(targetRoot, moduleFolder);
+    const moduleDir = joinProjectPath(targetRoot, moduleFolder);
     const stagingDir = buildModuleStagingDir(targetRoot, moduleFolder);
     const backupDir = buildModuleBackupDir(targetRoot, moduleFolder);
 
@@ -298,7 +212,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function rollbackPromotedModuleDirectory(targetRoot, moduleFolder) {
-    const moduleDir = joinPaths(targetRoot, moduleFolder);
+    const moduleDir = joinProjectPath(targetRoot, moduleFolder);
     const backupDir = buildModuleBackupDir(targetRoot, moduleFolder);
 
     if (await fileSystem.exists(moduleDir)) {
@@ -311,7 +225,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function promoteProjectFile(targetRoot, projectFileName) {
-    const stagingProjectFilePath = joinPaths(buildSaveStagingRoot(targetRoot), projectFileName);
+    const stagingProjectFilePath = joinProjectPath(buildSaveStagingRoot(targetRoot), projectFileName);
     const finalProjectFilePath = buildProjectFilePath(targetRoot, projectFileName);
     const backupProjectFilePath = buildProjectFileBackupPath(targetRoot, projectFileName);
 
@@ -656,7 +570,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
     const document = module.createDefaultDocument({ name: resolvedName });
     const virtualPath = currentProject.rootPath
-      ? joinPaths(currentProject.rootPath, getModuleFolder(moduleId), module.getFileName(document))
+      ? joinProjectPath(currentProject.rootPath, getModuleFolder(moduleId), module.getFileName(document))
       : `${APP_CONFIG.project.unsavedDocumentPathPrefix}${moduleId}/${++unsavedCounter}${APP_CONFIG.project.fileExtensions.default}`;
 
     const record = { moduleId, path: virtualPath, document };
@@ -701,7 +615,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       setDocumentName({ document: renamedDocument }, resolvedName);
 
       const nextFileName = module.getFileName(renamedDocument);
-      nextPath = joinPaths(currentProject.rootPath, moduleFolder, nextFileName);
+      nextPath = joinProjectPath(currentProject.rootPath, moduleFolder, nextFileName);
 
       if (nextPath !== previousPath) {
         const hasPhysicalSource = await fileSystem.exists(previousPath);
@@ -879,27 +793,24 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
         continue;
       }
 
-      let fileName = module.getFileName(record.document);
-      const ext = getFileExtension(fileName) || '.yaml';
-      const base = stripFileExtension(fileName);
-      let index = 1;
+      const fileName = module.getFileName(record.document);
+      const moduleRelativePath = `${moduleFolder}/${fileName}`;
 
-      while (occupied.has(`${moduleFolder}/${fileName}`)) {
-        fileName = `${base}-${index}${ext}`;
-        index += 1;
+      if (occupied.has(moduleRelativePath)) {
+        throw new Error(`Filename collision detected during project save: ${moduleRelativePath}`);
       }
 
-      occupied.add(`${moduleFolder}/${fileName}`);
+      occupied.add(moduleRelativePath);
 
-      const finalPath = joinPaths(targetRoot, moduleFolder, fileName);
-      const stagingPath = joinPaths(stagingRoot, moduleFolder, fileName);
+      const finalPath = joinProjectPath(targetRoot, moduleFolder, fileName);
+      const stagingPath = joinProjectPath(stagingRoot, moduleFolder, fileName);
 
       await saveDocumentSnapshot(stagingPath, record);
       pathMap.set(getDocumentIdentityKey(record), finalPath);
     }
 
     // stage project.yaml
-    const stagingProjectFilePath = joinPaths(stagingRoot, targetProjectFileName);
+    const stagingProjectFilePath = joinProjectPath(stagingRoot, targetProjectFileName);
     await documentLoader.saveYaml(stagingProjectFilePath, finalProjectPayload);
 
     // commit promoted entities

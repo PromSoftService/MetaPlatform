@@ -15,18 +15,7 @@ import { createMetaGenModule } from './modules/metagen/metagenModule.js';
 import { createMetaLabModule } from './modules/metalab/metalabModule.js';
 import { createMetaViewModule } from './modules/metaview/metaviewModule.js';
 import { APP_CONFIG } from '../config/app-config.js';
-
-function joinPaths(...parts) {
-  return parts
-    .filter(Boolean)
-    .join('/')
-    .replace(/\\/g, '/')
-    .replace(/\/{2,}/g, '/');
-}
-
-function buildProjectFilePath(projectRoot, projectFileName = APP_CONFIG.project.defaultProjectFileName) {
-  return joinPaths(projectRoot, projectFileName);
-}
+import { buildProjectFilePath } from './runtime/projectPaths.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   applyStaticText();

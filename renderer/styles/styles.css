@@ -27,7 +27,16 @@
   --tree-module-row-font-size: 12px;
   --tree-module-row-letter-spacing: 0.04em;
   --tree-component-indent: 16px;
+  --tree-hover-bg: #e7edf5;
+  --tree-selected-bg: #d3deec;
+  --tree-metagen-accent: #0ea5e9;
+  --tree-metalab-accent: #f59e0b;
+  --tree-metaview-accent: #8b5cf6;
+  --tree-metagen-text: #0369a1;
+  --tree-metalab-text: #92400e;
+  --tree-metaview-text: #5b21b6;
 }
+
 
 
 html,
@@ -234,6 +243,11 @@ body {
   margin-bottom: 12px;
 }
 
+.tree-node-project-row {
+  border-color: var(--color-border);
+  background: var(--color-bg-subtle);
+}
+
 .tree-module-block {
   margin-top: 12px;
 }
@@ -275,12 +289,12 @@ body {
 }
 
 .tree-node-row:hover {
-  background: var(--color-tab-hover);
+  background: var(--tree-hover-bg);
   border-color: var(--color-border-soft);
 }
 
 .tree-node-row.is-selected {
-  background: var(--color-tab-bg-active);
+  background: var(--tree-selected-bg);
   border-color: var(--color-border);
 }
 
@@ -332,6 +346,15 @@ body {
   background: var(--color-tab-hover);
   color: var(--color-text);
 }
+
+
+.tree-node-module-metagen { border-left: 3px solid var(--tree-metagen-accent); }
+.tree-node-module-metalab { border-left: 3px solid var(--tree-metalab-accent); }
+.tree-node-module-metaview { border-left: 3px solid var(--tree-metaview-accent); }
+.tree-node-document-metagen .tree-node-label { color: var(--tree-metagen-text); }
+.tree-node-document-metalab .tree-node-label { color: var(--tree-metalab-text); }
+.tree-node-document-metaview .tree-node-label { color: var(--tree-metaview-text); }
+
 
 .workbench-inline-rename-input,
 .tree-inline-rename-input {
