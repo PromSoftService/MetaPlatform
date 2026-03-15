@@ -1705,6 +1705,15 @@ function cloneDocumentPayload(document) {
   return JSON.parse(JSON.stringify(document));
 }
 
+
+function toFileSystemPath(targetPath) {
+  if (globalThis.process?.platform === 'win32') {
+    return String(targetPath || '').replace(/\//g, '\\');
+  }
+
+  return String(targetPath || '');
+}
+
 function createDefaultProjectRaw() {
   return {
     kind: APP_CONFIG.project.projectKinds.root,
@@ -1841,9 +1850,9 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function promoteModuleDirectory(targetRoot, moduleFolder) {
-    const moduleDir = joinProjectPath(targetRoot, moduleFolder);
-    const stagingDir = buildModuleStagingDir(targetRoot, moduleFolder);
-    const backupDir = buildModuleBackupDir(targetRoot, moduleFolder);
+    const moduleDir = toFileSystemPath(joinProjectPath(targetRoot, moduleFolder));
+    const stagingDir = toFileSystemPath(buildModuleStagingDir(targetRoot, moduleFolder));
+    const backupDir = toFileSystemPath(buildModuleBackupDir(targetRoot, moduleFolder));
 
     await removeDirectoryIfExists(backupDir);
 
@@ -1869,8 +1878,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function rollbackPromotedModuleDirectory(targetRoot, moduleFolder) {
-    const moduleDir = joinProjectPath(targetRoot, moduleFolder);
-    const backupDir = buildModuleBackupDir(targetRoot, moduleFolder);
+    const moduleDir = toFileSystemPath(joinProjectPath(targetRoot, moduleFolder));
+    const backupDir = toFileSystemPath(buildModuleBackupDir(targetRoot, moduleFolder));
 
     if (await fileSystem.exists(moduleDir)) {
       await fileSystem.deleteDir(moduleDir);
@@ -1882,9 +1891,9 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function promoteProjectFile(targetRoot, projectFileName) {
-    const stagingProjectFilePath = joinProjectPath(buildSaveStagingRoot(targetRoot), projectFileName);
-    const finalProjectFilePath = buildProjectFilePath(targetRoot, projectFileName);
-    const backupProjectFilePath = buildProjectFileBackupPath(targetRoot, projectFileName);
+    const stagingProjectFilePath = toFileSystemPath(joinProjectPath(buildSaveStagingRoot(targetRoot), projectFileName));
+    const finalProjectFilePath = toFileSystemPath(buildProjectFilePath(targetRoot, projectFileName));
+    const backupProjectFilePath = toFileSystemPath(buildProjectFileBackupPath(targetRoot, projectFileName));
 
     await fileSystem.deleteFile(backupProjectFilePath);
 
@@ -1908,8 +1917,8 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
   }
 
   async function rollbackPromotedProjectFile(targetRoot, projectFileName) {
-    const finalProjectFilePath = buildProjectFilePath(targetRoot, projectFileName);
-    const backupProjectFilePath = buildProjectFileBackupPath(targetRoot, projectFileName);
+    const finalProjectFilePath = toFileSystemPath(buildProjectFilePath(targetRoot, projectFileName));
+    const backupProjectFilePath = toFileSystemPath(buildProjectFileBackupPath(targetRoot, projectFileName));
 
     if (await fileSystem.exists(finalProjectFilePath)) {
       await fileSystem.deleteFile(finalProjectFilePath);
@@ -1925,7 +1934,7 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
       await removeDirectoryIfExists(buildModuleBackupDir(projectOwnedPaths.rootPath, moduleFolder));
     }
 
-    await fileSystem.deleteFile(buildProjectFileBackupPath(projectOwnedPaths.rootPath, projectOwnedPaths.projectFileName));
+    await fileSystem.deleteFile(toFileSystemPath(buildProjectFileBackupPath(projectOwnedPaths.rootPath, projectOwnedPaths.projectFileName)));
   }
 
   async function cleanupSaveStaging(targetRoot) {
@@ -2455,15 +2464,15 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
 
       occupied.add(moduleRelativePath);
 
-      const finalPath = joinProjectPath(targetRoot, moduleFolder, fileName);
-      const stagingPath = joinProjectPath(stagingRoot, moduleFolder, fileName);
+      const finalPath = toFileSystemPath(joinProjectPath(targetRoot, moduleFolder, fileName));
+      const stagingPath = toFileSystemPath(joinProjectPath(stagingRoot, moduleFolder, fileName));
 
       await saveDocumentSnapshot(stagingPath, record);
       pathMap.set(getDocumentIdentityKey(record), finalPath);
     }
 
     // stage project.yaml
-    const stagingProjectFilePath = joinProjectPath(stagingRoot, targetProjectFileName);
+    const stagingProjectFilePath = toFileSystemPath(joinProjectPath(stagingRoot, targetProjectFileName));
     await documentLoader.saveYaml(stagingProjectFilePath, finalProjectPayload);
 
     // commit promoted entities
@@ -2478,6 +2487,11 @@ export function createProjectManager({ logger, fileSystem, moduleRegistry, onPro
     } catch (error) {
       // rollback on failure
       await performSaveRollback(projectOwnedPaths, promotedModules, projectFilePromoted, error);
+
+      // Defensive guard: even if rollback implementation changes in future
+      // and stops throwing, save/save-as must never continue via success path
+      // after commit/promote failure.
+      throw error;
     }
 
     // cleanup (best-effort только после полного успешного commit)
